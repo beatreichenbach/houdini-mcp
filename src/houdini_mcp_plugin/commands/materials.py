@@ -56,7 +56,7 @@ def _material_parm_templates(node_type: hou.NodeType) -> list[str]:
         return cached
     names: list[str] = []
 
-    def walk(templates) -> None:
+    def walk(templates: Any) -> None:
         for template in templates:
             if template.type() == hou.parmTemplateType.Folder:
                 walk(template.parmTemplates())

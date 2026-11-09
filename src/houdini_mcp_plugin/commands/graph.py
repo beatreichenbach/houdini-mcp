@@ -76,7 +76,7 @@ _MULTIPARM_FOLDERS = tuple(
 )
 
 
-def _resolve_node_type(category: hou.NodeTypeCategory, type_name: str):
+def _resolve_node_type(category: hou.NodeTypeCategory, type_name: str) -> Any:
     """Resolve *type_name* in *category* the way createNode would.
 
     hou.preferredNodeType maps an unversioned name to the version that
@@ -100,7 +100,7 @@ def _resolve_node_type(category: hou.NodeTypeCategory, type_name: str):
     return None
 
 
-def _instance_patterns(node_type) -> list[re.Pattern]:
+def _instance_patterns(node_type: Any) -> list[re.Pattern]:
     """Regexes matching the live names of a type's multiparm instances.
 
     A fresh probe node has zero instances, so `usept0` and `pt0x` on an Add
@@ -112,7 +112,7 @@ def _instance_patterns(node_type) -> list[re.Pattern]:
 
     patterns: list[re.Pattern] = []
 
-    def walk(templates) -> None:
+    def walk(templates: Any) -> None:
         for template in templates:
             if '#' in template.name():
                 body = re.escape(template.name()).replace(r'\#', r'\d+')
@@ -174,7 +174,9 @@ def _connectors_of(node: hou.Node) -> dict[str, list[dict[str, Any]]]:
     return {'inputs': _input_table(node), 'outputs': outputs}
 
 
-def _probe_connectors(scratch: hou.Node, node_type, parms: dict | None = None) -> dict:
+def _probe_connectors(
+    scratch: hou.Node, node_type: Any, parms: dict | None = None
+) -> dict:
     """Connectors of *node_type* created inside *scratch* with *parms* applied.
 
     A VOP's `signature`, a multiparm count or a variadic HDA decides what a
@@ -198,7 +200,7 @@ def _probe_connectors(scratch: hou.Node, node_type, parms: dict | None = None) -
 
 
 def _instance_menu_errors(
-    scratch: hou.Node, node_type, parms: dict, patterns: list
+    scratch: hou.Node, node_type: Any, parms: dict, patterns: list
 ) -> list[str]:
     """Menu errors on multiparm instance parms (a wedge's type1), found by probing.
 
@@ -242,7 +244,7 @@ def _instance_menu_errors(
     return problems
 
 
-def _locked_on_build(scratch: hou.Node, node_type, spec: dict) -> dict[str, str]:
+def _locked_on_build(scratch: hou.Node, node_type: Any, spec: dict) -> dict[str, str]:
     """Parms of *spec* that will still be locked when the build writes them.
 
     Replays the spec's parms, in order, on a probe of the type -- callbacks
@@ -324,7 +326,7 @@ def _container_for(category_name: str) -> str | None:
 _CONNECTOR_CACHE: dict[tuple, tuple[dict, dict]] = {}
 
 
-def _definition_stamp(node_type) -> Any:
+def _definition_stamp(node_type: Any) -> Any:
     with contextlib.suppress(Exception):
         definition = node_type.definition()
         if definition is not None:
@@ -332,7 +334,7 @@ def _definition_stamp(node_type) -> Any:
     return None
 
 
-def _is_strict_menu(template) -> bool:
+def _is_strict_menu(template: Any) -> bool:
     """A menu whose value build_network checks against its tokens.
 
     Houdini itself refuses a value off the menu only on a Menu parm; a String
@@ -439,7 +441,7 @@ _FALLBACK_PROBE_PARENTS: dict[str, tuple[tuple[str, str], ...]] = {
 
 def _connectors_for_type(
     category_name: str,
-    node_type,
+    node_type: Any,
     generated_menus: dict | None = None,
 ) -> tuple[dict | None, str | None]:
     """Connector names/labels of *node_type*, probed on a throwaway instance.
@@ -558,7 +560,7 @@ _RENAME_SENTINEL = 'houdini_mcp_probe'
 _ON_CREATED_CACHE: dict[tuple, list] = {}
 
 
-def _on_created_templates(category_name: str, node_type) -> list:
+def _on_created_templates(category_name: str, node_type: Any) -> list:
     """Parm templates the type's OnCreated script adds to every new node.
 
     The Solaris edit-properties nodes build most of their interface there:
@@ -625,7 +627,7 @@ _SIGNATURE_LINE_RE = re.compile(
 )
 
 
-def _vop_signatures(node_type) -> list[dict[str, Any]]:
+def _vop_signatures(node_type: Any) -> list[dict[str, Any]]:
     """Every signature a VOP type defines, read off its DialogScript.
 
     The live `signature` menu lists only what the node can take as wired: a
@@ -653,7 +655,7 @@ def _vop_signatures(node_type) -> list[dict[str, Any]]:
 
 def _parm_names_for_type(
     scratch: hou.Node,
-    node_type,
+    node_type: Any,
     parm_types: dict | None = None,
     factory_expressions: dict | None = None,
     locked: dict | None = None,
@@ -865,7 +867,7 @@ def _expression_value(value: Any) -> str | None:
     return None
 
 
-def _expression_language(name: str):
+def _expression_language(name: str) -> Any:
     """hou.exprLanguage for "hscript" / "python"; raises on anything else."""
 
     key = str(name).strip().lower()
@@ -968,7 +970,7 @@ def _apply_parm(
     return report
 
 
-def _set_parm_value(name: str, parm, parm_tuple, value: Any) -> set[str]:
+def _set_parm_value(name: str, parm: Any, parm_tuple: Any, value: Any) -> set[str]:
     """The plain write behind _apply_parm.
 
     Answers the components given an ``{"expr": ...}`` instead of a literal.
@@ -1320,7 +1322,7 @@ def _missing_parent_container(parent_path: str, nodes: Any) -> str | None:
 
 
 def _dry_run_in_scratch(
-    above, container: str, name: str, nodes: list, parent_path: str
+    above: Any, container: str, name: str, nodes: list, parent_path: str
 ) -> dict:
     """Validate *nodes* inside a throwaway container named like the real one.
 
@@ -2192,7 +2194,7 @@ _CATEGORY_HELP_DIRS = {
 }
 
 
-def _help_text(node_type, category_name: str) -> str | None:
+def _help_text(node_type: Any, category_name: str) -> str | None:
     """Houdini's own help for a node type, version-exact, headless-safe."""
 
     global _HELP_ZIP_INDEX
@@ -2426,7 +2428,7 @@ def get_node_card(
     # top level found none on any real node type.
     multiparms: list[dict[str, Any]] = []
 
-    def _collect_multiparms(entries) -> None:
+    def _collect_multiparms(entries: Any) -> None:
         for folder in entries:
             if not isinstance(folder, hou.FolderParmTemplate):
                 continue

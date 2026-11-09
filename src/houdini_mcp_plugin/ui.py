@@ -21,6 +21,7 @@ import contextlib
 import fnmatch
 import re
 from collections.abc import Generator
+from typing import Any
 
 # Third-party
 import hou
@@ -64,7 +65,7 @@ def require_ui(operation: str, *, alternative: str = '') -> None:
     raise hou.OperationFailed(message)
 
 
-def panes():
+def panes() -> Any:
     """``hou.ui.paneTabs()``, but explaining itself when there is no UI."""
 
     require_ui("look at Houdini's panes")
@@ -104,7 +105,7 @@ def set_other_objects(mode: str | None) -> str | None:
     return applied
 
 
-def _viewed_object(network) -> hou.Node | None:
+def _viewed_object(network: Any) -> hou.Node | None:
     """The object whose contents *network* belongs to, or None at /obj or outside it."""
 
     node = network
@@ -140,7 +141,9 @@ def pattern_hides(pattern: str, obj_path: str) -> bool:
     return not shown
 
 
-def hidden_by_visible_objects(scene_viewer, obj: hou.Node | None = None) -> list[dict]:
+def hidden_by_visible_objects(
+    scene_viewer: Any, obj: hou.Node | None = None
+) -> list[dict]:
     """The viewports of *scene_viewer* whose Visible Objects pattern hides *obj*.
 
     *obj* defaults to the object the viewer is in.
@@ -170,7 +173,7 @@ def hidden_by_visible_objects(scene_viewer, obj: hou.Node | None = None) -> list
     return hidden
 
 
-def show_viewed_object(network) -> list[dict]:
+def show_viewed_object(network: Any) -> list[dict]:
     """Set Visible Objects back to "*" wherever it hides the object *network* belongs to.
 
     Returns what was reset, each entry with the pattern it held. Best effort.
@@ -194,7 +197,7 @@ def show_viewed_object(network) -> list[dict]:
     return reset
 
 
-def _in_lops(viewer) -> bool:
+def _in_lops(viewer: Any) -> bool:
     """Whether *viewer* shows a LOP network (its cameras are prims) or not (nodes)."""
 
     return viewer.pwd().childTypeCategory() == hou.lopNodeTypeCategory()
@@ -332,7 +335,7 @@ def viewer_stays_out_of_dops() -> Generator[None]:
                         tab.cd(path)
 
 
-def viewer_context(scene_viewer) -> dict:
+def viewer_context(scene_viewer: Any) -> dict:
     """The network *scene_viewer* draws, and a note when that is a DOP network.
 
     For a viewport capture's reply. In a DOP network the viewer draws the
@@ -373,7 +376,7 @@ def viewer_context(scene_viewer) -> dict:
     return context
 
 
-def _current_viewport_name(scene_viewer) -> str | None:
+def _current_viewport_name(scene_viewer: Any) -> str | None:
     with contextlib.suppress(Exception):
         return scene_viewer.curViewport().name()
     return None

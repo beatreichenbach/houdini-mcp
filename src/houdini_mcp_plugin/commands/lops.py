@@ -267,7 +267,7 @@ def _stage_frame() -> float | None:
     return None
 
 
-def _cooked_at_time(handler):
+def _cooked_at_time(handler: Any) -> Any:
     """Run a stage read with the stage cooked at the requested *time*.
 
     A LOP stage holds what its nodes authored at the frame they cooked on: an
@@ -280,7 +280,7 @@ def _cooked_at_time(handler):
     # wraps keeps the handler's signature visible: the dispatcher reads it to
     # explain a bad argument, and a bare **kwargs answered every call alike.
     @functools.wraps(handler)
-    def run(**kwargs):
+    def run(**kwargs: Any) -> Any:
         time = kwargs.get('time')
         if time is None or time == _stage_frame():
             return handler(**kwargs)
@@ -308,7 +308,7 @@ def _read_time(time: float | None) -> tuple[Any, float | None, str]:
     return Usd.TimeCode.Default(), None, 'default'
 
 
-def _name_matcher(patterns: list[str] | str | None):
+def _name_matcher(patterns: list[str] | str | None) -> Any:
     """A predicate on attribute/relationship names: globs, None = everything."""
 
     if not patterns:
@@ -978,7 +978,7 @@ register_command(PluginCommand.LOPS_GET_USD_ATTRIBUTES)(
 _MAX_TRANSFORM_FRAMES = 500
 
 
-def _decompose(matrix) -> dict[str, Any]:
+def _decompose(matrix: Any) -> dict[str, Any]:
     """Translate, rotate (XYZ degrees), scale and the row-major matrix of a Gf.Matrix4d."""
 
     transform = Gf.Transform(matrix)
@@ -1659,7 +1659,7 @@ def _get_usd_composition(
 
     # Pcp.PrimIndex has no nodeRange in current USD builds; walk the
     # composition graph from rootNode instead.
-    def _walk_nodes(node):
+    def _walk_nodes(node: Any) -> Any:
         yield node
         for child in node.children:
             yield from _walk_nodes(child)

@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+from typing import Any
 
 # Third-party
 import hou
@@ -31,7 +32,7 @@ from houdini_mcp_protocol import PluginCommand
 logger = logging.getLogger(__name__)
 
 
-def _no_mplay(settings) -> None:
+def _no_mplay(settings: Any) -> None:
     """Keep a flipbook from launching MPlay.
 
     MPlay is a child process of Houdini and inherits its file descriptors, the
@@ -46,7 +47,7 @@ def _no_mplay(settings) -> None:
         settings.outputToMPlay(False)
 
 
-def _capture_pane_tab_qt(pane_tab, output_path: str) -> None:
+def _capture_pane_tab_qt(pane_tab: Any, output_path: str) -> None:
     """Capture a pane tab screenshot via Qt.
 
     Houdini 20.x exposed PaneTab.qtParentWidget(); Houdini 21 removed it
@@ -110,7 +111,7 @@ def _capture_pane_tab_qt(pane_tab, output_path: str) -> None:
         )
 
 
-def _viewer_stage(scene_viewer):
+def _viewer_stage(scene_viewer: Any) -> Any:
     """The USD stage a Solaris viewer is displaying, or None.
 
     Tried in order because which of these is a LOP depends on what the user last
@@ -135,7 +136,7 @@ def _viewer_stage(scene_viewer):
     return None
 
 
-def _camera_prims(stage, limit: int = 12) -> list[str]:
+def _camera_prims(stage: Any, limit: int = 12) -> list[str]:
     """Camera prim paths on a stage, for error messages worth reading."""
 
     found: list[str] = []
@@ -148,7 +149,7 @@ def _camera_prims(stage, limit: int = 12) -> list[str]:
     return found
 
 
-def _is_scene_graph_view(scene_viewer) -> bool:
+def _is_scene_graph_view(scene_viewer: Any) -> bool:
     """Whether Hydra delegates apply at all.
 
     hydraRenderers() raises "Specified view is not a scene graph view" in an
@@ -530,7 +531,7 @@ def set_viewport_display(
 ###### viewport.set_viewport_direction
 
 
-def _vector3(value, name: str) -> tuple:
+def _vector3(value: Any, name: str) -> tuple:
     """Three floats from *value*, or a ValueError naming *name*."""
 
     try:
@@ -542,7 +543,7 @@ def _vector3(value, name: str) -> tuple:
     return numbers
 
 
-def _looked_through(viewport) -> tuple[str | None, bool]:
+def _looked_through(viewport: Any) -> tuple[str | None, bool]:
     """(camera the viewport looks through, whether it is a USD prim), or (None, False).
 
     A USD camera prim is no node: camera() is None there and only cameraPath()
@@ -1018,7 +1019,7 @@ _FRAME_PAD_X = 5.0
 _FRAME_PAD_Y = 3.0
 
 
-def _bounds_list(bounds) -> list | None:
+def _bounds_list(bounds: Any) -> list | None:
     """``hou.BoundingRect`` -> ``[xmin, ymin, xmax, ymax]``, rounded."""
 
     try:
@@ -1027,7 +1028,7 @@ def _bounds_list(bounds) -> list | None:
         return None
 
 
-def _frame_node(network_editor, node) -> list:
+def _frame_node(network_editor: Any, node: Any) -> list:
     """Put *node* in the middle of the editor at once, not after a flight.
 
     ``homeToSelection()`` animates the view over the next event-loop ticks,
@@ -1249,7 +1250,7 @@ def find_error_nodes(root_path: str = '/') -> dict:
     warning_nodes = []
     counts = {'errors': 0, 'warnings': 0}
 
-    def _check_node(node):
+    def _check_node(node: Any) -> Any:
         """Recursively check nodes for errors and warnings.
 
         Messages are condensed (one upstream error repeats on every node
@@ -1300,7 +1301,7 @@ def find_error_nodes(root_path: str = '/') -> dict:
 ###### Helpers
 
 
-def _find_scene_viewer(pane_name: str | None = None):
+def _find_scene_viewer(pane_name: str | None = None) -> Any:
     """Find a Scene Viewer pane tab by name, or the first one available.
 
     Args:
@@ -1333,7 +1334,7 @@ def _find_scene_viewer(pane_name: str | None = None):
     raise RuntimeError('No Scene Viewer pane found.')
 
 
-def _find_pane_by_name(pane_name: str):
+def _find_pane_by_name(pane_name: str) -> Any:
     """Find a pane tab by its name.
 
     Args:

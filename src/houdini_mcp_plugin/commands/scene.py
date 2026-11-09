@@ -152,7 +152,7 @@ def _warning_lines(warning: Exception) -> list[str]:
     return [line.strip() for line in str(warning).splitlines() if line.strip()]
 
 
-def _children_of(paths) -> dict[str, set]:
+def _children_of(paths: Any) -> dict[str, set]:
     """Child paths of each watched network, keyed by its path."""
 
     snapshot: dict[str, set] = {}

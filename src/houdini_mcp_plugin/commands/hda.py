@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextlib
 import os
 from difflib import get_close_matches
+from typing import Any
 
 # Third-party
 import hou
@@ -101,7 +102,7 @@ def _definition_to_dict(definition: hou.HDADefinition) -> dict:
     return info
 
 
-def _parm_template_to_dict(pt) -> dict:
+def _parm_template_to_dict(pt: Any) -> dict:
     """Convert a parm template to a plain dict."""
 
     info = {
@@ -133,7 +134,7 @@ def _parm_template_to_dict(pt) -> dict:
 ###### hda.list_installed_hdas
 
 
-def list_installed_hdas(filter: str = None, limit: int = 100) -> dict:  # ty: ignore[invalid-parameter-default]
+def list_installed_hdas(filter: str | None = None, limit: int = 100) -> dict:
     """List installed HDA definitions, grouped by library file.
 
     Unfiltered this answered every loaded definition, 3,636 on a stock 22.0
@@ -190,9 +191,9 @@ def list_installed_hdas(filter: str = None, limit: int = 100) -> dict:  # ty: ig
 
 
 def get_hda_info(
-    node_path: str = None,  # ty: ignore[invalid-parameter-default]
-    hda_file: str = None,  # ty: ignore[invalid-parameter-default]
-    type_name: str = None,  # ty: ignore[invalid-parameter-default]
+    node_path: str | None = None,
+    hda_file: str | None = None,
+    type_name: str | None = None,
 ) -> dict:
     """Return detailed information about an HDA definition.
 
@@ -585,7 +586,7 @@ def _menu_default(spec: dict, values: tuple) -> int:
     return index
 
 
-def _build_parm_template(spec: dict, seen: set):
+def _build_parm_template(spec: dict, seen: set) -> Any:
     """Turn one spec dict into a hou.ParmTemplate (recursive for folders)."""
 
     if not isinstance(spec, dict):
@@ -752,7 +753,7 @@ _NAMING_SCHEMES = {
 }
 
 
-def _naming_scheme(spec: dict, default):
+def _naming_scheme(spec: dict, default: Any) -> Any:
     """The hou.parmNamingScheme a spec asks for (`naming_scheme`), else *default*.
 
     A 2-component float called `fh_range` is `fh_rangex`/`fh_rangey` under the
@@ -772,7 +773,7 @@ def _naming_scheme(spec: dict, default):
     return getattr(hou.parmNamingScheme, attr)
 
 
-def _component_defaults(spec: dict, components: int, cast, fallback) -> tuple:
+def _component_defaults(spec: dict, components: int, cast: Any, fallback: Any) -> tuple:
     """Per-component defaults: a list is taken as is, a scalar is repeated."""
 
     default = spec.get('default', fallback)
@@ -789,7 +790,7 @@ def _component_defaults(spec: dict, components: int, cast, fallback) -> tuple:
 
 def _script_language(
     spec: dict, key: str = 'callback_language', default: str = 'python'
-):
+) -> Any:
     language = str(spec.get(key, default)).lower()
     if language in ('python', 'py'):
         return hou.scriptLanguage.Python
@@ -816,7 +817,7 @@ def _common_template_kwargs(spec: dict) -> dict:
     return kwargs
 
 
-def _apply_default_expression(template, spec: dict) -> None:
+def _apply_default_expression(template: Any, spec: dict) -> None:
     """`default_expression` on a spec: one string, or one per component."""
 
     expression = spec.get('default_expression')
@@ -847,7 +848,7 @@ def _apply_default_expression(template, spec: dict) -> None:
     template.setDefaultExpressionLanguage(tuple([language] * components))
 
 
-def _describe_template(template) -> dict:
+def _describe_template(template: Any) -> dict:
     """Read back what Houdini actually stored for one template.
 
     Built on parameter_handlers._template_to_dict, so the readback carries
@@ -943,7 +944,7 @@ _COMPONENT_SUFFIXES = {
 }
 
 
-def _component_names(template) -> list[str]:
+def _component_names(template: Any) -> list[str]:
     """The parameter names a template creates on the node.
 
     Houdini refuses the whole group when two templates produce the same
@@ -972,7 +973,7 @@ def _component_names(template) -> list[str]:
     ]
 
 
-def _is_multiparm(template) -> bool:
+def _is_multiparm(template: Any) -> bool:
     """A multiparm block is a Folder template that is not an actual folder."""
 
     if template.type().name() != 'Folder':
@@ -982,7 +983,7 @@ def _is_multiparm(template) -> bool:
     return False
 
 
-def _flatten_templates(entries, into_multiparms: bool = False) -> list:
+def _flatten_templates(entries: Any, into_multiparms: bool = False) -> list:
     """Every template in *entries*, folders included, depth-first.
 
     A multiparm block's children (`item#`) are templates, not parameters of
@@ -1002,7 +1003,7 @@ def _flatten_templates(entries, into_multiparms: bool = False) -> list:
     return flat
 
 
-def _names_under(template) -> set:
+def _names_under(template: Any) -> set:
     """*template*'s name and every name inside it."""
 
     names = {template.name()}
@@ -1014,7 +1015,7 @@ def _names_under(template) -> set:
     return names
 
 
-def _component_collisions(group) -> list[dict]:
+def _component_collisions(group: Any) -> list[dict]:
     """Pairs of templates whose names or component names collide.
 
     Two templates of one name collide (Houdini: "Parameter name 'size' is
@@ -1039,7 +1040,7 @@ def _component_collisions(group) -> list[dict]:
     return collisions
 
 
-def _folder_labels(target) -> tuple | None:
+def _folder_labels(target: Any) -> tuple | None:
     """A folder target as the labels tuple findFolder wants, or None."""
 
     if isinstance(target, (list, tuple)):
@@ -1047,7 +1048,7 @@ def _folder_labels(target) -> tuple | None:
     return None
 
 
-def _find_target(group, target, what: str = 'target'):
+def _find_target(group: Any, target: Any, what: str = 'target') -> Any:
     """Resolve an op target: a template name, a folder label, or nested labels.
 
     Names are what `parm_name`s are (`stud_count`, `t`); folders are usually
@@ -1080,7 +1081,7 @@ def _find_target(group, target, what: str = 'target'):
     )
 
 
-def _place(group, template, op: dict) -> str:
+def _place(group: Any, template: Any, op: dict) -> str:
     """Insert *template* where *op* says: after / before / in_folder / end."""
 
     if op.get('after') is not None:
@@ -1126,7 +1127,7 @@ _MODIFY_KEYS = (
 )
 
 
-def _modify_template(template, op: dict) -> list[str]:
+def _modify_template(template: Any, op: dict) -> list[str]:
     """Apply the `modify` fields of *op* to a cloned template; names what changed."""
 
     changed: list[str] = []
@@ -1261,7 +1262,7 @@ def _refuse_taken(names: set, existing: set, index: int, what: str) -> None:
         )
 
 
-def _apply_op(group, op: dict, index: int, existing: set) -> dict:
+def _apply_op(group: Any, op: dict, index: int, existing: set) -> dict:
     """Apply one op to *group*; returns a record for the reply."""
 
     if not isinstance(op, dict):
@@ -1579,7 +1580,7 @@ def _edit_interface(
     return result
 
 
-def _instance_expression_errors(node, names) -> list[dict]:
+def _instance_expression_errors(node: Any, names: Any) -> list[dict]:
     """Default expressions that fail to evaluate on *node*, one entry per parm."""
 
     failures = []
@@ -1831,7 +1832,7 @@ def _type_name_components(type_name: str) -> tuple[str, str, str, str] | None:
     return tuple(str(part) for part in parts)  # ty: ignore[invalid-return-type]
 
 
-def _version_key(version) -> tuple:
+def _version_key(version: Any) -> tuple:
     """Sort key that orders 1.2 before 1.10 and puts an unversioned first."""
 
     if not version:

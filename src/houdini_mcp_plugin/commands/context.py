@@ -92,7 +92,7 @@ def _non_default_parms(node: hou.Node) -> dict[str, Any]:
 _NAMED_INPUT_CATEGORIES = ('Vop', 'Cop')
 
 
-def _name_connectors(wire: dict, source, target, named_inputs: bool) -> None:
+def _name_connectors(wire: dict, source: Any, target: Any, named_inputs: bool) -> None:
     """Add the connector names that tell wires apart.
 
     The output's name when the source has more than one output (an index alone

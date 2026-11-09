@@ -447,7 +447,7 @@ def _get_attrib_values(
     }
 
 
-def _attrib_array(geo, cls: str, attrib):
+def _attrib_array(geo: Any, cls: str, attrib: Any) -> Any:
     """Every value of one attribute, flat: a numpy view for numbers.
 
     The tuple of Python floats this used to build is 3M objects for P on a
@@ -587,7 +587,7 @@ def _get_groups(*, node_path: str) -> dict[str, Any]:
     }
 
 
-def _group_page(group, iterator: str, lister: str, start: int, end: int) -> list:
+def _group_page(group: Any, iterator: str, lister: str, start: int, end: int) -> list:
     """Members start..end of a group, walking only that far into it."""
 
     import itertools
@@ -598,7 +598,7 @@ def _group_page(group, iterator: str, lister: str, start: int, end: int) -> list
         return list(getattr(group, lister)()[start:end])
 
 
-def _group_size(group, counter: str, lister: str) -> int:
+def _group_size(group: Any, counter: str, lister: str) -> int:
     """A group's member count without building its members (pointCount etc.)."""
 
     try:
@@ -816,7 +816,7 @@ register_command(PluginCommand.GEOMETRY_SAMPLE_GEOMETRY)(_sample_geometry)
 ###### geometry.get_prim_intrinsics
 
 
-def _intrinsic_row(prim, names: list[str] | None) -> dict[str, Any]:
+def _intrinsic_row(prim: Any, names: list[str] | None) -> dict[str, Any]:
     """One prim's intrinsics, all of them or just the ones asked for."""
 
     wanted = names if names is not None else list(prim.intrinsicNames())
@@ -1449,7 +1449,7 @@ def _attrib_stats_once(
     return result
 
 
-def _group_rows(geo, cls: str, group: str | None) -> list[int] | None:
+def _group_rows(geo: Any, cls: str, group: str | None) -> list[int] | None:
     """Numbers of the *cls* elements in the group pattern *group*, or None for all."""
 
     if not group:
@@ -1475,7 +1475,7 @@ def _value_counts(values: list, cap: int = 10) -> dict[str, Any]:
 
 
 def _string_counts(
-    geo, cls: str, name: str, rows: list[int] | None, size: int = 1
+    geo: Any, cls: str, name: str, rows: list[int] | None, size: int = 1
 ) -> dict[str, Any]:
     """count / unique_count / most_common of a string attribute, a tuple per element."""
 
@@ -1491,7 +1491,7 @@ def _string_counts(
 _VERTICES_PER_PRIM_CAP = 200_000
 
 
-def _vertices_per_prim(geo, rows: list[int] | None) -> dict[str, Any]:
+def _vertices_per_prim(geo: Any, rows: list[int] | None) -> dict[str, Any]:
     """Distribution of vertex counts per primitive (a trail's length)."""
 
     # ponytail: a Python walk, ~8 s per 1M prims measured on 22.0; no HOM bulk
@@ -1534,7 +1534,12 @@ def _list_stats(values: list[float], percentiles: list[float] | None) -> dict[st
 
 
 def _ratio_stats(
-    geo, cls: str, available: dict, ratio: str, rows: list[int] | None, percentiles
+    geo: Any,
+    cls: str,
+    available: dict,
+    ratio: str,
+    rows: list[int] | None,
+    percentiles: Any,
 ) -> dict[str, Any]:
     """Statistics of one attribute divided by another, element by element.
 
@@ -1567,7 +1572,7 @@ def _ratio_stats(
 
 
 def _distance_stats(
-    geo, cls: str, target_path: str, rows: list[int] | None, percentiles
+    geo: Any, cls: str, target_path: str, rows: list[int] | None, percentiles: Any
 ) -> dict[str, Any]:
     """How far each point is from another SOP's surface: crawling, hovering, sticking.
 
@@ -1600,7 +1605,7 @@ def _distance_stats(
 
 
 def _numpy_stats(
-    geo,
+    geo: Any,
     cls: str,
     kind: str,
     name: str,
@@ -1780,7 +1785,7 @@ def _named_volume(geo: hou.Geometry, name: str, node_path: str) -> Any:
 _MAX_VOXELS_READ = 64_000_000
 
 
-def _voxel_array(prim: Any):
+def _voxel_array(prim: Any) -> Any:
     """A volume's voxels as a float numpy array indexed [z, y, x], and its index origin.
 
     A VDB gives only its active region, and its bounding box maxvec is
@@ -1827,7 +1832,7 @@ def _voxel_array(prim: Any):
 _PERCENTILES = (1, 5, 25, 50, 75, 95, 99)
 
 
-def _edges(bins: Any):
+def _edges(bins: Any) -> Any:
     """A bin count, or a list of edges the caller chose (SDF bands, say)."""
 
     return (
@@ -1836,7 +1841,7 @@ def _edges(bins: Any):
 
 
 def _value_summary(
-    values, bins: Any = 0, threshold: float | None = None
+    values: Any, bins: Any = 0, threshold: float | None = None
 ) -> dict[str, Any]:
     """Count, extremes, mean, sum, percentiles; on request a histogram and a threshold split."""
 
@@ -1876,7 +1881,7 @@ def _value_summary(
 
 
 def _box_above(
-    prim: Any, array, origin: list[int], threshold: float
+    prim: Any, array: Any, origin: list[int], threshold: float
 ) -> dict[str, Any] | None:
     """World box of the voxels over ``threshold``: where the smoke is, not where the grid is."""
 

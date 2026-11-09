@@ -930,7 +930,7 @@ def _setup_vellum_sim(
 def _create_material(
     name: str | None = None,
     mat_type: str = 'principled',
-    base_color: list = None,  # ty: ignore[invalid-parameter-default]
+    base_color: list | None = None,
     roughness: float = 0.5,
     metallic: float = 0.0,
     opacity: float = 1.0,
@@ -1096,7 +1096,7 @@ def _assign_material(
 
 def _build_sop_chain(
     parent_path: str = '/obj/geo1',
-    steps: list = None,  # ty: ignore[invalid-parameter-default]
+    steps: list | None = None,
     **_: Any,
 ) -> dict:
     """Build a sequential chain of SOPs inside a network.
@@ -1155,9 +1155,9 @@ def _build_sop_chain(
 
 def _setup_render(
     renderer: str = 'karma',
-    camera: str = None,  # ty: ignore[invalid-parameter-default]
+    camera: str | None = None,
     output_path: str = '$HIP/render/output.$F4.exr',
-    resolution: list = None,  # ty: ignore[invalid-parameter-default]
+    resolution: list | None = None,
     samples: int = 64,
     name: str = 'render1',
     **_: Any,

@@ -64,8 +64,8 @@ ignore = ["SIM108"]
 # Ported Houdini-side handler code predates the stricter annotations and
 # line-length rules in this repository. Keep the server side strict.
 [tool.ruff.lint.per-file-ignores]
-"src/houdini_mcp_plugin/*.py" = ["ANN001", "ANN201", "ANN401", "E501", "RUF013"]
-"src/houdini_mcp_plugin/commands/*.py" = ["ANN001", "ANN002", "ANN003", "ANN201", "ANN202", "ANN401", "E501", "RUF013"]
+"src/houdini_mcp_plugin/*.py" = ["ANN401", "E501"]
+"src/houdini_mcp_plugin/commands/*.py" = ["ANN401", "E501"]
 
 [tool.ty.analysis]
 replace-imports-with-any = ["hwebserver", "hdefereval", "hou"]

@@ -38,8 +38,7 @@ Point your MCP client at the server:
 
 Restart Houdini after installing the package file.
 
-The plugin listens only on `127.0.0.1` and rejects browser and non-local requests.
-Houdini and the MCP client must run on the same machine.
+The plugin listens on `127.0.0.1`. Houdini and the MCP client run on the same machine.
 
 To remove it:
 

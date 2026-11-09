@@ -79,7 +79,7 @@ def _find_flipbook_output(output_path: str, frame: float) -> str:
     return output_path
 
 
-def _size_flipbook(settings, resolution: list | None) -> None:
+def _size_flipbook(settings: Any, resolution: list | None) -> None:
     """Write *resolution* if one is asked for, else the viewport as it is.
 
     A stash copies the viewer's Flipbook dialog settings, 1280x720 with Use
@@ -101,8 +101,8 @@ def _size_flipbook(settings, resolution: list | None) -> None:
 
 def render_viewport(
     output_path: str,
-    resolution: list = None,  # ty: ignore[invalid-parameter-default]
-    camera: str = None,  # ty: ignore[invalid-parameter-default]
+    resolution: list | None = None,
+    camera: str | None = None,
 ) -> dict:
     """Capture the current viewport to an image file.
 
@@ -179,7 +179,7 @@ def render_viewport(
 
 def render_quad_view(
     output_path: str,
-    resolution: list = None,  # ty: ignore[invalid-parameter-default]
+    resolution: list | None = None,
 ) -> dict:
     """Capture all four viewport panes (quad view) to an image file.
 
@@ -265,7 +265,7 @@ def list_render_nodes() -> dict:
 
     render_nodes = []
 
-    def _collect_rops(parent):
+    def _collect_rops(parent: Any) -> Any:
         """Recursively collect all Driver-category nodes."""
 
         for child in parent.children():
@@ -430,9 +430,9 @@ def set_render_settings(node_path: str, settings: dict) -> dict:
 
 def create_render_node(
     renderer: str,
-    name: str = None,  # ty: ignore[invalid-parameter-default]
-    camera: str = None,  # ty: ignore[invalid-parameter-default]
-    output_path: str = None,  # ty: ignore[invalid-parameter-default]
+    name: str | None = None,
+    camera: str | None = None,
+    output_path: str | None = None,
 ) -> dict:
     """Create a new render (ROP) node in /out.
 
@@ -797,9 +797,9 @@ def _apply_overrides(
 
 def start_render(
     node_path: str,
-    frame_range: list = None,  # ty: ignore[invalid-parameter-default]
+    frame_range: list | None = None,
     background: bool = False,
-    overrides: dict = None,  # ty: ignore[invalid-parameter-default]
+    overrides: dict | None = None,
 ) -> dict:
     """Begin rendering a ROP node.
 

@@ -124,7 +124,7 @@ def parm_labels(node: hou.Node) -> dict[str, str]:
     return {p.name(): p.description() for p in node.parms()}
 
 
-def template_labels(templates) -> dict[str, str]:
+def template_labels(templates: Any) -> dict[str, str]:
     """Name -> label for a node type's parm templates, folders walked."""
 
     labels: dict[str, str] = {}
@@ -2528,7 +2528,7 @@ def _prune_tree(
     return kept
 
 
-def _node_type_for_tree(context: str, type_name: str):
+def _node_type_for_tree(context: str, type_name: str) -> Any:
     """Resolve *type_name* in *context* the way createNode would, through the
     same resolver build_network and get_node_card use."""
 

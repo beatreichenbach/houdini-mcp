@@ -53,7 +53,7 @@ _DEFAULT_KWARGS: dict[str, Any] = {
 }
 
 
-def _tool_entry(tool, include_help: bool = False) -> dict[str, Any]:
+def _tool_entry(tool: Any, include_help: bool = False) -> dict[str, Any]:
     entry: dict[str, Any] = {'name': tool.name()}
     with contextlib.suppress(Exception):
         entry['label'] = tool.label()
@@ -240,7 +240,7 @@ def interactive_markers(script: str) -> list[str]:
     return [m for m in _INTERACTIVE_MARKERS if m in script]
 
 
-def _object_selection(given: list | None):
+def _object_selection(given: list | None) -> Any:
     """A stand-in for SceneViewer.selectObjects that answers without a click.
 
     With use_existing_selection (the default) Houdini hands a tool the objects
@@ -357,7 +357,7 @@ def _editor_in(network: hou.Node) -> Iterator[hou.Node | None]:
 
 
 @contextlib.contextmanager
-def _no_prompts(tool_name: str, selection: list | None = None, tool: Any = None):
+def _no_prompts(tool_name: str, selection: list | None = None, tool: Any = None) -> Any:
     """Make every viewport selection and dialog raise instead of waiting.
 
     An object selection is the exception: it is answered with *selection*, or
@@ -367,8 +367,8 @@ def _no_prompts(tool_name: str, selection: list | None = None, tool: Any = None)
     doptoolutils on runningTool().name().
     """
 
-    def refuse(name):
-        def _raise(*_a, **_k):
+    def refuse(name: Any) -> Any:
+        def _raise(*_a: Any, **_k: Any) -> Any:
             raise InteractivePrompt(name)
 
         return _raise

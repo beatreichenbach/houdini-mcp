@@ -9,6 +9,7 @@ from __future__ import annotations
 # Built-in
 import contextlib
 import logging
+from typing import Any
 
 # Third-party
 import hou
@@ -284,7 +285,7 @@ def get_cop_layer(node_path: str, output_index: int = 0) -> dict:
     return result
 
 
-def _layer_summary(layer) -> dict:
+def _layer_summary(layer: Any) -> dict:
     """Resolution, channels and per-channel value range of a Copernicus layer.
 
     computeMin/Max/Average run in Houdini, so no pixel crosses into Python.
@@ -322,7 +323,7 @@ def _layer_summary(layer) -> dict:
 def create_cop_node(
     parent_path: str,
     cop_type: str,
-    name: str = None,  # ty: ignore[invalid-parameter-default]
+    name: str | None = None,
 ) -> dict:
     """Create a Copernicus COP node.
 
@@ -362,9 +363,9 @@ def create_cop_node(
 
 def set_cop_flags(
     node_path: str,
-    display: bool = None,  # ty: ignore[invalid-parameter-default]
-    export_flag: bool = None,  # ty: ignore[invalid-parameter-default]
-    compress: bool = None,  # ty: ignore[invalid-parameter-default]
+    display: bool | None = None,
+    export_flag: bool | None = None,
+    compress: bool | None = None,
 ) -> dict:
     """Set flags on a COP node.
 
@@ -413,7 +414,7 @@ def set_cop_flags(
 ###### cops.list_cop_node_types
 
 
-def list_cop_node_types(filter: str = None) -> dict:  # ty: ignore[invalid-parameter-default]
+def list_cop_node_types(filter: str | None = None) -> dict:
     """List available COP node types.
 
     Args:

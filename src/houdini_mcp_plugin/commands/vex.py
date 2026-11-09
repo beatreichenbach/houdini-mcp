@@ -126,7 +126,7 @@ def create_wrangle(
     parent_path: str,
     vex_code: str,
     run_over: str = 'Points',
-    name: str = None,  # ty: ignore[invalid-parameter-default]
+    name: str | None = None,
 ) -> dict:
     """Create an Attribute Wrangle node with VEX code.
 

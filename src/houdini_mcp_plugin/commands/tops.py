@@ -8,6 +8,7 @@ from __future__ import annotations
 
 # Built-in
 import logging
+from typing import Any
 
 # Third-party
 import hou
@@ -49,7 +50,7 @@ def _get_top_node(node_path: str) -> hou.Node:
     )
 
 
-def _get_pdg_node(node: hou.Node):
+def _get_pdg_node(node: hou.Node) -> Any:
     """Return the underlying PDG node for a TOP node."""
 
     pdg_node = node.getPDGNode()
@@ -103,7 +104,7 @@ def _assert_has_generating_node(node: hou.Node) -> None:
         )
 
 
-def _get_graph_context(node: hou.Node):
+def _get_graph_context(node: hou.Node) -> Any:
     """Return the PDG graph context for a TOP node."""
 
     pdg_node = node.getPDGNode()
@@ -147,7 +148,7 @@ def _get_graph_context(node: hou.Node):
     )
 
 
-def _work_item_state_name(state) -> str:
+def _work_item_state_name(state: Any) -> str:
     """Convert a PDG work item state enum to a readable string."""
 
     state_map = {
@@ -169,7 +170,7 @@ def _work_item_state_name(state) -> str:
         return str(state)
 
 
-def _state_counts(pdg_node) -> dict:
+def _state_counts(pdg_node: Any) -> dict:
     """How many work items sit in each state, by readable name."""
 
     counts: dict = {}
@@ -179,7 +180,7 @@ def _state_counts(pdg_node) -> dict:
     return counts
 
 
-def _work_item_to_dict(work_item) -> dict:
+def _work_item_to_dict(work_item: Any) -> dict:
     """Convert a PDG work item to a plain dict."""
 
     info = {
@@ -861,7 +862,7 @@ def _log_uri_to_path(uri: str) -> str:
     return uri[len('file:') :]
 
 
-def _work_item_log(work_item) -> str:
+def _work_item_log(work_item: Any) -> str:
     """This item's log text, or empty.
 
     In-process items (the default for Python Script, and every item cooked without
