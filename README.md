@@ -19,7 +19,7 @@ uv pip install -e .
 Install the Houdini package file:
 
 ```sh
-.venv/bin/python -m houdini_mcp install
+.venv/bin/houdini-mcp install
 ```
 
 This writes `houdini_mcp.json` into the detected Houdini packages directories, for example `~/houdini21.0/packages`.
@@ -31,11 +31,7 @@ Point your MCP client at the server:
 {
   "mcpServers": {
     "houdini": {
-      "command": "/path/to/houdini-mcp/.venv/bin/python",
-      "args": [
-        "-m",
-        "houdini_mcp"
-      ]
+      "command": "/path/to/houdini-mcp/.venv/bin/houdini-mcp"
     }
   }
 }
@@ -49,7 +45,7 @@ Houdini and the MCP client run on the same machine.
 To remove it:
 
 ```sh
-.venv/bin/python -m houdini_mcp uninstall
+.venv/bin/houdini-mcp uninstall
 ```
 
 ## Custom content
@@ -69,8 +65,8 @@ Use `{context}` for the caller's context and `{include:name}` to include a share
 Inspect content with:
 
 ```sh
-.venv/bin/python -m houdini_mcp content path
-.venv/bin/python -m houdini_mcp content list
+.venv/bin/houdini-mcp content path
+.venv/bin/houdini-mcp content list
 ```
 
 ## Environment variables

@@ -1,8 +1,10 @@
 import asyncio
 import json
+import os
 import sys
 import urllib.parse
 import urllib.request
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -39,10 +41,10 @@ def _plugin_port() -> int:
 
 
 async def _read_resources(uris: list[str]) -> list[Any]:
-    params = StdioServerParameters(
-        command=sys.executable,
-        args=['-m', 'houdini_mcp'],
+    script = Path(sys.executable).with_name(
+        'houdini-mcp.exe' if os.name == 'nt' else 'houdini-mcp'
     )
+    params = StdioServerParameters(command=str(script))
     async with (
         stdio_client(params) as (read, write),
         ClientSession(read, write) as session,

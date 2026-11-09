@@ -48,17 +48,22 @@ def uninstall(packages_dir: Path | None = None) -> list[Path]:
 def client_config() -> str:
     """Return the MCP client configuration as JSON."""
 
-    return json.dumps(
-        {
-            'mcpServers': {
-                'houdini': {
-                    'command': sys.executable,
-                    'args': ['-m', 'houdini_mcp'],
-                }
-            }
-        },
-        indent=2,
+    command, args = _client_command()
+    server: dict[str, object] = {'command': command}
+    if args:
+        server['args'] = args
+    return json.dumps({'mcpServers': {'houdini': server}}, indent=2)
+
+
+def _client_command() -> tuple[str, list[str]]:
+    """Return the MCP client command and its arguments."""
+
+    script = Path(sys.executable).with_name(
+        'houdini-mcp.exe' if os.name == 'nt' else 'houdini-mcp'
     )
+    if script.is_file():
+        return str(script), []
+    return sys.executable, ['-m', 'houdini_mcp']
 
 
 def _repo_root() -> Path:
