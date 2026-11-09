@@ -1,5 +1,10 @@
 # Houdini MCP
 
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://github.com/beatreichenbach/houdini-mcp)
+[![License](https://img.shields.io/github/license/beatreichenbach/houdini-mcp.svg)](https://github.com/beatreichenbach/houdini-mcp/blob/main/LICENSE)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![ty](https://img.shields.io/badge/type%20checked-ty-261230.svg)](https://github.com/astral-sh/ty)
+
 An MCP server for SideFX Houdini.
 
 ## Installation
@@ -7,8 +12,8 @@ An MCP server for SideFX Houdini.
 Create a virtual environment and install the server:
 
 ```sh
-python -m venv .venv
-.venv/bin/pip install -e .
+uv venv
+uv pip install -e .
 ```
 
 Install the Houdini package file:
@@ -38,7 +43,8 @@ Point your MCP client at the server:
 
 Restart Houdini after installing the package file.
 
-The plugin listens on `127.0.0.1`. Houdini and the MCP client run on the same machine.
+The plugin listens on `127.0.0.1`.
+Houdini and the MCP client run on the same machine.
 
 To remove it:
 
@@ -49,8 +55,8 @@ To remove it:
 ## Custom content
 
 Built-in content lives in `src/houdini_mcp/content/`.
-User content lives in the platform config directory or custom directories set with `HOUDINI_MCP_CONTENT` under
-`houdini_mcp/content/` and can overwrite existing files:
+User content lives in the platform config directory or in custom directories set with `HOUDINI_MCP_CONTENT`.
+User content mirrors the built-in layout under `houdini_mcp/content/` and can overwrite existing files:
 
 ```text
 ~/.config/houdini_mcp/content/
@@ -58,7 +64,7 @@ User content lives in the platform config directory or custom directories set wi
     └── my-workflow.md
 ```
 
-Use `{context}` for the caller’s context and `{include:name}` to include a shared fragment.
+Use `{context}` for the caller's context and `{include:name}` to include a shared fragment.
 
 Inspect content with:
 
@@ -92,4 +98,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup and check comma
 
 MIT License.
 Copyright 2026 - Beat Reichenbach.
-See the [License](LICENSE) file for details.
+See the [LICENSE](LICENSE) file for details.
