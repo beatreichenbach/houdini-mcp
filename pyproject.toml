@@ -10,7 +10,8 @@ license = "MIT"
 readme = "README.md"
 dependencies = [
     "mcp>=2.3,<3",
-    "httpx>=0.27,<1"
+    "httpx>=0.27,<1",
+    "platformdirs>=4.0,<5"
 ]
 
 [project.optional-dependencies]
@@ -33,7 +34,10 @@ where = ["src"]
 include = ["houdini_mcp*", "houdini_mcp_protocol*", "houdini_mcp_plugin*"]
 
 [tool.setuptools.package-data]
-houdini_mcp = ["py.typed"]
+houdini_mcp = [
+    "py.typed",
+    "content/**/*.md",
+]
 houdini_mcp_protocol = ["py.typed"]
 houdini_mcp_plugin = ["py.typed"]
 
