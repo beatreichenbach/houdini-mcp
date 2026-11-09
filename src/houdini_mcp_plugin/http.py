@@ -55,7 +55,7 @@ def _guard(request: object) -> hwebserver.Response | None:
     except Exception:
         logger.debug('Could not read request headers', exc_info=True)
         headers = {}
-    if security.request_allowed(headers, startup.get_port()):
+    if security.request_allowed(headers):
         return None
     return _forbidden('request is not allowed from this origin')
 
