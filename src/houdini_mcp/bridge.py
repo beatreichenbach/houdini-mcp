@@ -202,3 +202,21 @@ async def find_servers(
             *(probe(client, port) for port in range(base_port, base_port + max_tries))
         )
     return [result for result in results if result is not None]
+
+
+_bridge: HoudiniBridge | None = None
+
+
+def set_bridge(bridge: HoudiniBridge | None) -> None:
+    """Set the process bridge, or clear it when the server stops."""
+
+    global _bridge
+    _bridge = bridge
+
+
+def current_bridge() -> HoudiniBridge:
+    """Return the process bridge for callers without a request context."""
+
+    if _bridge is None:
+        raise RuntimeError('no Houdini bridge; the server has not started')
+    return _bridge

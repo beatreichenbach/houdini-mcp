@@ -67,7 +67,6 @@ def test_instructions_include_workflow_index(tmp_path: Path) -> None:
     instructions = build_instructions(content)
 
     assert 'demo: Demo workflow.' in instructions
-    assert 'houdini-mcp://workflows' in instructions
 
 
 def test_instructions_omit_empty_workflow_index(tmp_path: Path) -> None:

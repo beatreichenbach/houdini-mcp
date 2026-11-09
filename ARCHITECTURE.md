@@ -68,9 +68,9 @@ houdini-mcp/
 - Content is data, not executable code.
 - The Houdini package points at the live repository, so updating is a git pull rather than reinstalling a package.
 
-## Content, resources, and prompts
+## Content
 
-Content, resources, and prompts are server-side.
+Content is server-side.
 They do not require the plugin and do not import Houdini modules.
 
 Content lives in three directories:
@@ -88,34 +88,25 @@ A local file with the same relative name replaces the built-in file.
 New local files add content.
 
 Workflows use `{context}` for the prompt argument and `{include:name}` for shared fragments.
+Each workflow file becomes a prompt with the same name.
 
-Example:
+## Resources
 
-```md
-# Pyro
+Resources expose live Houdini data as read-only JSON.
+They require the plugin:
 
-Guide for setting up pyro simulations.
+- `houdini-mcp://scene`: current scene information.
+- `houdini-mcp://scene/selection`: nodes selected in the current session.
+- `houdini-mcp://scene/nodes`: top-level nodes in the current scene.
+- `houdini-mcp://scene/nodes{+path}`: details for a node, for example `houdini-mcp://scene/nodes/obj/geo1`.
 
-{include:cleanup}
-
-## Context
-
-{context}
-```
-
-That file becomes the `pyro` prompt and the `houdini-mcp://workflows/pyro` resource.
-
-Resources:
-
-- Workflow markdown is exposed as read-only `houdini-mcp://workflows/<name>` resources.
-
-Instructions are not exposed as prompts or resources.
-They are sent to the client when the server initializes.
+Static resources cannot receive a request context, so dynamic resources read the process bridge set during the server
+lifespan.
 
 ## Tools
 
 Tools are executable MCP actions.
-Unlike workflows, resources, and prompts, tools are code on the server side and often require a matching plugin command.
+Unlike content and resources, tools are code on the server side and often require a matching plugin command.
 
 A tool that wraps an existing Houdini command lives under `src/houdini_mcp/tools/`.
 A tool that needs new Houdini behavior also needs a matching command enum and a handler under

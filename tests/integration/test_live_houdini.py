@@ -1,9 +1,14 @@
+import asyncio
 import json
+import sys
 import urllib.parse
 import urllib.request
 from typing import Any
 
 import pytest
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+from mcp_types import TextResourceContents
 
 pytestmark = pytest.mark.integration
 
@@ -33,6 +38,26 @@ def _plugin_port() -> int:
     pytest.skip('no running Houdini MCP plugin')
 
 
+async def _read_resources(uris: list[str]) -> list[Any]:
+    params = StdioServerParameters(
+        command=sys.executable,
+        args=['-m', 'houdini_mcp'],
+    )
+    async with (
+        stdio_client(params) as (read, write),
+        ClientSession(read, write) as session,
+    ):
+        await session.initialize()
+        payloads: list[Any] = []
+        for uri in uris:
+            result = await session.read_resource(uri)
+            content = result.contents[0]
+            if not isinstance(content, TextResourceContents):
+                raise TypeError(f'expected text resource for {uri}')
+            payloads.append(json.loads(content.text))
+        return payloads
+
+
 def test_get_scene_info() -> None:
     port = _plugin_port()
     response = _call(
@@ -45,3 +70,23 @@ def test_get_scene_info() -> None:
 
     assert response['status'] == 'success'
     assert 'houdini_version' in response['data']
+
+
+def test_scene_resources() -> None:
+    _plugin_port()
+
+    scene, selection, nodes, node = asyncio.run(
+        _read_resources(
+            [
+                'houdini-mcp://scene',
+                'houdini-mcp://scene/selection',
+                'houdini-mcp://scene/nodes',
+                'houdini-mcp://scene/nodes/obj',
+            ]
+        )
+    )
+
+    assert 'houdini_version' in scene
+    assert isinstance(selection['nodes'], list)
+    assert nodes['path'] == '/'
+    assert node['path'] == '/obj'

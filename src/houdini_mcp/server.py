@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from mcp.server.mcpserver import MCPServer
 
 from . import __version__
-from .bridge import HoudiniBridge
+from .bridge import HoudiniBridge, set_bridge
 from .config import Settings
 from .prompts import build_instructions, load_content, register_prompts
 from .resources import register_resources
@@ -23,10 +23,12 @@ def create_server(settings: Settings) -> MCPServer[dict[str, HoudiniBridge]]:
         _server: MCPServer[dict[str, HoudiniBridge]],
     ) -> AsyncGenerator[dict[str, HoudiniBridge], None]:
         bridge = HoudiniBridge(settings)
-        await bridge.discover()
         try:
+            await bridge.discover()
+            set_bridge(bridge)
             yield {'bridge': bridge}
         finally:
+            set_bridge(None)
             await bridge.close()
 
     server = MCPServer(
@@ -36,6 +38,6 @@ def create_server(settings: Settings) -> MCPServer[dict[str, HoudiniBridge]]:
         lifespan=lifespan,
     )
     register_tools(server)
-    register_resources(server, content)
+    register_resources(server)
     register_prompts(server, content)
     return server

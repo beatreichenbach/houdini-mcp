@@ -18,3 +18,9 @@ class HoudiniCommandError(HoudiniMCPError):
         super().__init__(message)
         self.code = code
         self.details = details or {}
+
+    def __str__(self) -> str:
+        message = super().__str__()
+        if not self.code:
+            return message
+        return f'{message} (code: {self.code})'

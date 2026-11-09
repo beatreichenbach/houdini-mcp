@@ -6,7 +6,7 @@ from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.exceptions import ToolError
 
 from ..bridge import HoudiniBridge
-from ..errors import HoudiniCommandError, HoudiniMCPError
+from ..errors import HoudiniMCPError
 
 BridgeContext = Context[dict[str, HoudiniBridge], Any]
 
@@ -30,10 +30,4 @@ async def run_command(
     try:
         return await get_bridge(ctx).execute(command, params)
     except HoudiniMCPError as exc:
-        raise ToolError(_message(exc)) from exc
-
-
-def _message(error: HoudiniMCPError) -> str:
-    if isinstance(error, HoudiniCommandError):
-        return f'{error} (code: {error.code})'
-    return str(error)
+        raise ToolError(str(exc)) from exc

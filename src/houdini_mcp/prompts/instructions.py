@@ -14,12 +14,5 @@ def build_instructions(content: Content) -> str:
             f'- {workflow.name}: {workflow.description}'
             for workflow in content.workflows.values()
         )
-        lines.extend(
-            [
-                '',
-                'Each workflow is available as a prompt with the same name.',
-                'Workflow files are available as '
-                'houdini-mcp://workflows/<name> resources.',
-            ]
-        )
+        lines.extend(['', 'Each workflow is available as a prompt with the same name.'])
     return '\n'.join(lines)
