@@ -11,11 +11,11 @@ Look it up; do not guess.
 
 ## Web lookup
 
-Use web access when local documentation does not cover the question, or when the answer depends on an external standard or current release.
+Use web access when local documentation does not cover the question, or when the answer depends on an external standard
+or current release.
 
-- SideFX documentation: https://www.sidefx.com/docs/houdini/
 - SideFX `llms.txt`: https://www.sidefx.com/llms.txt
-- Houdini docs `llms.txt`: https://www.sidefx.com/docs/houdini/llms.txt
+- SideFX documentation: https://www.sidefx.com/docs/houdini/
 - SideFX tutorials: https://www.sidefx.com/tutorials/
 - SideFX tech articles: https://www.sidefx.com/tech-articles/
 - SideFX forum: https://www.sidefx.com/forum/
@@ -26,8 +26,10 @@ Use web access when local documentation does not cover the question, or when the
 
 - OpenUSD documentation: https://openusd.org/release/index.html
 - USD Survival Guide: https://lucascheller.github.io/VFX-UsdSurvivalGuide/
-- usd-wg asset structure and component standards: https://github.com/usd-wg/assets/blob/main/docs/asset-structure-guidelines.md
+- usd-wg asset structure and component
+  standards: https://github.com/usd-wg/assets/blob/main/docs/asset-structure-guidelines.md
 - usd-wg assets repository: https://github.com/usd-wg/assets
 - Solaris documentation: https://www.sidefx.com/docs/houdini/solaris/
 
-For USD composition, schema, and asset-structure questions, cite the external standard rather than treating Houdini's LOP behavior as the whole answer.
+For USD composition, schema, and asset-structure questions, cite the external standard rather than treating Houdini's
+LOP behavior as the whole answer.
