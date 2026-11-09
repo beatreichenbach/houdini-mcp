@@ -22,13 +22,11 @@ is against a snapshot taken beforehand.
 
 from __future__ import annotations
 
-# Built-in
 import contextlib
 import os
 import time
 from typing import Any
 
-# Third-party
 import hou
 
 # Where different node types keep their output path. A render that reports success

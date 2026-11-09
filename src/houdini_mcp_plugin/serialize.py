@@ -16,11 +16,8 @@ parameter can never take down a whole response.
 from __future__ import annotations
 
 import contextlib
-
-# Built-in
 from typing import Any
 
-# Third-party
 import hou
 
 ###### Constants

@@ -38,14 +38,12 @@ before it.
 
 from __future__ import annotations
 
-# Built-in
 import builtins
 import contextlib
 import textwrap
 import traceback
 from typing import Any
 
-# Third-party
 import hou
 
 

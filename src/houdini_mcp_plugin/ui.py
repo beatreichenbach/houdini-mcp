@@ -16,17 +16,14 @@ a detail of the search: with no UI at all there are no panes to look through.
 
 from __future__ import annotations
 
-# Built-in
 import contextlib
 import fnmatch
 import re
 from collections.abc import Generator
 from typing import Any
 
-# Third-party
 import hou
 
-# Internal
 from houdini_mcp_plugin.config import layout_if_enabled
 
 

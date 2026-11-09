@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-# Built-in
 import contextlib
 import os
 from typing import Any
 
-# Third-party
 import hou
 
-# Internal
 from houdini_mcp_plugin import constants
 
 _FALSY = {'0', 'false', 'off', 'no'}
