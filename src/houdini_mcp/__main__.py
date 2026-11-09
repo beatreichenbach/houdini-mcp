@@ -8,9 +8,18 @@ from pathlib import Path
 from .config import Settings
 from .install import client_config, install, uninstall
 from .logging_config import configure_logging
+from .prompts import Content, load_content, local_content_dir
 from .server import create_server
 
 logger = logging.getLogger(__name__)
+
+
+def _load_content_or_exit() -> Content:
+    try:
+        return load_content()
+    except ValueError as exc:
+        logger.error('%s', exc)
+        raise SystemExit(1) from exc
 
 
 def main() -> None:
@@ -20,14 +29,36 @@ def main() -> None:
     parser.add_argument(
         'command',
         nargs='?',
-        choices=('run', 'install', 'uninstall'),
+        choices=('run', 'install', 'uninstall', 'content'),
         default='run',
+    )
+    parser.add_argument(
+        'content_command',
+        nargs='?',
+        choices=('path', 'list', 'validate'),
+        default='list',
     )
     parser.add_argument('--packages-dir', type=Path)
     args = parser.parse_args()
 
     settings = Settings.from_env()
     configure_logging(settings.log_level)
+
+    if args.command == 'content':
+        if args.content_command == 'path':
+            print(local_content_dir())
+            return
+        content = _load_content_or_exit()
+        if args.content_command == 'list':
+            for workflow in content.workflows.values():
+                print(f'{workflow.name}\t{workflow.description}\t{workflow.path}')
+            return
+        logger.info(
+            'Content validation passed: %d workflows, %d shared files',
+            len(content.workflows),
+            len(content.shared),
+        )
+        return
 
     if args.command == 'install':
         try:
