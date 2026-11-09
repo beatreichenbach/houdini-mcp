@@ -22,6 +22,15 @@ def _load_content_or_exit() -> Content:
         raise SystemExit(1) from exc
 
 
+def _validate_content_or_exit(content: Content) -> None:
+    try:
+        for workflow in content.workflows.values():
+            workflow.source(content.shared)
+    except ValueError as exc:
+        logger.error('%s', exc)
+        raise SystemExit(1) from exc
+
+
 def main() -> None:
     """Run the MCP server or install the Houdini package."""
 
@@ -41,8 +50,8 @@ def main() -> None:
     parser.add_argument('--packages-dir', type=Path)
     args = parser.parse_args()
 
-    settings = Settings.from_env()
-    configure_logging(settings.log_level)
+    if args.command != 'run':
+        configure_logging(logging.INFO)
 
     if args.command == 'content':
         if args.content_command == 'path':
@@ -53,6 +62,7 @@ def main() -> None:
             for workflow in content.workflows.values():
                 print(f'{workflow.name}\t{workflow.description}\t{workflow.path}')
             return
+        _validate_content_or_exit(content)
         logger.info(
             'Content validation passed: %d workflows, %d shared files',
             len(content.workflows),
@@ -79,6 +89,8 @@ def main() -> None:
             logger.info('Removed %s', path)
         return
 
+    settings = Settings.from_env()
+    configure_logging(settings.log_level)
     logger.info('Starting Houdini MCP server')
     server = create_server(settings)
     with contextlib.suppress(KeyboardInterrupt):
