@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 from ..bridge import NO_TIMEOUT
-from ..config import auto_layout_enabled
 from ..errors import HoudiniCommandError
 from .context import BridgeContext, run_command
 from .registry import tool
@@ -320,14 +319,6 @@ async def layout_children(
 ) -> dict:
     """Auto-layout children of a network node."""
 
-    if not auto_layout_enabled():
-        return {
-            'skipped': True,
-            'reason': (
-                'Auto-layout is disabled (HOUDINI_MCP_AUTO_LAYOUT=0). '
-                'Leave node positions as they are; do not retry.'
-            ),
-        }
     params: dict = {'parent_path': parent_path}
     if spacing is not None:
         params['spacing'] = spacing

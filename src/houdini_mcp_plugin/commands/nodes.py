@@ -16,6 +16,7 @@ from typing import Any
 import hou
 
 # Internal
+from houdini_mcp_plugin import constants
 from houdini_mcp_plugin.callbacks import (
     CallbackError,
     action_script,
@@ -194,7 +195,7 @@ def _delete_nodes(node_paths: list) -> dict:
 ###### nodes.rename_node
 
 
-def _refuse_taken_name(parent, name: str, node=None) -> None:
+def _refuse_taken_name(parent: Any, name: str, node: Any = None) -> None:
     """Raise when ``name`` belongs to another child of ``parent``.
 
     Houdini's own answer to a clash is a silent "name1", which rename, copy and
@@ -492,7 +493,7 @@ def _non_default_parms(node: hou.Node, parms: list[hou.Parm]) -> list[dict[str, 
 
 
 def _name_input(
-    entry: dict, node, source, output_index: int, named_inputs: bool
+    entry: dict, node: Any, source: Any, output_index: int, named_inputs: bool
 ) -> None:
     """Name the wire into *entry*'s input where an index alone is ambiguous.
 
@@ -759,7 +760,7 @@ def list_node_types(
     context: str,
     filter: str | None = None,
     limit: int = 200,
-    **_,
+    **_: Any,
 ) -> dict:
     """List available node types in a given context category.
 
@@ -963,7 +964,7 @@ def _resolve_input_index(
 
 def _indirect_input_item(
     subnet: hou.Node, indirect: Any, connectors: list | None = None
-):
+) -> Any:
     """Input connector *indirect* of *subnet*, or ValueError saying why not.
 
     The one rule for connect_nodes, connect_nodes_batch and build_network.
@@ -1583,7 +1584,7 @@ def layout_children(parent_path: str, spacing: float | None = None) -> dict:
         return {
             'success': False,
             'skipped': True,
-            'reason': 'Auto-layout is disabled (HOUDINI_MCP_AUTO_LAYOUT=0).',
+            'reason': f'Auto-layout is disabled ({constants.AUTO_LAYOUT}=0).',
         }
 
     if spacing is not None:

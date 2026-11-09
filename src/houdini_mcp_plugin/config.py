@@ -5,9 +5,13 @@ from __future__ import annotations
 # Built-in
 import contextlib
 import os
+from typing import Any
 
 # Third-party
 import hou
+
+# Internal
+from houdini_mcp_plugin import constants
 
 _FALSY = {'0', 'false', 'off', 'no'}
 
@@ -23,23 +27,23 @@ def auto_layout_enabled() -> bool:
     network after they work.
     """
 
-    value = hou.getenv('HOUDINI_MCP_AUTO_LAYOUT')
+    value = hou.getenv(constants.AUTO_LAYOUT)
     if value is None:
-        value = os.environ.get('HOUDINI_MCP_AUTO_LAYOUT', '0')
+        value = os.environ.get(constants.AUTO_LAYOUT, '0')
     return value.strip().lower() not in _FALSY
 
 
-def output_grace_seconds() -> float:
+def output_timeout_seconds() -> float:
     """How long a clean render or cache write may take to show its file.
 
-    ``HOUDINI_MCP_OUTPUT_GRACE`` via ``hou.getenv`` first, then the process
+    ``HOUDINI_MCP_OUTPUT_TIMEOUT`` via ``hou.getenv`` first, then the process
     environment; default 2 seconds. A usdrender_rop returns when husk exits
     and the image can land a moment later; on a slow share raise this rather
     than read "nothing was written" for a render that worked.
     """
 
-    value = hou.getenv('HOUDINI_MCP_OUTPUT_GRACE') or os.environ.get(
-        'HOUDINI_MCP_OUTPUT_GRACE'
+    value = hou.getenv(constants.OUTPUT_TIMEOUT) or os.environ.get(
+        constants.OUTPUT_TIMEOUT
     )
     try:
         seconds = float(value) if value else 2.0
@@ -58,9 +62,7 @@ def project_root() -> str | None:
     environment, so it can live in houdini.env or be set at runtime.
     """
 
-    value = hou.getenv('HOUDINI_MCP_PROJECT_ROOT') or os.environ.get(
-        'HOUDINI_MCP_PROJECT_ROOT'
-    )
+    value = hou.getenv(constants.PROJECT_ROOT) or os.environ.get(constants.PROJECT_ROOT)
     if not value or not value.strip():
         return None
     return os.path.realpath(hou.text.expandString(value.strip()))
@@ -86,7 +88,7 @@ def require_inside_project_root(file_path: str, what: str = 'path') -> str:
         inside = False
     if not inside:
         raise PermissionError(
-            f"{what} '{file_path}' is outside HOUDINI_MCP_PROJECT_ROOT ({root}). "
+            f"{what} '{file_path}' is outside {constants.PROJECT_ROOT} ({root}). "
             f'Use a path under that directory, or unset the variable.'
         )
     return file_path
@@ -216,7 +218,7 @@ def place_new_node(node: hou.Node) -> None:
     mark_placed(node)
 
 
-def place_new_nodes(nodes) -> None:
+def place_new_nodes(nodes: Any) -> None:
     """Place freshly created *nodes*, in creation order.
 
     Order matters: each node is positioned relative to its inputs, so the

@@ -55,7 +55,7 @@ NON_FILE_OUTPUTS = frozenset({'__render__.usd', 'ip', 'md'})
 
 
 @contextlib.contextmanager
-def at_frame(frame: float | None):
+def at_frame(frame: float | None) -> Any:
     """Evaluate output paths at the frame a write starts on.
 
     The verdict compares files before and after by evaluating `$F` paths, and
@@ -277,7 +277,7 @@ def upstream_messages(node: hou.Node) -> list[str]:
     found: list[str] = []
     seen: set[str] = set()
 
-    def visit(candidate) -> None:
+    def visit(candidate: Any) -> None:
         if candidate is None or len(seen) >= _MAX_UPSTREAM:
             return
         path = candidate.path()
@@ -315,7 +315,7 @@ def write_verdict(
     before: list[dict[str, Any]],
     *,
     action: str = 'Render',
-    grace: float | None = None,
+    timeout: float | None = None,
 ) -> dict[str, Any]:
     """What actually happened, for a node whose execution has just returned.
 
@@ -329,21 +329,21 @@ def write_verdict(
         before: The ``reported_outputs`` snapshot taken before executing it.
         action: How to name the operation in the message ("Render", "Export",
             "Cache write").
-        grace: Seconds to keep checking for output files when the node is clean
-            but nothing has appeared yet; HOUDINI_MCP_OUTPUT_GRACE (2 s) when None.
+        timeout: Seconds to keep checking for output files when the node is clean
+            but nothing has appeared yet; HOUDINI_MCP_OUTPUT_TIMEOUT (2 s) when None.
     """
 
-    if grace is None:
-        from houdini_mcp_plugin.config import output_grace_seconds
+    if timeout is None:
+        from houdini_mcp_plugin.config import output_timeout_seconds
 
-        grace = output_grace_seconds()
+        timeout = output_timeout_seconds()
     errors, warnings = node_messages(node)
     after = reported_outputs(node)
     wrote = wrote_anything(before, after)
     # A usdrender_rop returns when husk exits, and the image can hit the disk a
     # moment later; a clean node with nothing written yet is given a short
-    # grace period before "nothing was written" is pronounced (#40).
-    deadline = time.monotonic() + grace
+    # timeout window before "nothing was written" is pronounced (#40).
+    deadline = time.monotonic() + timeout
     while not errors and not wrote and time.monotonic() < deadline:
         time.sleep(0.25)
         after = reported_outputs(node)

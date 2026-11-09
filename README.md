@@ -70,14 +70,20 @@ Inspect content with:
 
 ## Environment variables
 
-| Variable                | Default        | Description                                                   |
-|-------------------------|----------------|---------------------------------------------------------------|
-| `HOUDINI_MCP_PORT`      | `8100`         | First port the server scans and the plugin prefers.           |
-| `HOUDINI_MCP_TIMEOUT`   | `135`          | Command timeout in seconds.                                   |
-| `HOUDINI_MCP_LOG_LEVEL` | `INFO`         | Log level.                                                    |
-| `HOUDINI_MCP_AUTOSTART` | `1`            | Set to `0` to disable autostart.                              |
-| `HOUDINI_MCP_CONTENT`   | none           | Additional content roots, separated by the OS path separator. |
-| `HOUDINI_MCP`           | set by install | Repository root used by the Houdini package file.             |
+Server variables are read by the MCP server process.
+Plugin variables are read inside Houdini; set them in `houdini.env` or the environment used to launch Houdini.
+
+| Variable                     | Used by        | Default        | Description                                                   |
+|------------------------------|----------------|----------------|---------------------------------------------------------------|
+| `HOUDINI_MCP_PORT`           | Server, Plugin | `8100`         | First port the server scans and the plugin prefers.           |
+| `HOUDINI_MCP_TIMEOUT`        | Server         | `135`          | Command timeout in seconds.                                   |
+| `HOUDINI_MCP_LOG_LEVEL`      | Server         | `INFO`         | Log level.                                                    |
+| `HOUDINI_MCP_CONTENT`        | Server         | none           | Additional content roots, separated by the OS path separator. |
+| `HOUDINI_MCP_AUTOSTART`      | Plugin         | `1`            | Set to `0` to disable autostart.                              |
+| `HOUDINI_MCP_AUTO_LAYOUT`    | Plugin         | `0`            | Set to `1` to allow network layout.                           |
+| `HOUDINI_MCP_OUTPUT_TIMEOUT` | Plugin         | `2`            | Seconds to wait for render or cache output files.             |
+| `HOUDINI_MCP_PROJECT_ROOT`   | Plugin         | none           | Optional root for scene and file operations.                  |
+| `HOUDINI_MCP`                | Plugin         | set by install | Repository root used by the Houdini package file.             |
 
 ## Development
 
