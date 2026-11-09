@@ -62,8 +62,23 @@ quote-style = "single"
 select = ["E", "W", "F", "I", "UP", "B", "SIM", "ANN", "RUF"]
 ignore = ["SIM108"]
 
+# Ported Houdini-side handler code predates the stricter annotations and
+# line-length rules in this repository. Keep those rules for new modules.
+[tool.ruff.lint.per-file-ignores]
+"src/houdini_mcp_plugin/callbacks.py" = ["ANN001", "ANN201", "ANN401", "E501", "RUF013"]
+"src/houdini_mcp_plugin/config.py" = ["ANN001", "ANN201", "ANN401", "E501", "RUF013"]
+"src/houdini_mcp_plugin/dop_cache.py" = ["ANN401"]
+"src/houdini_mcp_plugin/menus.py" = ["ANN001", "ANN201", "ANN401", "E501", "RUF013"]
+"src/houdini_mcp_plugin/outputs.py" = ["ANN001", "ANN201", "ANN401", "E501", "RUF013"]
+"src/houdini_mcp_plugin/serialize.py" = ["ANN401"]
+"src/houdini_mcp_plugin/ui.py" = ["ANN001", "ANN201", "ANN401", "E501", "RUF013"]
+"src/houdini_mcp_plugin/commands/_helpers.py" = ["ANN401"]
+"src/houdini_mcp_plugin/commands/nodes.py" = ["ANN001", "ANN003", "ANN201", "ANN202", "ANN401", "E501", "RUF013"]
+"src/houdini_mcp_plugin/commands/parameters.py" = ["ANN001", "ANN003", "ANN201", "ANN202", "ANN401", "E501", "RUF013"]
+"src/houdini_mcp_plugin/commands/scene.py" = ["ANN001", "ANN003", "ANN201", "ANN401", "E501", "RUF013"]
+
 [tool.ty.analysis]
-replace-imports-with-any = ["hwebserver", "hdefereval"]
+replace-imports-with-any = ["hwebserver", "hdefereval", "hou"]
 
 [tool.ty.environment]
 extra-paths = ["src"]

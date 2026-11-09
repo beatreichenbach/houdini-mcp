@@ -24,10 +24,14 @@ async def run_command(
     ctx: BridgeContext,
     command: str,
     params: dict[str, Any] | None = None,
+    timeout: float | None = None,
 ) -> Any:  # noqa: ANN401
     """Run a Houdini command, reporting failures as tool errors."""
 
+    bridge = get_bridge(ctx)
     try:
-        return await get_bridge(ctx).execute(command, params)
+        if timeout is None:
+            return await bridge.execute(command, params)
+        return await bridge.execute(command, params, timeout=timeout)
     except HoudiniMCPError as exc:
         raise ToolError(str(exc)) from exc

@@ -1,3 +1,3 @@
-from . import scene
+from . import nodes, parameters, scene
 
-__all__ = ['scene']
+__all__ = ['nodes', 'parameters', 'scene']

@@ -1,0 +1,439 @@
+"""Saying "this needs a graphical Houdini" instead of crashing about it.
+
+``hou.ui`` does not exist in hython or hbatch. Ten handlers reached for it without
+checking, so asking for a viewport screenshot in a headless session answered:
+
+    module 'hou' has no attribute 'ui'
+
+which reads as a broken plugin and sends the caller debugging the server. The real
+answer is that the operation needs a graphical session -- a different thing to know,
+because it tells them to stop retrying and either open Houdini or pick a tool that
+works without one.
+
+Kept separate from the pane-finding helpers because it is the *first* question, not
+a detail of the search: with no UI at all there are no panes to look through.
+"""
+
+from __future__ import annotations
+
+# Built-in
+import contextlib
+import fnmatch
+import re
+from collections.abc import Generator
+
+# Third-party
+import hou
+
+# Internal
+from houdini_mcp_plugin.config import layout_if_enabled
+
+
+def ui_available() -> bool:
+    """Whether this Houdini has a UI at all.
+
+    ``hou.isUIAvailable`` is itself missing in some headless builds, so the
+    attribute check comes first.
+    """
+
+    try:
+        return bool(hou.isUIAvailable())
+    except AttributeError:
+        return hasattr(hou, 'ui')
+
+
+def require_ui(operation: str, *, alternative: str = '') -> None:
+    """Raise a readable error when *operation* needs a UI and there is none.
+
+    Args:
+        operation: What was being attempted, named as the caller would name it
+            ("capture a viewport screenshot").
+        alternative: Optional pointer to something that does work headlessly.
+            Worth giving whenever one exists -- a refusal that names the way
+            forward saves the round trip that a bare refusal costs.
+    """
+
+    if ui_available():
+        return
+    message = (
+        f'Cannot {operation}: this Houdini session has no UI (hython/hbatch), '
+        f'so there are no panes or viewports. It needs a graphical Houdini.'
+    )
+    if alternative:
+        message += f' {alternative}'
+    raise hou.OperationFailed(message)
+
+
+def panes():
+    """``hou.ui.paneTabs()``, but explaining itself when there is no UI."""
+
+    require_ui("look at Houdini's panes")
+    return hou.ui.paneTabs()
+
+
+# vieweroption -a: what the viewer draws of the objects you are not inside.
+# The same switch as the viewport's Y hotkey; display flags are left alone.
+OTHER_OBJECTS = {'hide': 0, 'show': 1, 'ghost': 2}
+
+
+def set_other_objects(mode: str | None) -> str | None:
+    """Set how every Scene Viewer draws objects other than the current one.
+
+    Returns the mode applied, or None when there was nothing to do: no UI, no
+    viewer, or *mode* None. Best effort by design, since isolating the viewer
+    is a courtesy to the user and never a reason to fail the call it rides on.
+    """
+
+    if mode is None or not ui_available():
+        return None
+    if mode not in OTHER_OBJECTS:
+        raise ValueError(
+            f'other_objects must be one of {sorted(OTHER_OBJECTS)} or None'
+        )
+    applied = None
+    try:
+        desktop = hou.ui.curDesktop().name()
+        for tab in hou.ui.paneTabs():
+            if tab.type() == hou.paneTabType.SceneViewer:
+                hou.hscript(
+                    f'vieweroption -a {OTHER_OBJECTS[mode]} {desktop}.{tab.name()}.world'
+                )
+                applied = mode
+    except Exception:
+        return applied
+    return applied
+
+
+def _viewed_object(network) -> hou.Node | None:
+    """The object whose contents *network* belongs to, or None at /obj or outside it."""
+
+    node = network
+    while node is not None and node.type().category() != hou.objNodeTypeCategory():
+        node = node.parent()
+    if node is None or node.childTypeCategory() == hou.objNodeTypeCategory():
+        return None
+    return node
+
+
+def pattern_hides(pattern: str, obj_path: str) -> bool:
+    """Whether the Visible Objects *pattern* certainly leaves *obj_path* out.
+
+    Tokens are read left to right as Houdini does, a later one overriding an
+    earlier one: "*", a name or path with wildcards, "^" to take away,
+    separated by spaces or commas ("geo1,geo2" shows both, 22.0.368). A
+    bundle (@...) or a brace group is not resolved, so a pattern holding one
+    never counts as hiding anything.
+    """
+
+    tokens = [t for t in re.split(r'[\s,]+', str(pattern)) if t]
+    if not tokens:
+        return False
+    name = obj_path.rsplit('/', 1)[-1]
+    shown = False
+    for token in tokens:
+        taken_away = token.startswith('^')
+        token = token.lstrip('^')
+        if token.startswith('@') or '{' in token or '}' in token:
+            return False
+        if fnmatch.fnmatchcase(obj_path if token.startswith('/') else name, token):
+            shown = not taken_away
+    return not shown
+
+
+def hidden_by_visible_objects(scene_viewer, obj: hou.Node | None = None) -> list[dict]:
+    """The viewports of *scene_viewer* whose Visible Objects pattern hides *obj*.
+
+    *obj* defaults to the object the viewer is in.
+
+    The pattern is saved with the hip: a session that limited it for a capture
+    of /obj/project_04_fern left it so, and the next session's screenshots of
+    another object came out black.
+    """
+
+    hidden: list[dict] = []
+    with contextlib.suppress(Exception):
+        if obj is None:
+            obj = _viewed_object(scene_viewer.pwd())
+        if obj is None:
+            return hidden
+        for viewport in scene_viewer.viewports():
+            pattern = viewport.settings().visibleObjects()
+            if pattern_hides(pattern, obj.path()):
+                hidden.append(
+                    {
+                        'pane': scene_viewer.name(),
+                        'viewport': viewport.name(),
+                        'visible_objects': pattern,
+                        'object': obj.path(),
+                    }
+                )
+    return hidden
+
+
+def show_viewed_object(network) -> list[dict]:
+    """Set Visible Objects back to "*" wherever it hides the object *network* belongs to.
+
+    Returns what was reset, each entry with the pattern it held. Best effort.
+    """
+
+    reset: list[dict] = []
+    obj = _viewed_object(network)
+    if obj is None:
+        return reset
+    with contextlib.suppress(Exception):
+        for tab in hou.ui.paneTabs():
+            if tab.type() != hou.paneTabType.SceneViewer:
+                continue
+            for entry in hidden_by_visible_objects(tab, obj):
+                with contextlib.suppress(Exception):
+                    viewport = next(
+                        v for v in tab.viewports() if v.name() == entry['viewport']
+                    )
+                    viewport.settings().setVisibleObjects('*')
+                    reset.append(entry)
+    return reset
+
+
+def _in_lops(viewer) -> bool:
+    """Whether *viewer* shows a LOP network (its cameras are prims) or not (nodes)."""
+
+    return viewer.pwd().childTypeCategory() == hou.lopNodeTypeCategory()
+
+
+def _restore_cameras(cameras: list) -> None:
+    """Bind each recorded (viewer, view name, camera path) again where it changed.
+
+    Only while the viewer is in the same kind of network as when it was
+    recorded. Houdini keeps a camera per context itself; a USD prim path bound
+    again in an object network matched nothing, and the view drew through it
+    with the wrong aspect (22.0.368).
+    """
+
+    for tab, name, path, lops in cameras:
+        with contextlib.suppress(Exception):
+            if _in_lops(tab) != lops:
+                continue
+            viewport = next(v for v in tab.viewports() if v.name() == name)
+            current = viewport.camera()
+            now = current.path() if current is not None else viewport.cameraPath()
+            if now != path:
+                viewport.setCamera(hou.node(path) or path)
+
+
+@contextlib.contextmanager
+def keep_viewer_state() -> Generator[None]:
+    """Keep every view's camera and the node selection across a network editor move.
+
+    The Scene Viewer follows the network editor, and a ``cd`` to another level
+    unbinds each view's camera and selects that network's current node
+    (measured on 22.0.429): set_current_network lost a camera set one call
+    earlier, and set_node_flags left the object selected, so the next viewport
+    capture drew it in the selection colour. Leaving a LOP network unbinds the
+    camera once more on the next UI tick, after the call has returned, so the
+    cameras are bound again then too.
+
+    Best effort: nothing here raises, and a state the move left untouched is
+    not written back.
+    """
+
+    cameras: list = []
+    selected: list = []
+    with contextlib.suppress(Exception):
+        selected = list(hou.selectedNodes())
+    with contextlib.suppress(Exception):
+        for tab in hou.ui.paneTabs():
+            if tab.type() != hou.paneTabType.SceneViewer:
+                continue
+            for viewport in tab.viewports():
+                path = None
+                with contextlib.suppress(Exception):
+                    camera = viewport.camera()
+                    # A USD camera prim is a path, not a node.
+                    path = (
+                        camera.path() if camera is not None else viewport.cameraPath()
+                    )
+                if path:
+                    cameras.append((tab, viewport.name(), path, _in_lops(tab)))
+    try:
+        yield
+    finally:
+        _restore_cameras(cameras)
+        if cameras:
+            with contextlib.suppress(Exception):
+                import hdefereval
+
+                hdefereval.executeDeferred(lambda: _restore_cameras(cameras))
+        with contextlib.suppress(Exception):
+            now = sorted(node.path() for node in hou.selectedNodes())
+            if now != sorted(node.path() for node in selected):
+                # The editor follows a selected node to its network on the next
+                # UI tick (22.0.368): selecting one outside the network the
+                # editor moved to pulled it back, and set_current_network
+                # answered for a network the editor had already left. Only the
+                # nodes in that network are selected again.
+                shown = {
+                    tab.pwd().path()
+                    for tab in hou.ui.paneTabs()
+                    if tab.type() == hou.paneTabType.NetworkEditor
+                }
+                keep = [n for n in selected if not shown or n.parent().path() in shown]
+                if now != sorted(node.path() for node in keep):
+                    hou.clearAllSelected()
+                    for node in keep:
+                        node.setSelected(True, clear_all_selected=False)
+
+
+def _viewers_in_dops() -> set[str]:
+    """Names of the Scene Viewers drawing a DOP network right now."""
+
+    names: set[str] = set()
+    with contextlib.suppress(Exception):
+        dops = hou.dopNodeTypeCategory()
+        for tab in hou.ui.paneTabs():
+            if (
+                tab.type() == hou.paneTabType.SceneViewer
+                and tab.pwd().childTypeCategory() == dops
+            ):
+                names.add(tab.name())
+    return names
+
+
+@contextlib.contextmanager
+def viewer_stays_out_of_dops() -> Generator[None]:
+    """Put the network editor back if the block took a Scene Viewer into a DOP network.
+
+    The Scene Viewer follows the network editor in the same call (measured on
+    22.0.429): an editor sent into a DOP network to show a node created there
+    turned the viewer into a DOP view, which draws a collider as solid
+    geometry and particles as points instead of the object's SOP display, and
+    the next viewport capture was judged on that. The panes are linked, so the
+    viewer cannot stay behind on its own; the editor goes back instead. A
+    viewer that was in a DOP network already is the user's choice and is left
+    there, and set_current_network still goes into one when asked to.
+    """
+
+    before = _viewers_in_dops()
+    editors: list = []
+    with contextlib.suppress(Exception):
+        editors = [
+            (tab, tab.pwd().path())
+            for tab in hou.ui.paneTabs()
+            if tab.type() == hou.paneTabType.NetworkEditor
+        ]
+    try:
+        yield
+    finally:
+        if _viewers_in_dops() - before:
+            with contextlib.suppress(Exception), keep_viewer_state():
+                for tab, path in editors:
+                    # One editor whose network is gone must not keep the
+                    # others in the DOP network.
+                    with contextlib.suppress(Exception):
+                        tab.cd(path)
+
+
+def viewer_context(scene_viewer) -> dict:
+    """The network *scene_viewer* draws, and a note when that is a DOP network.
+
+    For a viewport capture's reply. In a DOP network the viewer draws the
+    simulation's objects (a collider solid, particles as points), not the
+    object's SOP display, and a session judged particle trails off such a
+    frame: no reply had said what the viewer was showing. Best effort, empty
+    when the viewer cannot say.
+    """
+
+    context: dict = {}
+    with contextlib.suppress(Exception):
+        network = scene_viewer.pwd()
+        path = network.path()
+        if not isinstance(path, str):
+            return context
+        context['viewer_network'] = path
+        if network.childTypeCategory() == hou.dopNodeTypeCategory():
+            parent = network.parent()
+            context['viewer_note'] = (
+                f'The Scene Viewer is inside the DOP network {path} and draws its '
+                'simulation objects (colliders solid, particles as points), not the '
+                "SOP display. set_current_network to the object's network"
+                + (f' ({parent.path()})' if parent is not None else '')
+                + ' to capture the SOP result.'
+            )
+    hidden = [
+        entry
+        for entry in hidden_by_visible_objects(scene_viewer)
+        if entry['viewport'] == _current_viewport_name(scene_viewer)
+    ]
+    if hidden:
+        entry = hidden[0]
+        context['visible_objects_note'] = (
+            f'Viewport {entry["viewport"]} draws only {entry["visible_objects"]!r}, which leaves out '
+            f'{entry["object"]}, the object the viewer is in: the frame shows none of it. The pattern is '
+            "saved with the hip. set_current_network on the object sets it back to '*'."
+        )
+    return context
+
+
+def _current_viewport_name(scene_viewer) -> str | None:
+    with contextlib.suppress(Exception):
+        return scene_viewer.curViewport().name()
+    return None
+
+
+def focus_network_editor(
+    node: hou.Node,
+    place_unpositioned: bool = True,
+    other_objects: str | None = None,
+) -> None:
+    """Best-effort: lay out *node*'s network, then pan the network editor to *node*.
+
+    The handlers that create or rewire a node end here. Callers that created
+    nothing pass ``place_unpositioned=False``, so a call that only rewires or
+    flips a flag never relocates a node the user parked at the origin.
+    *other_objects* goes to set_other_objects once the editor has moved. The
+    viewer's cameras and the selection survive the move (keep_viewer_state),
+    and the editor stays where it was rather than take the viewer into a DOP
+    network (viewer_stays_out_of_dops).
+    """
+
+    try:
+        parent = node.parent()
+        if parent is not None:
+            layout_if_enabled(parent, place_unpositioned)
+        with keep_viewer_state(), viewer_stays_out_of_dops():
+            for pane_tab in hou.ui.paneTabs():
+                if pane_tab.type() == hou.paneTabType.NetworkEditor:
+                    if parent is not None:
+                        pane_tab.cd(parent.path())
+                    pane_tab.setCurrentNode(node)
+                    pane_tab.homeToSelection()
+                    if other_objects is not None:
+                        set_other_objects(other_objects)
+                    return
+    except Exception:
+        pass  # Never let UI helpers break a tool call
+
+
+@contextlib.contextmanager
+def selection_hidden() -> Generator[None]:
+    """Draw no selection highlight for the block (a viewport capture), then put it back.
+
+    A selected object is drawn with a selection outline, and a capture took it
+    along whoever had selected it. The viewer has no switch for that highlight
+    (neither HOM nor viewdisplay), so the node selection is cleared for the
+    block. What was selected is put back as it was: the editor already shows
+    it (it follows a selected node into its network), so it does not move.
+    """
+
+    selected: list = []
+    with contextlib.suppress(Exception):
+        # clearAllSelected() also clears boxes, notes, dots and hidden nodes.
+        selected = list(hou.selectedItems(include_hidden=True))
+        if selected:
+            hou.clearAllSelected()
+    try:
+        yield
+    finally:
+        if selected:
+            with contextlib.suppress(Exception):
+                for n in selected:
+                    n.setSelected(True, clear_all_selected=False)

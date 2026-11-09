@@ -12,11 +12,14 @@ import hdefereval
 
 from houdini_mcp_protocol import ErrorCode, Response, ResponseStatus
 
+from .serialize import to_jsonable
+
 logger = logging.getLogger(__name__)
 
 Handler = Callable[..., Any]
 
 _registry: dict[str, Handler] = {}
+_NO_UNDO_GROUP = frozenset({'scene.undo', 'scene.redo'})
 
 
 def register_command(name: str) -> Callable[[Handler], Handler]:
@@ -78,7 +81,7 @@ def dispatch(command: str, params: dict[str, Any]) -> Response:
 
     return Response(
         status=ResponseStatus.SUCCESS,
-        data=data,
+        data=to_jsonable(data),
         timing_ms=_elapsed(started),
     )
 
@@ -100,6 +103,8 @@ def _run_handler(handler: Handler, command: str, params: dict[str, Any]) -> Any:
 def _call_handler(handler: Handler, command: str, params: dict[str, Any]) -> Any:  # noqa: ANN401
     """Call a handler inside an undo group."""
 
+    if command in _NO_UNDO_GROUP:
+        return handler(**params)
     with _undo_group(command):
         return handler(**params)
 
@@ -118,5 +123,5 @@ def _undo_group(command: str) -> Generator[None, None, None]:
     if group is None:
         yield
         return
-    with group:  # ty: ignore[invalid-context-manager]
+    with group:
         yield

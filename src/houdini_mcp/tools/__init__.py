@@ -1,15 +1,28 @@
 from __future__ import annotations
 
+import importlib
+import pkgutil
+
 from mcp.server.mcpserver import MCPServer
 
 from ..bridge import HoudiniBridge
-from .scene import register_scene_tools
+from .registry import marked_tools
 
 
 def register_tools(server: MCPServer[dict[str, HoudiniBridge]]) -> None:
-    """Register all MCP tools on the server."""
+    """Discover and register every tool in this package."""
 
-    register_scene_tools(server)
+    seen: set[str] = set()
+    for info in sorted(pkgutil.iter_modules(__path__), key=lambda item: item.name):
+        if info.name.startswith('_'):
+            continue
+        module = importlib.import_module(f'{__name__}.{info.name}')
+        for function in marked_tools(module):
+            name = getattr(function, '__name__', '<tool>')
+            if name in seen:
+                raise ValueError(f'duplicate tool name: {name}')
+            seen.add(name)
+            server.tool()(function)
 
 
 __all__ = ['register_tools']
