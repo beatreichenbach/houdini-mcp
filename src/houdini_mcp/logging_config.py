@@ -16,3 +16,4 @@ def configure_logging(level: int) -> None:
         )
     )
     logging.basicConfig(level=level, handlers=[handler])
+    logging.getLogger('httpx').setLevel(logging.WARNING)
