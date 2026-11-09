@@ -65,7 +65,6 @@ def test_get_scene_info() -> None:
         'mcp.execute',
         command='scene.get_scene_info',
         params={},
-        request_id='test',
     )
 
     assert response['status'] == 'success'

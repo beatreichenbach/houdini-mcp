@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 import urllib.parse
 import urllib.request
 from typing import Any
@@ -11,7 +12,7 @@ import hou
 import hwebserver
 
 from houdini_mcp_plugin import constants
-from houdini_mcp_protocol import request_headers
+from houdini_mcp_protocol import PORT_SEARCH_RANGE, request_headers
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ def start(port: int | None = None) -> None:
         return
 
     base = port if port is not None else _configured_port()
-    for candidate in range(base, base + constants.PORT_SEARCH_RANGE):
+    for candidate in range(base, base + PORT_SEARCH_RANGE):
         health = _query_health(constants.BIND_ADDRESS, candidate)
         if health is None:
             _port = candidate
@@ -40,33 +41,39 @@ def start(port: int | None = None) -> None:
             logger.info('Houdini MCP plugin resumed on port %d', _port)
             return
     else:
-        raise RuntimeError(
-            f'no free port in {base}-{base + constants.PORT_SEARCH_RANGE - 1}'
-        )
+        raise RuntimeError(f'no free port in {base}-{base + PORT_SEARCH_RANGE - 1}')
 
     _bind_loopback()
 
     from houdini_mcp_plugin import commands, http  # noqa: F401
 
+    in_background = hou.isUIAvailable()
     _running = True
     try:
-        hwebserver.run(_port, debug=False, in_background=hou.isUIAvailable())
+        hwebserver.run(_port, debug=False, in_background=in_background)
+        if in_background:
+            _wait_until_healthy(_port)
+        else:
+            _running = False
     except Exception:
         _running = False
         raise
 
+    if not in_background:
+        logger.info('Houdini MCP plugin stopped')
+        return
     logger.info('Houdini MCP plugin started on port %d', _port)
 
 
-def stop() -> None:
-    """Mark the plugin as stopped."""
+def pause() -> None:
+    """Pause the plugin without stopping hwebserver."""
 
     global _running
 
     if not _running:
         return
     _running = False
-    logger.info('Houdini MCP plugin stopped')
+    logger.info('Houdini MCP plugin paused')
 
 
 def is_running() -> bool:
@@ -119,6 +126,19 @@ def _bind_loopback() -> None:
         )
     except Exception:
         logger.exception('Could not restrict Houdini MCP to %s', constants.BIND_ADDRESS)
+        raise
+
+
+def _wait_until_healthy(port: int, timeout: float = 2.0) -> None:
+    """Wait for the plugin HTTP server to answer on a port."""
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        health = _query_health(constants.BIND_ADDRESS, port, timeout=0.2)
+        if health is not None and health.get('pid') == os.getpid():
+            return
+        time.sleep(0.05)
+    raise RuntimeError(f'Houdini MCP plugin did not start on port {port}')
 
 
 def _query_health(

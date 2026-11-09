@@ -24,14 +24,14 @@ else:
 ]]></scriptCode>
       </scriptItem>
 
-      <scriptItem id="houdini_mcp_stop">
-        <label>Stop Server</label>
+      <scriptItem id="houdini_mcp_pause">
+        <label>Pause Server</label>
         <scriptCode><![CDATA[
 import hou
 import houdini_mcp_plugin.startup as startup
 
-startup.stop()
-hou.ui.setStatusMessage('Houdini MCP stopped')
+startup.pause()
+hou.ui.setStatusMessage('Houdini MCP paused')
 ]]></scriptCode>
       </scriptItem>
 
@@ -46,7 +46,7 @@ import houdini_mcp_plugin.startup as startup
 if startup.is_running():
     message = f'Running on port {startup.get_port()}'
 else:
-    message = 'Stopped'
+    message = 'Paused'
 
 hou.ui.displayMessage(message, title='Houdini MCP')
 ]]></scriptCode>

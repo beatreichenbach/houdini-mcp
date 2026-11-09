@@ -2,14 +2,11 @@ from houdini_mcp_protocol import Response, ResponseStatus
 
 
 def test_response_success() -> None:
-    response = Response.from_payload(
-        {'status': 'success', 'data': {'ok': True}, 'request_id': 'abc'}
-    )
+    response = Response.from_payload({'status': 'success', 'data': {'ok': True}})
 
     assert response.status is ResponseStatus.SUCCESS
     assert response.data == {'ok': True}
     assert response.error is None
-    assert response.request_id == 'abc'
 
 
 def test_response_error() -> None:

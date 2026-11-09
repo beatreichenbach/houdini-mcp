@@ -9,6 +9,7 @@ import httpx
 
 from houdini_mcp_protocol import (
     PLUGIN_COMMANDS,
+    PORT_SEARCH_RANGE,
     PROTOCOL_VERSION,
     ApiCommand,
     ErrorCode,
@@ -23,15 +24,17 @@ from .errors import HoudiniCommandError, HoudiniConnectionError
 
 logger = logging.getLogger(__name__)
 
-PORT_SEARCH_RANGE = 16
+NO_TIMEOUT = float('inf')
 
 
 class HoudiniBridge:
     def __init__(self, settings: Settings) -> None:
         self._host = settings.host
+        self._base_port = settings.port
         self._port = settings.port
         self._timeout = settings.timeout
         self._client = httpx.AsyncClient(timeout=self._timeout)
+        self._discover_lock = asyncio.Lock()
 
     @property
     def base_url(self) -> str:
@@ -44,12 +47,16 @@ class HoudiniBridge:
     async def discover(self) -> None:
         """Find and connect to a running Houdini plugin."""
 
-        servers = await find_servers(self._host, self._port)
+        async with self._discover_lock:
+            await self._discover()
+
+    async def _discover(self) -> None:
+        servers = await find_servers(self._host, self._base_port)
         if not servers:
             logger.warning(
                 'No Houdini plugin found on ports %d-%d',
-                self._port,
-                self._port + PORT_SEARCH_RANGE - 1,
+                self._base_port,
+                self._base_port + PORT_SEARCH_RANGE - 1,
             )
             return
         server = servers[0]
@@ -74,15 +81,19 @@ class HoudiniBridge:
                 PROTOCOL_VERSION,
             )
 
-        commands = set(await self.list_commands())
+        try:
+            commands = set(await self.list_commands())
+        except HoudiniConnectionError as exc:
+            logger.warning('Could not read plugin commands: %s', exc)
+            return
         missing = PLUGIN_COMMANDS - commands
         if missing:
             logger.warning('Plugin is missing commands: %s', ', '.join(sorted(missing)))
 
-    async def health_check(self) -> dict[str, Any]:
-        """Return the plugin health payload."""
-
-        return await self._post(ApiCommand.HEALTH, {})
+    async def _rediscover(self, failed_port: int) -> None:
+        async with self._discover_lock:
+            if self._port == failed_port:
+                await self._discover()
 
     async def list_commands(self) -> list[str]:
         """Return the commands registered by the plugin."""
@@ -101,6 +112,22 @@ class HoudiniBridge:
     ) -> Any:  # noqa: ANN401
         """Run a command in Houdini and return its result."""
 
+        failed_port = self._port
+        try:
+            return await self._execute(command, params, timeout=timeout)
+        except HoudiniConnectionError as exc:
+            if not exc.retryable:
+                raise
+            logger.info('Reconnecting to Houdini after a connection failure')
+            await self._rediscover(failed_port)
+            return await self._execute(command, params, timeout=timeout)
+
+    async def _execute(
+        self,
+        command: str,
+        params: dict[str, Any] | None,
+        timeout: float | None,
+    ) -> Any:  # noqa: ANN401
         logger.debug('Calling Houdini command %s', command)
         request = Request(command=command, params=params or {})
         payload = await self._post(
@@ -128,11 +155,14 @@ class HoudiniBridge:
         timeout: float | None = None,
     ) -> dict[str, Any]:
         try:
+            effective = self._timeout if timeout is None else timeout
+            if effective == NO_TIMEOUT:
+                effective = None
             response = await self._client.post(
                 self.api_url,
                 data=_rpc_body(endpoint, params),
                 headers=request_headers(),
-                timeout=timeout or self._timeout,
+                timeout=effective,
             )
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
@@ -140,12 +170,16 @@ class HoudiniBridge:
                 f'houdini returned HTTP {exc.response.status_code}'
             ) from exc
         except httpx.TimeoutException as exc:
+            retryable = isinstance(exc, httpx.ConnectTimeout)
             raise HoudiniConnectionError(
-                f'houdini request timed out after {timeout or self._timeout}s'
+                f'houdini request timed out after {effective}s',
+                retryable=retryable,
             ) from exc
         except httpx.TransportError as exc:
+            retryable = isinstance(exc, httpx.ConnectError)
             raise HoudiniConnectionError(
-                f'cannot reach houdini at {self.base_url} ({type(exc).__name__})'
+                f'cannot reach houdini at {self.base_url} ({type(exc).__name__})',
+                retryable=retryable,
             ) from exc
         try:
             payload = response.json()

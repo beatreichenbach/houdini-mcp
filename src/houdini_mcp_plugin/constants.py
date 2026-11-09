@@ -4,7 +4,6 @@ BIND_ADDRESS = '127.0.0.1'
 ALLOWED_HOSTS = ('127.0.0.1', 'localhost')
 DEFAULT_PORT = 8100
 DEFAULT_AUTOSTART = True
-PORT_SEARCH_RANGE = 16
 
 # Environment Variables
 

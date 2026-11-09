@@ -65,7 +65,6 @@ def execute(
     request: object,
     command: str = '',
     params: dict[str, Any] | None = None,
-    request_id: str = '',
 ) -> hwebserver.Response:
     """Dispatch a command and return a protocol response."""
 
@@ -83,7 +82,6 @@ def execute(
         return _json_response(response.to_payload())
 
     response = dispatcher.dispatch(command, params or {})
-    response.request_id = request_id
     return _json_response(response.to_payload())
 
 
@@ -96,7 +94,7 @@ def health(request: object) -> hwebserver.Response:
         return denied
     return _json_response(
         {
-            'status': 'ok' if startup.is_running() else 'stopped',
+            'status': 'ok' if startup.is_running() else 'paused',
             'pid': os.getpid(),
             'houdini_version': os.environ.get('HOUDINI_VERSION', 'unknown'),
             'protocol_version': PROTOCOL_VERSION,

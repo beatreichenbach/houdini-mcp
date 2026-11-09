@@ -38,7 +38,7 @@
 |------------------------|-----------------------------------------------------------|
 | `houdini_mcp`          | `mcp`, `httpx`, `platformdirs`, `houdini_mcp_protocol`    |
 | `houdini_mcp_plugin`   | `hou`, `hwebserver`, `hdefereval`, `houdini_mcp_protocol` |
-| `houdini_mcp_protocol` |                                                           |
+| `houdini_mcp_protocol` | none                                                      |
 
 ## Repository layout
 
@@ -71,7 +71,7 @@ houdini-mcp/
 ## Content
 
 Content is server-side.
-They do not require the plugin and do not import Houdini modules.
+It does not require the plugin and does not import Houdini modules.
 
 Content lives in three directories:
 
@@ -107,6 +107,10 @@ lifespan.
 
 Tools are executable MCP actions.
 Unlike content and resources, tools are code on the server side and often require a matching plugin command.
+
+Commands run on Houdini's main thread.
+A server timeout stops waiting, not the command.
+There is no cancellation operation, so a long cook continues in Houdini after the client gives up.
 
 A tool that wraps an existing Houdini command lives under `src/houdini_mcp/tools/`.
 A tool that needs new Houdini behavior also needs a matching command enum and a handler under

@@ -13,5 +13,4 @@ class PluginCommand(StrEnum):
     SCENE_GET_NODE = 'scene.get_node'
 
 
-API_COMMANDS: frozenset[str] = frozenset(item.value for item in ApiCommand)
 PLUGIN_COMMANDS: frozenset[str] = frozenset(item.value for item in PluginCommand)

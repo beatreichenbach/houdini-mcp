@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, cast
-from uuid import uuid4
 
 
 class ResponseStatus(StrEnum):
@@ -15,7 +14,6 @@ class ResponseStatus(StrEnum):
 class Request:
     command: str
     params: dict[str, Any] = field(default_factory=dict)
-    request_id: str = field(default_factory=lambda: uuid4().hex)
 
     def to_payload(self) -> dict[str, Any]:
         """Return this request as a JSON-compatible payload."""
@@ -23,7 +21,6 @@ class Request:
         return {
             'command': self.command,
             'params': self.params,
-            'request_id': self.request_id,
         }
 
 
@@ -32,7 +29,6 @@ class Response:
     status: ResponseStatus
     data: Any = None
     error: dict[str, Any] | None = None
-    request_id: str = ''
     timing_ms: float = 0.0
 
     def to_payload(self) -> dict[str, Any]:
@@ -42,7 +38,6 @@ class Response:
             'status': self.status,
             'data': self.data,
             'error': self.error,
-            'request_id': self.request_id,
             'timing_ms': self.timing_ms,
         }
 
@@ -61,6 +56,5 @@ class Response:
             status=status,
             data=payload.get('data'),
             error=cast(dict[str, Any], error) if isinstance(error, dict) else None,
-            request_id=str(payload.get('request_id', '')),
             timing_ms=float(timing) if isinstance(timing, int | float) else 0.0,
         )
