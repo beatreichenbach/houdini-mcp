@@ -125,6 +125,7 @@ class PluginCommand(StrEnum):
     NODES_CREATE_NODE = 'nodes.create_node'
     NODES_CREATE_STICKY_NOTE = 'nodes.create_sticky_note'
     NODES_DELETE_NODE = 'nodes.delete_node'
+    NODES_DELETE_STICKY_NOTES = 'nodes.delete_sticky_notes'
     NODES_DISCONNECT_NODE = 'nodes.disconnect_node'
     NODES_FIND_NODES = 'nodes.find_nodes'
     NODES_GET_NODE_INFO = 'nodes.get_node_info'

@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import importlib
+import logging
 import pkgutil
 
 from mcp.server.mcpserver import MCPServer
 
 from ..bridge import HoudiniBridge
 from .registry import marked_tools
+
+logger = logging.getLogger(__name__)
 
 
 def register_tools(server: MCPServer[dict[str, HoudiniBridge]]) -> None:
@@ -25,6 +28,8 @@ def register_tools(server: MCPServer[dict[str, HoudiniBridge]]) -> None:
                 raise ValueError(f'duplicate tool name: {name}')
             seen.add(name)
             server.tool()(function)
+
+    logger.info('Registered %d tools', len(seen))
 
 
 __all__ = ['register_tools']

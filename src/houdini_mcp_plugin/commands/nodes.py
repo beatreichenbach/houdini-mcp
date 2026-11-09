@@ -1425,6 +1425,34 @@ def create_sticky_note(
     }
 
 
+def _sticky_notes_in(node: hou.Node) -> list[hou.StickyNote]:
+    """Every sticky note in *node*'s network and in nested networks."""
+
+    notes = list(node.stickyNotes())
+    for child in node.children():
+        if child.isNetwork():
+            notes.extend(_sticky_notes_in(child))
+    return notes
+
+
+@register_command(PluginCommand.NODES_DELETE_STICKY_NOTES)
+def delete_sticky_notes(parent_path: str, recursive: bool = True) -> dict:
+    """Delete sticky notes under a network, recursing into nested networks."""
+
+    parent = _get_node(parent_path)
+    notes = _sticky_notes_in(parent) if recursive else list(parent.stickyNotes())
+    paths = [note.path() for note in notes]
+    for note in notes:
+        note.destroy()
+    return {
+        'success': True,
+        'parent_path': parent.path(),
+        'recursive': recursive,
+        'deleted_count': len(paths),
+        'deleted': paths,
+    }
+
+
 _XFORM_PARMS = {'translate': 't', 'rotate': 'r', 'scale': 's'}
 
 

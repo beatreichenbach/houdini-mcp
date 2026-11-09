@@ -389,13 +389,17 @@ def focus_network_editor(
     place_unpositioned: bool = True,
     other_objects: str | None = None,
 ) -> None:
-    """Best-effort: lay out *node*'s network, then pan the network editor to *node*.
+    """Best-effort: lay out *node*'s network and select it if it is visible.
 
     The handlers that create or rewire a node end here. Callers that created
     nothing pass ``place_unpositioned=False``, so a call that only rewires or
     flips a flag never relocates a node the user parked at the origin.
-    *other_objects* goes to set_other_objects once the editor has moved. The
-    viewer's cameras and the selection survive the move (keep_viewer_state),
+    *other_objects* goes to set_other_objects once the editor has moved.
+
+    The network editor is not navigated or panned here. It keeps the network it
+    is already showing: a tool call changes the scene, not the user's view.
+    Use ``set_current_network`` when navigation is actually requested. The
+    viewer's cameras and the selection survive the call (keep_viewer_state),
     and the editor stays where it was rather than take the viewer into a DOP
     network (viewer_stays_out_of_dops).
     """
@@ -406,14 +410,15 @@ def focus_network_editor(
             layout_if_enabled(parent, place_unpositioned)
         with keep_viewer_state(), viewer_stays_out_of_dops():
             for pane_tab in hou.ui.paneTabs():
-                if pane_tab.type() == hou.paneTabType.NetworkEditor:
-                    if parent is not None:
-                        pane_tab.cd(parent.path())
-                    pane_tab.setCurrentNode(node)
-                    pane_tab.homeToSelection()
-                    if other_objects is not None:
-                        set_other_objects(other_objects)
-                    return
+                if pane_tab.type() != hou.paneTabType.NetworkEditor:
+                    continue
+                current = pane_tab.pwd()
+                if parent is None or current is None or current.path() != parent.path():
+                    continue
+                pane_tab.setCurrentNode(node)
+                if other_objects is not None:
+                    set_other_objects(other_objects)
+                return
     except Exception:
         pass  # Never let UI helpers break a tool call
 

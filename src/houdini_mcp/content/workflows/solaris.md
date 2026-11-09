@@ -34,39 +34,54 @@ do not fight composition strength by editing the same prim twice.
 
 ## Component Builder
 
-Use Component Builder for reusable USD assets instead of hand-rolling the
-hierarchy. It creates four nodes:
+Use the **Component Builder shelf tool** for reusable USD assets. Do not
+hand-create the four nodes. The tool creates:
 
 - **Component Geometry** contains the SOP network that defines the model. Double-click it to build the geometry and connect the result to the default output.
 - **Material Library** contains the component's materials.
 - **Component Material** binds materials onto the component geometry.
 - **Component Output** assembles the final component prim and writes the USD files.
 
-Set the display flag on Component Output. Name that node meaningfully because its
-name becomes the root prim. Use the proxy and simproxy outputs inside Component
-Geometry when the asset needs display or collision proxies. Write the component
-to its own USD file and reference it into scenes with a Reference or Asset
-Reference LOP.
+Build checklist:
+
+1. Run the Component Builder shelf tool in `/stage`.
+2. Set the display flag on Component Output. Rename it to the PascalCase asset name; its name becomes the root prim.
+3. Delete every sticky note inside Component Geometry.
+4. Build the geometry inside Component Geometry's SOP network, above the `default` output. Layout the internal network.
+5. If the user renders with Arnold, insert a Mesh LOP after Component Geometry with the pattern `%type:Mesh` and **Double Sided** enabled.
+6. Name materials in the Material Library after the material.
+7. Wire the nodes, set the display flag on Component Output, and layout `/stage`.
+
+Use the proxy and simproxy outputs inside Component Geometry when the asset
+needs display or collision proxies. Write the component to its own USD file and
+reference it into scenes with a Reference or Asset Reference LOP.
+
+To reference the component within the same network, create a Reference LOP,
+connect the Component Output to its multi-input, and leave all parameters at
+their defaults. It lands at `/<AssetName>`. Set a different hierarchy only when
+the user asks for one.
 
 If the user renders with Arnold, see the `arnold` workflow for the required
-Mesh LOP with **Double Sided** enabled after the Component Geometry nodes.
+Mesh LOP and double-sided rule.
 
-## Viewport-first lookdev
+## Lookdev and verification
 
-During lookdev NEVER render to disk. Set the viewport renderer to the renderer
-the user wants for a live Hydra render, and use `capture_screenshot` to check
-materials, lighting and your own work. `start_render` and render nodes are only
+During lookdev NEVER render to disk. Verify materials, bindings, and lights with
+USD data first (`get_usd_bound_material`, `get_usd_attributes`, `list_lights`).
+Do not switch the viewport renderer or capture a screenshot unless the user asks
+or approves. If a visual check is approved, switch the delegate, capture, and
+restore the previous renderer and view. `start_render` and render nodes are only
 for final renders the user explicitly asks to be written to disk. The viewport
 holds its own copy of the display-flag node's stage, so looking at a node is not
 free but is far cheaper than a render.
 
 ## Order of work
 
-1. `get_scene_info`, then `set_current_network` to `/stage`.
+1. `get_scene_info`. Do not change the network editor; work in `/stage` by node path.
 2. Bring geometry in: reference to place an asset at a branch, sublayer to stack a whole layer.
 3. Establish structure and transforms before look, so later nodes are not chasing paths that are still moving.
 4. Materials, then lights, then render settings.
-5. Set the viewport renderer to the target renderer, `capture_screenshot`, and LOOK.
+5. Verify hierarchy, bindings, and lights with USD data. Switch the viewport renderer or capture a screenshot only if the user asks.
 6. `get_stage_info`, `list_usd_prims`, `get_usd_materials`, `get_usd_layers` to verify hierarchy, bindings and the layer stack. A prim that renders with the wrong material (or none): `get_usd_bound_material` names what it resolves to and where the binding comes from.
 
 Wire with `connect_nodes_batch`. LOP chains read top to bottom, and

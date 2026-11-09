@@ -13,6 +13,7 @@ Material Library LOP, never in `/mat` or at the object level.
 - Get a material bound and visible before making it good. An unassigned perfect shader looks identical to no shader.
 - Use the shader builder that matches the renderer. For Arnold, see the `arnold` workflow.
 - Do not mix shader builders from different renderers in one material library.
+- Neutral gray is a linear value: use `0.2`, not `0.5`.
 
 ## Judgement
 
@@ -26,8 +27,8 @@ Material Library LOP, never in `/mat` or at the object level.
 
 1. `get_render_settings` and `get_scene_info` to establish the renderer.
 2. `list_materials` and `get_material_info` to see what already exists.
-3. Create and **assign** the material, then look at it with the viewport renderer and `capture_screenshot`.
-4. Author base colour, then roughness and specular, then detail maps. Judge each against a lit render.
+3. Create and **assign** the material, then verify the binding with `get_usd_bound_material`. Use a viewport look or `capture_screenshot` only if the user asks.
+4. Author base colour, then roughness and specular, then detail maps. Judge each against the USD binding and, if approved, a lit viewport look.
 5. Promote the controls you will actually tweak.
 6. Use overrides or stylesheets for per-object variation instead of copies.
 

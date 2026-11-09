@@ -57,6 +57,7 @@ def test_server_registers_initial_tools() -> None:
     assert {
         'get_scene_info',
         'create_node',
+        'delete_sticky_notes',
         'set_parameter',
         'build_network',
         'get_geometry_info',

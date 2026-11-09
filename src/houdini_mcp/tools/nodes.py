@@ -48,6 +48,24 @@ async def delete_node(
 
 
 @tool
+async def delete_sticky_notes(
+    ctx: BridgeContext,
+    parent_path: str,
+    recursive: bool = True,
+) -> dict:
+    """Delete sticky notes under a network, including nested networks."""
+
+    return await run_command(
+        ctx,
+        'nodes.delete_sticky_notes',
+        {
+            'parent_path': parent_path,
+            'recursive': recursive,
+        },
+    )
+
+
+@tool
 async def rename_node(ctx: BridgeContext, node_path: str, new_name: str) -> dict:
     """Rename a node."""
 
