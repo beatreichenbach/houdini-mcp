@@ -47,6 +47,40 @@ To remove it:
 .venv/bin/python -m houdini_mcp uninstall
 ```
 
+## Custom content
+
+Built-in content lives in `src/houdini_mcp/content/`.
+User content lives in the platform config directory or custom directories set with `HOUDINI_MCP_CONTENT` under
+`houdini_mcp/content/` and can overwrite existing files:
+
+```text
+~/.config/houdini_mcp/content/
+└── workflows/
+    └── my-workflow.md
+```
+
+Use `{context}` for the caller’s context and `{include:name}` to include a shared fragment.
+
+Inspect content with:
+
+```sh
+.venv/bin/python -m houdini_mcp content path
+.venv/bin/python -m houdini_mcp content list
+```
+
+## Environment variables
+
+| Variable                | Default        | Description                                                   |
+|-------------------------|----------------|---------------------------------------------------------------|
+| `HOUDINI_MCP_HOST`      | `localhost`    | Host of the Houdini plugin to connect to.                     |
+| `HOUDINI_MCP_PORT`      | `8100`         | First port the server scans and the plugin prefers.           |
+| `HOUDINI_MCP_TIMEOUT`   | `135`          | Command timeout in seconds.                                   |
+| `HOUDINI_MCP_LOG_LEVEL` | `INFO`         | Log level.                                                    |
+| `HOUDINI_MCP_BIND`      | `127.0.0.1`    | Address hwebserver binds to.                                  |
+| `HOUDINI_MCP_AUTOSTART` | `1`            | Set to `0` to disable autostart.                              |
+| `HOUDINI_MCP_CONTENT`   | none           | Additional content roots, separated by the OS path separator. |
+| `HOUDINI_MCP`           | set by install | Repository root used by the Houdini package file.             |
+
 ## Development
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup and check commands.

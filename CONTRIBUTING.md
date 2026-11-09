@@ -1,6 +1,6 @@
 # Contributing Guide
 
-For package boundaries, runtime flow, and how to add commands, resources, prompts, and skills, see [ARCHITECTURE.md](ARCHITECTURE.md).
+For package boundaries, runtime flow, and how to add commands, resources, prompts, and workflows, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Development
 
