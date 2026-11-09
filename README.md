@@ -4,11 +4,17 @@ An MCP server for SideFX Houdini.
 
 ## Installation
 
-Install it from a checkout:
+Create a virtual environment and install the server:
 
 ```sh
-uv venv --python 3.13
-uv pip install -e ".[dev]"
+python -m venv .venv
+.venv/bin/pip install -e .
+```
+
+Run it:
+
+```sh
+.venv/bin/python -m houdini_mcp
 ```
 
 ## Development

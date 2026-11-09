@@ -11,9 +11,9 @@ uv run pre-commit install
 Run the checks:
 
 ```sh
-uv run ruff format houdini_mcp tests
-uv run ruff check --select I --fix houdini_mcp tests
-uv run ruff check houdini_mcp tests
+uv run ruff format src tests
+uv run ruff check --select I --fix src tests
+uv run ruff check src tests
 uv run ty check
 uv run pytest
 ```
