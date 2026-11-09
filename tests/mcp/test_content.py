@@ -19,19 +19,19 @@ def test_builtin_content_loads() -> None:
 
 
 def test_workflow_description_and_render(tmp_path: Path) -> None:
-    _write(tmp_path, 'shared', 'housekeeping', '## Housekeeping\n')
+    _write(tmp_path, 'shared', 'cleanup', '## Cleanup\n')
     _write(
         tmp_path,
         'workflows',
         'demo',
-        '# Demo\n\nDemo workflow.\n\n{include:housekeeping}\n\n{context}\n',
+        '# Demo\n\nDemo workflow.\n\n{include:cleanup}\n\n{context}\n',
     )
 
     content = load_content([tmp_path])
     workflow = content.workflows['demo']
 
     assert workflow.description == 'Demo workflow.'
-    assert 'Housekeeping' in workflow.render('custom context', content.shared)
+    assert 'Cleanup' in workflow.render('custom context', content.shared)
 
 
 def test_render_resolves_placeholders(tmp_path: Path) -> None:
@@ -39,16 +39,16 @@ def test_render_resolves_placeholders(tmp_path: Path) -> None:
         tmp_path,
         'workflows',
         'demo',
-        '# Demo\n\nDemo workflow.\n\n{include:housekeeping}\n\n{context}\n',
+        '# Demo\n\nDemo workflow.\n\n{include:cleanup}\n\n{context}\n',
     )
-    _write(tmp_path, 'shared', 'housekeeping', '## Housekeeping\n')
+    _write(tmp_path, 'shared', 'cleanup', '## Cleanup\n')
 
     content = load_content([tmp_path])
     text = content.workflows['demo'].render('custom context', content.shared)
 
     assert 'custom context' in text
     assert '{context}' not in text
-    assert '{include:housekeeping}' not in text
+    assert '{include:cleanup}' not in text
 
 
 def test_render_appends_context_when_placeholder_missing(tmp_path: Path) -> None:

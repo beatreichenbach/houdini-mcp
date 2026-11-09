@@ -96,7 +96,7 @@ Example:
 
 Guide for setting up pyro simulations.
 
-{include:housekeeping}
+{include:cleanup}
 
 ## Context
 

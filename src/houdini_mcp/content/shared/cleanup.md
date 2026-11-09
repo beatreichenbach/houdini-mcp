@@ -1,4 +1,4 @@
-## Housekeeping
+## Cleanup
 
 - Inspect the current scene and selection before changing anything.
 - Keep changes undoable.
