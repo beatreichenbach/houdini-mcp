@@ -101,7 +101,9 @@ def _callback_kwargs(parm: hou.Parm, arguments: dict | None) -> dict[str, Any]:
 
 
 def _script_name(parm: hou.Parm) -> str:
-    """What Houdini names the script in a traceback: `Lop/karmarendersettings/res_mode`."""
+    """
+    What Houdini names the script in a traceback: `Lop/karmarendersettings/res_mode`.
+    """
 
     with contextlib.suppress(Exception):
         return f'{parm.node().type().nameWithCategory()}/{parm.name()}'
@@ -123,10 +125,13 @@ def exec_python_callback(parm: hou.Parm, script: str, kwargs: dict[str, Any]) ->
     except Exception as exc:
         # From the callback's own frame on (tb_next skips this function's exec
         # line), last few frames: what Houdini's dialog would have shown.
-        frames = traceback.format_tb(exc.__traceback__.tb_next)[-4:]  # ty: ignore[unresolved-attribute]
+        frames = traceback.format_tb(
+            exc.__traceback__.tb_next  # ty: ignore[unresolved-attribute]
+        )[-4:]
         tail = ''.join(frames).rstrip()
         raise CallbackError(
-            f'Callback of {node.path()}/{parm.name()} raised {type(exc).__name__}: {exc}\n{tail}'
+            f'Callback of {node.path()}/{parm.name()} raised {type(exc).__name__}: '
+            f'{exc}\n{tail}'
         ) from exc
     finally:
         with contextlib.suppress(Exception):

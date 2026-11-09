@@ -1,23 +1,15 @@
-"""Cache management handlers for FXHoudini-MCP.
-
-Provides tools for listing, inspecting, clearing, and writing
-file caches from Houdini's filecache and rop_geometry nodes.
-"""
+"""Cache management handlers for Houdini MCP."""
 
 from __future__ import annotations
 
 import contextlib
-
-# Built-in
 import glob
 import os
 import time
 from typing import Any
 
-# Third-party
 import hou
 
-# Internal
 from houdini_mcp_plugin.callbacks import press
 from houdini_mcp_plugin.dispatcher import register_command
 from houdini_mcp_plugin.outputs import (
@@ -42,9 +34,6 @@ def _menu_index_by_label(parm: hou.Parm, label_substring: str) -> int | None:
         if target in label.lower():
             return int(items[idx]) if items[idx].isdigit() else idx
     return None
-
-
-###### Helpers
 
 
 def _get_node(node_path: str) -> hou.Node:
@@ -80,13 +69,7 @@ _OUTPUT_PARMS = ('sopoutput', 'file', 'filename', 'filepath')
 
 
 def _frame_glob(node: hou.Node) -> str | None:
-    """A glob for every frame a cache node writes, from evaluated paths.
-
-    The raw path is not usable: on File Cache 2.0 `sopoutput` is a Python
-    expression, and on any node `$F` may be hidden behind chs() calls. So
-    evaluate the path at two frames and turn the part that changed into `*`,
-    widened over the whole digit run so 0009 -> 0010 still matches.
-    """
+    """A glob for every frame a cache node writes, from evaluated paths."""
 
     for parm_name in _OUTPUT_PARMS:
         parm = node.parm(parm_name)
@@ -157,18 +140,9 @@ def _expand_frame_pattern(pattern: str) -> str:
     return result
 
 
-###### cache.list_caches
-
-
+@register_command(PluginCommand.CACHE_LIST_CACHES)
 def _list_caches(*, root_path: str = '/', **_: Any) -> dict[str, Any]:
-    """Recursively find all cache-type nodes under the given root.
-
-    Looks for filecache, rop_geometry, and similar nodes, returning
-    their file path patterns and frame ranges.
-
-    Args:
-        root_path: Root path to search from (default: "/").
-    """
+    """Recursively find all cache-type nodes under the given root."""
 
     root = _get_node(root_path)
     # Not inside locked assets: a File Cache's own render ROP and file SOP
@@ -223,21 +197,9 @@ def _list_caches(*, root_path: str = '/', **_: Any) -> dict[str, Any]:
     }
 
 
-register_command(PluginCommand.CACHE_LIST_CACHES)(_list_caches)
-
-
-###### cache.get_cache_status
-
-
+@register_command(PluginCommand.CACHE_GET_CACHE_STATUS)
 def _get_cache_status(*, node_path: str, **_: Any) -> dict[str, Any]:
-    """Get the status of a specific cache node.
-
-    Expands the file path pattern, checks which frames exist on disk,
-    and calculates the total size.
-
-    Args:
-        node_path: Path to the cache node.
-    """
+    """Get the status of a specific cache node."""
 
     node = _get_node(node_path)
 
@@ -248,9 +210,8 @@ def _get_cache_status(*, node_path: str, **_: Any) -> dict[str, Any]:
         raise ValueError(f'Could not determine file pattern for node: {node_path}')
 
     # Find existing files using glob
-    glob_pattern = _frame_glob(node) or _expand_frame_pattern(
-        raw_pattern if raw_pattern else file_pattern  # ty: ignore[invalid-argument-type]
-    )
+    pattern = raw_pattern or file_pattern or ''
+    glob_pattern = _frame_glob(node) or _expand_frame_pattern(pattern)
 
     try:
         existing_files = sorted(glob.glob(glob_pattern))
@@ -325,27 +286,14 @@ def _get_cache_status(*, node_path: str, **_: Any) -> dict[str, Any]:
     }
 
 
-register_command(PluginCommand.CACHE_GET_CACHE_STATUS)(_get_cache_status)
-
-
-###### cache.clear_cache
-
-
+@register_command(PluginCommand.CACHE_CLEAR_CACHE)
 def _clear_cache(
     *,
     node_path: str,
     frame_range: list[int] | None = None,
     **_: Any,
 ) -> dict[str, Any]:
-    """Delete cached files from disk for a cache node.
-
-    If frame_range is provided, only deletes files for frames within
-    that range. Otherwise deletes all matching files.
-
-    Args:
-        node_path: Path to the cache node.
-        frame_range: Optional [start_frame, end_frame] to limit deletion.
-    """
+    """Delete cached files from disk for a cache node."""
 
     node = _get_node(node_path)
 
@@ -358,9 +306,8 @@ def _clear_cache(
     # _frame_glob, as get_cache_status uses: on File Cache 2.0 the raw output
     # parm is an expression body, so a glob built from it matched nothing and
     # this reported success with deleted_count 0 and every file still on disk.
-    glob_pattern = _frame_glob(node) or _expand_frame_pattern(
-        raw_pattern if raw_pattern else file_pattern  # ty: ignore[invalid-argument-type]
-    )
+    pattern = raw_pattern or file_pattern or ''
+    glob_pattern = _frame_glob(node) or _expand_frame_pattern(pattern)
 
     try:
         existing_files = sorted(glob.glob(glob_pattern))
@@ -416,19 +363,8 @@ def _clear_cache(
     return result
 
 
-register_command(PluginCommand.CACHE_CLEAR_CACHE)(_clear_cache)
-
-
-###### cache.write_cache
-
-
 def _set_frame_parm(node: hou.Node, name: str, value: float) -> None:
-    """Set f1/f2, removing the $FSTART/$FEND keyframe a fresh cache node ships with.
-
-    parm.set() on a parm driven by an expression keyframe leaves the
-    expression in charge: set(10) evaluates back to $FSTART. So the range this
-    function was asked for used to be silently ignored.
-    """
+    """Set f1/f2, removing the $FSTART/$FEND keyframe a fresh cache node ships with."""
 
     parm = node.parm(name)
     if parm is None:
@@ -438,6 +374,7 @@ def _set_frame_parm(node: hou.Node, name: str, value: float) -> None:
     parm.set(value)
 
 
+@register_command(PluginCommand.CACHE_WRITE_CACHE)
 def _write_cache(
     *,
     node_path: str,
@@ -445,24 +382,7 @@ def _write_cache(
     background: bool = False,
     **_: Any,
 ) -> dict[str, Any]:
-    """Execute (render) a cache node to write files to disk.
-
-    Presses the "execute" button on the cache node or calls render()
-    for ROP-style caches.
-
-    Args:
-        node_path: Path to the cache node.
-        frame_range: Optional [start_frame, end_frame] to render. If not
-            provided, uses the node's own frame range settings.
-        background: Write from a separate Houdini process so the session
-            stays responsive. File Cache implements this as a PDG cook of its
-            internal TOP network (the "Save to Disk in Background" button,
-            parm `cookoutputnode`); its `savebackground` toggle on its own
-            changes nothing, and pressing `execute` with the toggle on still
-            blocks the main thread for the whole write, which is what a live
-            session measured. The return reports the launch; poll
-            get_cache_status for the files.
-    """
+    """Execute (render) a cache node to write files to disk."""
 
     node = _get_node(node_path)
 
@@ -588,6 +508,3 @@ def _write_cache(
         ),
         **verdict,
     }
-
-
-register_command(PluginCommand.CACHE_WRITE_CACHE)(_write_cache)

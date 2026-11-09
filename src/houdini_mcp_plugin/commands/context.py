@@ -1,31 +1,17 @@
-"""Scene-understanding / context handlers for FXHoudini-MCP.
-
-Provides tools for querying network structure, cook chains, node
-explanations, selection management, scene summaries, state snapshots,
-and detailed error analysis.
-"""
+"""Scene-understanding / context handlers for Houdini MCP."""
 
 from __future__ import annotations
 
 import contextlib
-
-# Built-in
 from typing import Any
 
-# Third-party
 import hou
 
-# Internal
 from houdini_mcp_plugin.dispatcher import register_command
 from houdini_mcp_protocol import PluginCommand
 
-###### Module-level state
-
 # Snapshot storage for compare_snapshots
 _snapshots: dict[str, dict] = {}
-
-
-###### Helpers
 
 
 def _get_node(node_path: str) -> hou.Node:
@@ -60,12 +46,7 @@ def _has_errors(node: hou.Node) -> bool:
 
 
 def _non_default_parms(node: hou.Node) -> dict[str, Any]:
-    """Return a dict of parameter names to values for non-default parameters.
-
-    Each component is compared with its own default: comparing ty with the
-    tuple default (0, 0, 0) reported 30 of 49 parms as changed on a fresh
-    xform, in explain_node and compare_snapshots alike.
-    """
+    """Return a dict of parameter names to values for non-default parameters."""
 
     from houdini_mcp_plugin.commands.nodes import _component_default, _is_at_default
 
@@ -86,19 +67,11 @@ def _non_default_parms(node: hou.Node) -> dict[str, Any]:
     return result
 
 
-###### context.get_network_overview
-
-
 _NAMED_INPUT_CATEGORIES = ('Vop', 'Cop')
 
 
 def _name_connectors(wire: dict, source: Any, target: Any, named_inputs: bool) -> None:
-    """Add the connector names that tell wires apart.
-
-    The output's name when the source has more than one output (an index alone
-    does not say v from P); the input's name where inputs are named by design
-    (VOP, Copernicus), not "input1".
-    """
+    """Add the connector names that tell wires apart."""
 
     with contextlib.suppress(Exception):
         names = source.outputNames()
@@ -111,17 +84,13 @@ def _name_connectors(wire: dict, source: Any, target: Any, named_inputs: bool) -
                 wire['to_input_name'] = names[wire['to_input']]
 
 
+@register_command(PluginCommand.CONTEXT_GET_NETWORK_OVERVIEW)
 def _get_network_overview(
     path: str = '/obj',
     depth: int = 2,
     **_: Any,
 ) -> dict:
-    """Return a compact network overview of nodes and connections.
-
-    Args:
-        path: Root network path to inspect.
-        depth: How many levels deep to recurse into children.
-    """
+    """Return a compact network overview of nodes and connections."""
 
     def _build_overview(network: hou.Node, remaining_depth: int) -> dict:
         children = network.children()
@@ -266,18 +235,9 @@ def _get_network_overview(
     return _build_overview(root, depth)
 
 
-###### context.get_cook_chain
-
-
+@register_command(PluginCommand.CONTEXT_GET_COOK_CHAIN)
 def _get_cook_chain(node_path: str, **_: Any) -> dict:
-    """Trace the cook dependency chain from sources to the target node.
-
-    Walks node.inputs() recursively back to source nodes and returns
-    an ordered list from source to target.
-
-    Args:
-        node_path: Absolute path to the target node.
-    """
+    """Trace the cook dependency chain from sources to the target node."""
 
     target = _get_node(node_path)
 
@@ -315,18 +275,9 @@ def _get_cook_chain(node_path: str, **_: Any) -> dict:
     }
 
 
-###### context.explain_node
-
-
+@register_command(PluginCommand.CONTEXT_EXPLAIN_NODE)
 def _explain_node(node_path: str, **_: Any) -> dict:
-    """Return a human-readable explanation of a node.
-
-    Includes type description, non-default parameters, connections,
-    current state, and a summary text field.
-
-    Args:
-        node_path: Absolute path to the node.
-    """
+    """Return a human-readable explanation of a node."""
 
     node = _get_node(node_path)
     node_type = node.type()
@@ -426,15 +377,9 @@ def _explain_node(node_path: str, **_: Any) -> dict:
     }
 
 
-###### context.get_selection
-
-
+@register_command(PluginCommand.CONTEXT_GET_SELECTION)
 def _get_selection(**_: Any) -> dict:
-    """Get the current selection in Houdini.
-
-    Returns selected nodes and, if available, geometry component
-    selection (points, prims, edges).
-    """
+    """Get the current selection in Houdini."""
 
     # Node selection
     selected_nodes = hou.selectedNodes()
@@ -501,17 +446,9 @@ def _get_selection(**_: Any) -> dict:
     }
 
 
-###### context.set_selection
-
-
+@register_command(PluginCommand.CONTEXT_SET_SELECTION)
 def _set_selection(node_paths: list | None = None, **_: Any) -> dict:
-    """Select nodes by their paths.
-
-    Clears the existing selection first, then selects the specified nodes.
-
-    Args:
-        node_paths: List of absolute node paths to select.
-    """
+    """Select nodes by their paths."""
 
     if node_paths is None:
         node_paths = []
@@ -546,15 +483,9 @@ def _set_selection(node_paths: list | None = None, **_: Any) -> dict:
     }
 
 
-###### context.get_scene_summary
-
-
+@register_command(PluginCommand.CONTEXT_GET_SCENE_SUMMARY)
 def _get_scene_summary(**_: Any) -> dict:
-    """Return a high-level overview of the entire Houdini scene.
-
-    Includes /obj, /out, /stage children, total node count,
-    error summary, and timeline info.
-    """
+    """Return a high-level overview of the entire Houdini scene."""
 
     # /obj children
     obj_children = []
@@ -652,20 +583,13 @@ def _get_scene_summary(**_: Any) -> dict:
     }
 
 
-###### context.compare_snapshots
-
-
+@register_command(PluginCommand.CONTEXT_COMPARE_SNAPSHOTS)
 def _compare_snapshots(
     action: str = 'take',
     snapshot_name: str = 'default',
     **_: Any,
 ) -> dict:
-    """Take or compare scene snapshots for structural diffing.
-
-    Args:
-        action: "take" to store current state, "compare" to diff against stored.
-        snapshot_name: Name of the snapshot to take or compare against.
-    """
+    """Take or compare scene snapshots for structural diffing."""
 
     global _snapshots
 
@@ -757,24 +681,13 @@ def _compare_snapshots(
         raise ValueError(f"Unknown action '{action}'. Must be 'take' or 'compare'.")
 
 
-###### context.get_node_errors_detailed
-
-
+@register_command(PluginCommand.CONTEXT_GET_NODE_ERRORS_DETAILED)
 def _get_node_errors_detailed(
     node_path: str | None = None,
     root_path: str = '/',
     **_: Any,
 ) -> dict:
-    """Deep error analysis for a specific node or all descendants of a root.
-
-    For each error, returns the node path, error message, node type,
-    and parameters that might be causing it (e.g. file path params
-    pointing to missing files).
-
-    Args:
-        node_path: If given, analyze errors on this specific node.
-        root_path: If node_path is None, scan all descendants of this root.
-    """
+    """Deep error analysis for a specific node or all descendants of a root."""
 
     import os as _os
 
@@ -844,17 +757,3 @@ def _get_node_errors_detailed(
         'error_node_count': len(results),
         'details': results,
     }
-
-
-###### Registration
-
-register_command(PluginCommand.CONTEXT_GET_NETWORK_OVERVIEW)(_get_network_overview)
-register_command(PluginCommand.CONTEXT_GET_COOK_CHAIN)(_get_cook_chain)
-register_command(PluginCommand.CONTEXT_EXPLAIN_NODE)(_explain_node)
-register_command(PluginCommand.CONTEXT_GET_SELECTION)(_get_selection)
-register_command(PluginCommand.CONTEXT_SET_SELECTION)(_set_selection)
-register_command(PluginCommand.CONTEXT_GET_SCENE_SUMMARY)(_get_scene_summary)
-register_command(PluginCommand.CONTEXT_COMPARE_SNAPSHOTS)(_compare_snapshots)
-register_command(PluginCommand.CONTEXT_GET_NODE_ERRORS_DETAILED)(
-    _get_node_errors_detailed
-)

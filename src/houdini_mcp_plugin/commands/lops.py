@@ -1,12 +1,7 @@
-"""LOPs / USD handlers for FXHoudini-MCP.
-
-Each handler operates on LOP nodes and their USD stages.
-All functions run on the main thread via the dispatcher.
-"""
+"""LOPs / USD handlers for Houdini MCP."""
 
 from __future__ import annotations
 
-# Built-in
 import bisect
 import contextlib
 import fnmatch
@@ -15,12 +10,9 @@ import itertools
 import re
 from typing import Any
 
-# Third-party
 import hou
 
 from houdini_mcp_plugin.commands.nodes import _refuse_taken_name
-
-# Internal
 from houdini_mcp_plugin.config import place_new_node
 from houdini_mcp_plugin.dispatcher import register_command
 from houdini_mcp_plugin.outputs import at_frame
@@ -45,9 +37,6 @@ except ImportError:
     HAS_PXR = False
 
 
-###### Helpers
-
-
 def _require_pxr() -> None:
     """Raise if pxr modules are not available."""
 
@@ -59,11 +48,7 @@ def _require_pxr() -> None:
 
 
 def _get_lop_stage(node_path: str) -> Usd.Stage:
-    """Return the cooked USD stage from a LOP node.
-
-    Raises:
-        hou.OperationFailed: if node doesn't exist or has no stage.
-    """
+    """Return the cooked USD stage from a LOP node."""
 
     _require_pxr()
     node = hou.node(node_path)
@@ -85,7 +70,7 @@ _ARRAY_HEAD = 8
 
 
 def _is_usd_array(val: Any) -> bool:
-    """A Vt array or any other sized sequence that is not text, a mapping or a Gf vector."""
+    """A Vt array or any other sized sequence that is not text, a mapping or a Gf..."""
 
     if (
         isinstance(val, (str, bytes, dict))
@@ -95,8 +80,10 @@ def _is_usd_array(val: Any) -> bool:
         return False
     if HAS_PXR:
         gf = (
-            Gf.Vec2f, Gf.Vec2d, Gf.Vec2h, Gf.Vec2i, Gf.Vec3f, Gf.Vec3d, Gf.Vec3h, Gf.Vec3i,
-            Gf.Vec4f, Gf.Vec4d, Gf.Vec4h, Gf.Vec4i, Gf.Matrix2d, Gf.Matrix2f, Gf.Matrix3d,
+            Gf.Vec2f, Gf.Vec2d, Gf.Vec2h, Gf.Vec2i,
+            Gf.Vec3f, Gf.Vec3d, Gf.Vec3h, Gf.Vec3i,
+            Gf.Vec4f, Gf.Vec4d, Gf.Vec4h, Gf.Vec4i,
+            Gf.Matrix2d, Gf.Matrix2f, Gf.Matrix3d,
             Gf.Matrix3f, Gf.Matrix4d, Gf.Matrix4f, Gf.Quatf, Gf.Quatd, Gf.Quath,
         )  # fmt: skip
         with contextlib.suppress(Exception):
@@ -106,7 +93,7 @@ def _is_usd_array(val: Any) -> bool:
 
 
 def _array_range(val: Any) -> dict[str, Any]:
-    """min/max of a numeric array (per component for vectors), or {} when not numeric."""
+    """min/max of a numeric array (per component for vectors), or {} when not..."""
 
     try:
         import numpy as np  # ty: ignore[import-not-found]
@@ -122,12 +109,7 @@ def _array_range(val: Any) -> dict[str, Any]:
 
 
 def _array_summary(val: Any, head: int = _ARRAY_HEAD) -> dict[str, Any]:
-    """What an agent needs from a large array: how many, of what, the first few, the range.
-
-    get_usd_prim on a building mesh answered 6.6 million characters (points,
-    st, faceVertexIndices in full) and get_usd_attribute(primvars:st) 40 000
-    lines. Nobody reads that; they grep it. This is the grep.
-    """
+    """What an agent needs from a large array: how many, of what, the first few,..."""
 
     size = len(val)
     first = val[0] if size else None
@@ -150,11 +132,7 @@ def _array_summary(val: Any, head: int = _ARRAY_HEAD) -> dict[str, Any]:
 def _usd_value_to_python(
     val: Any, array_limit: int | None = _ARRAY_SUMMARY_LIMIT
 ) -> Any:
-    """Convert USD/Gf types to JSON-safe Python types.
-
-    An array longer than *array_limit* comes back as a summary dict (see
-    _array_summary); array_limit=None returns every element.
-    """
+    """Convert USD/Gf types to JSON-safe Python types."""
 
     if val is None:
         return None
@@ -224,20 +202,7 @@ def _usd_value_to_python(
 
 
 def _traverse(stage: Usd.Stage, root: Usd.Prim | None, instance_proxies: bool) -> Any:
-    """Prims under *root* (or the whole stage), optionally through instances.
-
-    The default USD traversal stops at an instanceable prim: its children
-    live on the prototype, and GetChildren() on the instance answers with an
-    empty tuple. A stage of instanced trees therefore counted one Mesh per
-    prototype, and finding the meshes took execute_python with
-    TraverseInstanceProxies. The predicate is opt-in because instance
-    proxies multiply the prim count by whatever the instancer instances.
-
-    Args:
-        stage: The stage to walk.
-        root: Subtree root, or None for the whole stage.
-        instance_proxies: Descend into instanceable prims.
-    """
+    """Prims under *root* (or the whole stage), optionally through instances."""
 
     if root is None:
         if instance_proxies:
@@ -268,14 +233,7 @@ def _stage_frame() -> float | None:
 
 
 def _cooked_at_time(handler: Any) -> Any:
-    """Run a stage read with the stage cooked at the requested *time*.
-
-    A LOP stage holds what its nodes authored at the frame they cooked on: an
-    Xform LOP with ty = $F carries one time sample, at the current frame. Read
-    at Usd.TimeCode(10) from frame 1, it answered ty = 1 under "time": 10.
-    The playbar goes to *time* for the read and back after; a stage whose
-    samples come from a file reads the same either way.
-    """
+    """Run a stage read with the stage cooked at the requested *time*."""
 
     # wraps keeps the handler's signature visible: the dispatcher reads it to
     # explain a bad argument, and a bare **kwargs answered every call alike.
@@ -291,14 +249,7 @@ def _cooked_at_time(handler: Any) -> Any:
 
 
 def _read_time(time: float | None) -> tuple[Any, float | None, str]:
-    """(time code, time, time_source) for reading many attributes at once.
-
-    No *time* means the current frame, which is what the viewport and a
-    render of that frame resolve. A time-sampled attribute read at the
-    default time code answers its default slot instead, a value the render
-    never sees once samples exist. An attribute without samples resolves to
-    its default at any time code, so one frame serves every attribute.
-    """
+    """(time code, time, time_source) for reading many attributes at once."""
 
     if time is not None:
         return Usd.TimeCode(float(time)), float(time), 'requested'
@@ -362,14 +313,7 @@ def _prim_to_dict(
     time_code: Any = None,
     attr_patterns: list[str] | str | None = None,
 ) -> dict[str, Any]:
-    """Convert a USD prim to a JSON-safe dict.
-
-    With include_attrs, array values longer than _ARRAY_SUMMARY_LIMIT are
-    summarised unless *full* is set, and `children` lists the prims under
-    an instanceable prim's prototype when *instance_proxies* is set. Values
-    are read at *time_code* (default: the default time code), and
-    *attr_patterns* narrows the attributes and relationships listed.
-    """
+    """Convert a USD prim to a JSON-safe dict."""
 
     # is_active / has_payload only when they are not the default: true and
     # false on nearly every row of a listing, about a third of each row.
@@ -431,9 +375,6 @@ def _prim_to_dict(
     return info
 
 
-###### lops.get_stage_info
-
-
 def _viewport_delegate() -> str | None:
     """Name of the Hydra delegate the first Scene Viewer draws with, if any."""
 
@@ -445,17 +386,7 @@ def _viewport_delegate() -> str | None:
 
 
 def _resolve_stage_node(node_path: str) -> tuple[hou.Node, dict[str, Any]]:
-    """The LOP whose stage answers for *node_path*, plus what it stands for.
-
-    `/stage` is a network, not a LOP, and get_stage_info refused it with
-    "Node is not a LOP node (no stage())", which left "what is the viewport
-    showing" to execute_python and displayNode(). A network now answers
-    through its display node, and the reply says so.
-
-    Raises:
-        hou.OperationFailed: if the node does not exist, or neither it nor
-            its display node holds a stage.
-    """
+    """The LOP whose stage answers for *node_path*, plus what it stands for."""
 
     node = hou.node(node_path)
     if node is None:
@@ -490,12 +421,9 @@ def _resolve_stage_node(node_path: str) -> tuple[hou.Node, dict[str, Any]]:
     return display, context
 
 
+@register_command(PluginCommand.LOPS_GET_STAGE_INFO)
 def _get_stage_info(*, node_path: str = '/stage') -> dict[str, Any]:
-    """Stage summary: prim count, layers, default prim, up axis, meters per unit.
-
-    Accepts a LOP network (`/stage`) as well as a LOP: the network answers
-    through its display node, which is what the viewport shows.
-    """
+    """Stage summary: prim count, layers, default prim, up axis, meters per unit."""
 
     node, context = _resolve_stage_node(node_path)
     node_path = node.path()
@@ -533,12 +461,8 @@ def _get_stage_info(*, node_path: str = '/stage') -> dict[str, Any]:
     return result
 
 
-register_command(PluginCommand.LOPS_GET_STAGE_INFO)(_get_stage_info)
-
-
-###### lops.get_usd_prim
-
-
+@register_command(PluginCommand.LOPS_GET_USD_PRIM)
+@_cooked_at_time
 def _get_usd_prim(
     *,
     node_path: str,
@@ -548,21 +472,7 @@ def _get_usd_prim(
     time: float | None = None,
     attr_patterns: list[str] | str | None = None,
 ) -> dict[str, Any]:
-    """Detailed prim info with type, kind, attributes, relationships, and children.
-
-    Array attributes are summarised (size, element type, head, range) unless
-    *full* is set; get_usd_attribute reads one array in windows. An
-    instanceable prim answers `children: []` until traverse_instance_proxies
-    is set, since its contents live on the prototype.
-
-    Values are read at *time*, or at the current frame without it. They used
-    to come from the default slot: a RenderSettings whose `resolution` had a
-    default of (2048, 1080) and samples of (1920, 1080) at frame 1 and
-    (1280, 720) at frame 24 answered (2048, 1080) on frame 24, which a render
-    of that frame never uses. A time-sampled attribute carries
-    `time_samples`. *attr_patterns* (globs) narrows attributes and
-    relationships.
-    """
+    """Detailed prim info with type, kind, attributes, relationships, and children."""
 
     stage = _get_lop_stage(node_path)
 
@@ -589,12 +499,7 @@ def _get_usd_prim(
     }
 
 
-register_command(PluginCommand.LOPS_GET_USD_PRIM)(_cooked_at_time(_get_usd_prim))
-
-
-###### lops.list_usd_prims
-
-
+@register_command(PluginCommand.LOPS_LIST_USD_PRIMS)
 def _list_usd_prims(
     *,
     node_path: str,
@@ -604,11 +509,7 @@ def _list_usd_prims(
     depth: int | None = None,
     traverse_instance_proxies: bool = False,
 ) -> dict[str, Any]:
-    """List prims filtered by type/kind/purpose with optional depth limit.
-
-    With traverse_instance_proxies the walk descends into instanceable prims
-    and lists the prims under their prototypes.
-    """
+    """List prims filtered by type/kind/purpose with optional depth limit."""
 
     stage = _get_lop_stage(node_path)
 
@@ -683,15 +584,12 @@ def _list_usd_prims(
 _PRIM_LIST_CAP = 1000
 
 
-register_command(PluginCommand.LOPS_LIST_USD_PRIMS)(_list_usd_prims)
-
-
-###### lops.get_usd_attribute
-
 #: Sample times (and, with all_samples, values) one get_usd_attribute answers.
 _SAMPLE_CAP = 64
 
 
+@register_command(PluginCommand.LOPS_GET_USD_ATTRIBUTE)
+@_cooked_at_time
 def _get_usd_attribute(
     *,
     node_path: str,
@@ -703,21 +601,7 @@ def _get_usd_attribute(
     limit: int = 64,
     all_samples: bool = False,
 ) -> dict[str, Any]:
-    """Read a USD attribute value at an optional time code.
-
-    A long array answers with a summary as `value` and a window of elements
-    as `slice` (offset/limit, default the first 64); full=True returns the
-    whole array as `value`.
-
-    A time-sampled attribute (a PointInstancer's `positions`, `protoIndices`)
-    has nothing in its default slot, so Get() with the default time code
-    answers None -- USD's semantics, and `value: null` next to
-    `is_authored: true` read as "the attribute is empty". With no *time*
-    given and samples present, the current frame is read instead (the first
-    sample when the frame is outside the sampled range), and the reply names
-    the time it used and the samples it found: `sample_times` (up to
-    _SAMPLE_CAP of them) and, with *all_samples*, the value at each.
-    """
+    """Read a USD attribute value at an optional time code."""
 
     if all_samples and full:
         # 64 whole arrays: a 2000-point mesh was 2.3 MB of JSON.
@@ -824,24 +708,12 @@ def _get_usd_attribute(
     return reply
 
 
-register_command(PluginCommand.LOPS_GET_USD_ATTRIBUTE)(
-    _cooked_at_time(_get_usd_attribute)
-)
-
-
-###### lops.get_usd_attributes
-
 #: Rows one get_usd_attributes call returns; the rest is counted, not sent.
 _ATTRIBUTE_ROW_CAP = 500
 
 
 def _prim_pattern(pattern: str) -> re.Pattern:
-    """A prim-path glob as a regex.
-
-    `*` and `?` stay inside one path element and `**` crosses them, so
-    `/Render/Vars/*` is the RenderVars and `/Render/**` everything under
-    /Render.
-    """
+    """A prim-path glob as a regex."""
 
     out = []
     i = 0
@@ -864,11 +736,7 @@ def _prim_pattern(pattern: str) -> re.Pattern:
 def _matching_prims(
     stage: Usd.Stage, node_path: str, prims: list[str], instance_proxies: bool
 ) -> list[Usd.Prim]:
-    """Prims named by *prims*: exact paths looked up, globs matched on one walk.
-
-    Raises:
-        hou.OperationFailed: if an exact path names no prim.
-    """
+    """Prims named by *prims*: exact paths looked up, globs matched on one walk."""
 
     found: dict[str, Usd.Prim] = {}
     globs = [p for p in prims if any(c in p for c in '*?')]
@@ -890,6 +758,8 @@ def _matching_prims(
     return list(found.values())
 
 
+@register_command(PluginCommand.LOPS_GET_USD_ATTRIBUTES)
+@_cooked_at_time
 def _get_usd_attributes(
     *,
     node_path: str,
@@ -902,17 +772,7 @@ def _get_usd_attributes(
     traverse_instance_proxies: bool = False,
     limit: int = _ATTRIBUTE_ROW_CAP,
 ) -> dict[str, Any]:
-    """Attributes (and relationships) of many prims as one table.
-
-    Reading `sourceName` off every RenderVar, `lpetag` off every light and
-    the `camera` relationship of the render settings took a get_usd_prim per
-    prim, each around 130 attributes long on a RenderSettings. One row per
-    prim and attribute instead, capped at *limit* with the rest counted.
-
-    *prims*: prim paths or globs (`*` within one path element, `**`
-    across); *prim_type* narrows by type name (glob, e.g. `*Light`). Values
-    are read at *time* or the current frame, as get_usd_prim does.
-    """
+    """Attributes (and relationships) of many prims as one table."""
 
     stage = _get_lop_stage(node_path)
     if isinstance(prims, str):
@@ -967,19 +827,12 @@ def _get_usd_attributes(
     }
 
 
-register_command(PluginCommand.LOPS_GET_USD_ATTRIBUTES)(
-    _cooked_at_time(_get_usd_attributes)
-)
-
-
-###### lops.get_usd_world_transform
-
 # A frame list longer than this is refused: each frame recooks the stage.
 _MAX_TRANSFORM_FRAMES = 500
 
 
 def _decompose(matrix: Any) -> dict[str, Any]:
-    """Translate, rotate (XYZ degrees), scale and the row-major matrix of a Gf.Matrix4d."""
+    """Translate, rotate (XYZ degrees), scale and the row-major matrix of a..."""
 
     transform = Gf.Transform(matrix)
     rotation = transform.GetRotation().Decompose(
@@ -993,19 +846,14 @@ def _decompose(matrix: Any) -> dict[str, Any]:
     }
 
 
+@register_command(PluginCommand.LOPS_GET_USD_WORLD_TRANSFORM)
 def _get_usd_world_transform(
     *,
     node_path: str,
     prim_paths: list[str] | str,
     frames: list[float] | None = None,
 ) -> dict[str, Any]:
-    """World transform of prims at one or more frames, the playbar restored after.
-
-    get_usd_prim gives the local xformOps, which say nothing about where a prim
-    ends up under an animated parent. Each frame recooks the stage there (see
-    _cooked_at_time), so LOP-authored animation reads right, not only samples
-    that came from a file.
-    """
+    """World transform of prims at one or more frames, the playbar restored after."""
 
     if isinstance(prim_paths, str):
         prim_paths = [prim_paths]
@@ -1014,7 +862,9 @@ def _get_usd_world_transform(
     wanted = [float(f) for f in frames] if frames else [_stage_frame()]
     if len(wanted) > _MAX_TRANSFORM_FRAMES:
         raise ValueError(
-            f'{len(wanted)} frames; at most {_MAX_TRANSFORM_FRAMES}, since each one recooks the stage.'
+            f'{len(wanted)} frames; at most {_MAX_TRANSFORM_FRAMES}, since each one '
+            f'recooks '
+            f'the stage.'
         )
 
     results: dict[str, list[dict[str, Any]]] = {path: [] for path in prim_paths}
@@ -1039,12 +889,7 @@ def _get_usd_world_transform(
     return {'node_path': node_path, 'frames': wanted, 'prims': results}
 
 
-register_command(PluginCommand.LOPS_GET_USD_WORLD_TRANSFORM)(_get_usd_world_transform)
-
-
-###### lops.get_usd_layers
-
-
+@register_command(PluginCommand.LOPS_GET_USD_LAYERS)
 def _get_usd_layers(*, node_path: str) -> dict[str, Any]:
     """List all layers used in the stage."""
 
@@ -1069,24 +914,14 @@ def _get_usd_layers(*, node_path: str) -> dict[str, Any]:
     }
 
 
-register_command(PluginCommand.LOPS_GET_USD_LAYERS)(_get_usd_layers)
-
-
-###### lops.get_usd_prim_stats
-
-
+@register_command(PluginCommand.LOPS_GET_USD_PRIM_STATS)
 def _get_usd_prim_stats(
     *,
     node_path: str,
     prim_path: str = '/',
     traverse_instance_proxies: bool = False,
 ) -> dict[str, Any]:
-    """Prim counts broken down by type under the given root.
-
-    Without traverse_instance_proxies, instanced geometry is counted once per
-    prototype, not once per instance; `instanceable_prims` says whether that
-    is happening.
-    """
+    """Prim counts broken down by type under the given root."""
 
     stage = _get_lop_stage(node_path)
 
@@ -1130,18 +965,9 @@ def _get_usd_prim_stats(
     return result
 
 
-register_command(PluginCommand.LOPS_GET_USD_PRIM_STATS)(_get_usd_prim_stats)
-
-
-###### lops.get_last_modified_prims
-
-
+@register_command(PluginCommand.LOPS_GET_LAST_MODIFIED_PRIMS)
 def _get_last_modified_prims(*, node_path: str) -> dict[str, Any]:
-    """Prims modified by the last LOP cook.
-
-    Uses the node's lastModifiedPrims() if available (Houdini 19.5+),
-    otherwise falls back to inspecting the edit target layer.
-    """
+    """Prims modified by the last LOP cook."""
 
     _require_pxr()
     node = hou.node(node_path)
@@ -1188,12 +1014,7 @@ def _get_last_modified_prims(*, node_path: str) -> dict[str, Any]:
     }
 
 
-register_command(PluginCommand.LOPS_GET_LAST_MODIFIED_PRIMS)(_get_last_modified_prims)
-
-
-###### lops.create_lop_node
-
-
+@register_command(PluginCommand.LOPS_CREATE_LOP_NODE)
 def _create_lop_node(
     *,
     parent_path: str,
@@ -1236,30 +1057,19 @@ def _create_lop_node(
             if prim_path_applied is not False
             else {
                 'prim_path_applied': False,
-                'warning': f'{node.type().name()} has no primpath or primpattern parm; prim_path was not set.',
+                'warning': (
+                    f'{node.type().name()} has no primpath or primpattern '
+                    'parm; prim_path was not set.'
+                ),
             }
         ),
     }
 
 
-register_command(PluginCommand.LOPS_CREATE_LOP_NODE)(_create_lop_node)
-
-
-###### lops.set_usd_attribute
-
-
 def _edit_attributes_after(
     node: hou.Node, node_name: str, prim_path: str, values: dict
 ) -> dict:
-    """Set USD attributes with a Python LOP spliced in after *node*.
-
-    The LOP used to hang off *node* with nothing reading it: the downstream
-    wiring and the display flag stayed on *node*, so the viewport and every ROP
-    kept the old stage while the call said success. A missing prim or
-    attribute, or a Set() that returns False, only skipped a line.
-
-    Returns python_node, errors (from the cook) and the values read back.
-    """
+    """Set USD attributes with a Python LOP spliced in after *node*."""
 
     lines = [
         'node = hou.pwd()',
@@ -1279,7 +1089,8 @@ def _edit_attributes_after(
         lines += [
             f'attr = prim.GetAttribute({attr_name!r})',
             'if not attr or not attr.IsValid():',
-            f"    raise RuntimeError('No attribute ' + {attr_name!r} + ' on ' + {prim_path!r})",
+            f"    raise RuntimeError('No attribute ' + {attr_name!r} + ' on ' + "
+            f'{prim_path!r})',
             f'if not attr.Set(_usd_value(attr, {value!r})):',
             f"    raise RuntimeError('USD refused the value for ' + {attr_name!r})",
         ]
@@ -1324,6 +1135,7 @@ def _edit_attributes_after(
     return {'python_node': python_node.path(), 'errors': errors, 'read_back': read_back}
 
 
+@register_command(PluginCommand.LOPS_SET_USD_ATTRIBUTE)
 def _set_usd_attribute(
     *,
     node_path: str,
@@ -1331,11 +1143,7 @@ def _set_usd_attribute(
     attr_name: str,
     value: Any,
 ) -> dict[str, Any]:
-    """Set a USD attribute via an inline Python LOP.
-
-    Creates a Python LOP node as a child of the specified node's parent
-    that sets the attribute value on the stage.
-    """
+    """Set a USD attribute via an inline Python LOP."""
 
     _require_pxr()
     node = hou.node(node_path)
@@ -1360,24 +1168,13 @@ def _set_usd_attribute(
     return result
 
 
-register_command(PluginCommand.LOPS_SET_USD_ATTRIBUTE)(_set_usd_attribute)
-
-
-###### lops.get_usd_materials
-
-
 # Geometry paths listed per material; the count is always complete.
 _RENDERED_ON_CAP = 50
 
 
+@register_command(PluginCommand.LOPS_GET_USD_MATERIALS)
 def _get_usd_materials(*, node_path: str) -> dict[str, Any]:
-    """List all materials with their bindings.
-
-    `bound_to` is where a binding is authored (a direct allPurpose binding);
-    `rendered_on` / `rendered_on_count` are the gprims that resolve to the
-    material for rendering, inherited and collection bindings included.
-    get_usd_bound_material says why for a given prim.
-    """
+    """List all materials with their bindings."""
 
     stage = _get_lop_stage(node_path)
 
@@ -1468,11 +1265,6 @@ def _get_usd_materials(*, node_path: str) -> dict[str, Any]:
     }
 
 
-register_command(PluginCommand.LOPS_GET_USD_MATERIALS)(_get_usd_materials)
-
-
-###### lops.get_usd_bound_material
-
 # The purpose Karma renders with is "full", and ComputeBoundMaterial("full")
 # falls back to an allPurpose binding by itself. allPurpose ("all" here) is
 # the narrowest query, not a union: it ignores a full-purpose binding.
@@ -1518,18 +1310,11 @@ def _binding_targets(rel: Any) -> list[str]:
     return []
 
 
+@register_command(PluginCommand.LOPS_GET_USD_BOUND_MATERIAL)
 def _get_usd_bound_material(
     *, node_path: str, prim_paths: Any, purpose: str = 'full', **_: Any
 ) -> dict[str, Any]:
-    """The material each prim renders with, and why.
-
-    get_usd_materials reports where bindings are authored; a prim bound
-    through its parent, or through a collection, is not listed there. This
-    resolves the binding the way the renderer does (ComputeBoundMaterials, for
-    the whole batch at once) and names the source: direct, inherited from
-    which ancestor, or which collection. A binding whose material prim does
-    not exist is reported as such, not as "unbound".
-    """
+    """The material each prim renders with, and why."""
 
     stage = _get_lop_stage(node_path)
     token_name = _BINDING_PURPOSES.get(str(purpose).lower())
@@ -1591,23 +1376,14 @@ def _get_usd_bound_material(
     }
 
 
-register_command(PluginCommand.LOPS_GET_USD_BOUND_MATERIAL)(_get_usd_bound_material)
-
-
-###### lops.find_usd_prims
-
-
+@register_command(PluginCommand.LOPS_FIND_USD_PRIMS)
 def _find_usd_prims(
     *,
     node_path: str,
     pattern: str,
     traverse_instance_proxies: bool = False,
 ) -> dict[str, Any]:
-    """Search prims by path pattern (supports * and ** wildcards).
-
-    With traverse_instance_proxies the search reaches prims under
-    instanceable prototypes, which the default walk never visits.
-    """
+    """Search prims by path pattern (supports * and ** wildcards)."""
 
     stage = _get_lop_stage(node_path)
 
@@ -1634,18 +1410,13 @@ def _find_usd_prims(
     }
 
 
-register_command(PluginCommand.LOPS_FIND_USD_PRIMS)(_find_usd_prims)
-
-
-###### lops.get_usd_composition
-
-
+@register_command(PluginCommand.LOPS_GET_USD_COMPOSITION)
 def _get_usd_composition(
     *,
     node_path: str,
     prim_path: str,
 ) -> dict[str, Any]:
-    """Composition arcs for a prim (references, payloads, inherits, specializes, variants)."""
+    """Composition arcs for a prim (references, payloads, inherits, specializes,..."""
 
     stage = _get_lop_stage(node_path)
 
@@ -1720,12 +1491,7 @@ def _get_usd_composition(
     }
 
 
-register_command(PluginCommand.LOPS_GET_USD_COMPOSITION)(_get_usd_composition)
-
-
-###### lops.get_usd_variants
-
-
+@register_command(PluginCommand.LOPS_GET_USD_VARIANTS)
 def _get_usd_variants(
     *,
     node_path: str,
@@ -1761,12 +1527,7 @@ def _get_usd_variants(
     }
 
 
-register_command(PluginCommand.LOPS_GET_USD_VARIANTS)(_get_usd_variants)
-
-
-###### lops.inspect_usd_layer
-
-
+@register_command(PluginCommand.LOPS_INSPECT_USD_LAYER)
 def _inspect_usd_layer(
     *,
     node_path: str,
@@ -1824,12 +1585,6 @@ def _inspect_usd_layer(
     }
 
 
-register_command(PluginCommand.LOPS_INSPECT_USD_LAYER)(_inspect_usd_layer)
-
-
-###### lops.create_light
-
-
 # Houdini 20.5+ ships no rectlight/spherelight/disklight/cylinderlight LOPs:
 # those shapes are the generic "light" node (light::2.0) with its lighttype
 # menu set. Only dome and distant lights keep a node type of their own.
@@ -1867,6 +1622,7 @@ def _set_light_shape(node: hou.Node, shape: str | None) -> None:
         parm.set(shape)
 
 
+@register_command(PluginCommand.LOPS_CREATE_LIGHT)
 def _create_light(
     *,
     parent_path: str = '/stage',
@@ -1877,20 +1633,7 @@ def _create_light(
     position: list[float] | None = None,
     **_: Any,
 ) -> dict[str, Any]:
-    """Create a USD light node in a LOP network.
-
-    Supports dome, distant, rect, sphere, disk, and cylinder light types.
-    Sets intensity, color, and position parameters as specified.
-
-    Args:
-        parent_path: Parent LOP network path (default: "/stage").
-        light_type: Type of light: "dome", "distant", "rect", "sphere",
-            "disk", or "cylinder".
-        name: Optional name for the light node.
-        intensity: Light intensity (default: 1.0).
-        color: Optional [r, g, b] color values (0.0 to 1.0).
-        position: Optional [x, y, z] world position.
-    """
+    """Create a USD light node in a LOP network."""
 
     parent = hou.node(parent_path)
     if parent is None:
@@ -1939,21 +1682,9 @@ def _create_light(
     }
 
 
-register_command(PluginCommand.LOPS_CREATE_LIGHT)(_create_light)
-
-
-###### lops.list_lights
-
-
+@register_command(PluginCommand.LOPS_LIST_LIGHTS)
 def _list_lights(*, node_path: str, **_: Any) -> dict[str, Any]:
-    """List all USD lights on a LOP stage.
-
-    Cooks the LOP node and traverses the USD stage to find all
-    UsdLux light prims.
-
-    Args:
-        node_path: Path to the LOP node.
-    """
+    """List all USD lights on a LOP stage."""
 
     _require_pxr()
     from pxr import UsdLux  # ty: ignore[import-not-found]
@@ -2003,12 +1734,7 @@ def _list_lights(*, node_path: str, **_: Any) -> dict[str, Any]:
     }
 
 
-register_command(PluginCommand.LOPS_LIST_LIGHTS)(_list_lights)
-
-
-###### lops.set_light_properties
-
-
+@register_command(PluginCommand.LOPS_SET_LIGHT_PROPERTIES)
 def _set_light_properties(
     *,
     node_path: str,
@@ -2016,16 +1742,7 @@ def _set_light_properties(
     properties: dict[str, Any],
     **_: Any,
 ) -> dict[str, Any]:
-    """Set properties on a USD light prim via an inline Python LOP.
-
-    Supported properties include: intensity, color, exposure, diffuse,
-    specular, shadow_enable, and more.
-
-    Args:
-        node_path: Path to the LOP node to connect after.
-        prim_path: USD prim path of the light.
-        properties: Dict of property name -> value to set.
-    """
+    """Set properties on a USD light prim via an inline Python LOP."""
 
     _require_pxr()
     node = hou.node(node_path)
@@ -2073,12 +1790,7 @@ def _set_light_properties(
     return result
 
 
-register_command(PluginCommand.LOPS_SET_LIGHT_PROPERTIES)(_set_light_properties)
-
-
-###### lops.create_light_rig
-
-
+@register_command(PluginCommand.LOPS_CREATE_LIGHT_RIG)
 def _create_light_rig(
     *,
     parent_path: str = '/stage',
@@ -2086,19 +1798,7 @@ def _create_light_rig(
     intensity_mult: float = 1.0,
     **_: Any,
 ) -> dict[str, Any]:
-    """Create a preset lighting rig in a LOP network.
-
-    Available presets:
-    - "three_point": Key light + fill light + rim light
-    - "studio": Softbox-style setup with rect lights
-    - "outdoor": Dome light + distant light (sun)
-    - "hdri": Single dome light
-
-    Args:
-        parent_path: Parent LOP network path (default: "/stage").
-        preset: Lighting preset name.
-        intensity_mult: Multiplier applied to all light intensities.
-    """
+    """Create a preset lighting rig in a LOP network."""
 
     parent = hou.node(parent_path)
     if parent is None:
@@ -2203,7 +1903,9 @@ def _create_light_rig(
     previous: hou.Node | None = None
 
     for light_def in preset_config:
-        lop_type, shape = _lop_light_type(light_def['type'])  # ty: ignore[invalid-argument-type]
+        lop_type, shape = _lop_light_type(
+            light_def['type']  # ty: ignore[invalid-argument-type]
+        )
         node = parent.createNode(lop_type, node_name=light_def.get('name'))
         _set_light_shape(node, shape)
 
@@ -2215,7 +1917,9 @@ def _create_light_rig(
         # Set intensity with multiplier. USD light parms are punycoded
         # ("inputs:intensity" -> xn__inputsintensity_i0a).
         base_intensity = light_def.get('intensity', 1.0)
-        final_intensity = base_intensity * intensity_mult  # ty: ignore[unsupported-operator]
+        if isinstance(base_intensity, list):
+            base_intensity = base_intensity[0]
+        final_intensity = float(base_intensity) * intensity_mult
         intensity_parm = node.parm('xn__inputsintensity_i0a')
         if intensity_parm is None:
             intensity_parm = node.parm('intensity')
@@ -2255,6 +1959,3 @@ def _create_light_rig(
         'preset': preset,
         'lights_created': len(created_nodes),
     }
-
-
-register_command(PluginCommand.LOPS_CREATE_LIGHT_RIG)(_create_light_rig)

@@ -1,29 +1,18 @@
-"""DOP (dynamics/simulation) handlers for FXHoudini-MCP.
-
-Provides tools for inspecting and controlling DOP simulations:
-simulation info, object listing, field reading, relationships,
-stepping, resetting, and memory usage.
-"""
+"""DOP (dynamics/simulation) handlers for Houdini MCP."""
 
 from __future__ import annotations
 
-# Built-in
 import contextlib
 import logging
 from typing import Any
 
-# Third-party
 import hou
 
-# Internal
 from houdini_mcp_plugin.dispatcher import register_command
 from houdini_mcp_plugin.errors import readable_message
 from houdini_mcp_protocol import PluginCommand
 
 logger = logging.getLogger(__name__)
-
-
-###### Helpers
 
 
 def _get_dop_node(node_path: str) -> hou.Node:
@@ -36,11 +25,7 @@ def _get_dop_node(node_path: str) -> hou.Node:
 
 
 def _require_dops(node: hou.Node) -> None:
-    """Raise unless *node* is a DOP network or a DOP inside one.
-
-    On anything else simulation() raises ObjectWasDeleted on 22.0.368, a SOP
-    solver such as Pyro Solver included: the simulation is in its dopnet child.
-    """
+    """Raise unless *node* is a DOP network or a DOP inside one."""
 
     dop = hou.dopNodeTypeCategory()
     if node.type().category() == dop or node.childTypeCategory() == dop:
@@ -62,17 +47,15 @@ def _get_simulation(node_path: str) -> hou.DopSimulation:
     sim = node.simulation()
     if sim is None:
         raise hou.OperationFailed(
-            f"Node '{node_path}' does not have a simulation. Ensure it is a DOP network node."
+            f"Node '{node_path}' does not have a simulation. Ensure it is a DOP "
+            f'network '
+            f'node.'
         )
     return sim
 
 
 def _reset_button_owner(node: hou.Node) -> hou.Node | None:
-    """The node whose Reset Simulation button resets *node*'s simulation.
-
-    That is *node* itself or its nearest parent with a "resimulate" parm (the
-    DOP network, or a SOP-level solver such as a POP Network), None if none.
-    """
+    """The node whose Reset Simulation button resets *node*'s simulation."""
 
     owner = node
     while owner is not None and owner.parm('resimulate') is None:
@@ -116,11 +99,7 @@ def _inside_dop(node: hou.Node) -> bool:
 
 
 def _simulation_to_reset(node: hou.Node) -> hou.Node | None:
-    """_reset_button_owner, lifted out of locked assets to the instance a user can press.
-
-    A Vellum Solver SOP keeps its DOP network inside the asset; reset_simulation
-    is given the solver, not /obj/.../vellumsolver1/dopnet1.
-    """
+    """_reset_button_owner, lifted out of locked assets to the instance a user can..."""
 
     owner = _reset_button_owner(node)
     for _ in range(_MAX_DEPTH):
@@ -137,13 +116,7 @@ def _simulation_to_reset(node: hou.Node) -> hou.Node | None:
 
 
 def _downstream(node: hou.Node) -> list[hou.Node]:
-    """Nodes that read *node*, by wire or by reference, up to _DOWNSTREAM_LIMIT.
-
-    A node inside a DOP network is listed but not followed: what reads the
-    simulation reads the network (a DOP Import names it), not its insides.
-    Nor are a node's own contents, which depend on it and say nothing about
-    who reads it -- an HDA's insides were most of the walk before (22.0.429).
-    """
+    """Nodes that read *node*, by wire or by reference, up to _DOWNSTREAM_LIMIT."""
 
     seen = {node.path()}
     queue, found = [node], []
@@ -174,17 +147,7 @@ def _downstream(node: hou.Node) -> list[hou.Node]:
 
 
 def dop_cache_note(nodes: Any, rewired: bool = False) -> dict[str, Any] | None:
-    """The simulations an edit of *nodes* leaves with stale cooked frames, or None.
-
-    ``networks`` are the nodes reset_simulation presses for them, so any of
-    them can be passed to it as is. Measured on 22.0.429, each of these left
-    frame 25 stale until a reset: a node inside a DOP network (a SOP Solver's
-    own SOPs too), a box a POP Source reads by path, a grid upstream of a
-    Vellum Solver SOP. A solver's own parameter re-simulates by itself, so
-    the edited node is never its own reason -- unless *rewired*: its inputs
-    changed, and those do not. Measured on 22.0: a Vellum Solver rewired
-    from cloth A to cloth B still showed A at frame 10 until a reset.
-    """
+    """The simulations an edit of *nodes* leaves with stale cooked frames, or None."""
 
     networks: list[str] = []
 
@@ -208,10 +171,7 @@ def dop_cache_note(nodes: Any, rewired: bool = False) -> dict[str, Any] | None:
 
 
 def _subdata_tree(data: hou.DopData, depth: int = 0, max_depth: int = 4) -> list[dict]:
-    """Recursively build a tree of DOP subdata entries.
-
-    Returns a list of dicts with name, data_type, and children.
-    """
+    """Recursively build a tree of DOP subdata entries."""
 
     if depth >= max_depth:
         return []
@@ -274,9 +234,6 @@ def _records_to_dict(data: hou.DopData) -> dict:
     return result
 
 
-###### Handlers
-
-
 def _cache_eviction_note(
     node: hou.Node,
     sim_frame: float,
@@ -284,23 +241,7 @@ def _cache_eviction_note(
     memory_bytes: int,
     object_count: int | None = None,
 ) -> str | None:
-    """Why the simulation holds another frame than the scene, or None when it does not.
-
-    Measured on 22.0.466 on a POP network of 7.7 M points:
-    cooked 1-50, the 5000 MB memory cache kept the late frames only, and at
-    frame 10, 12 or 2 the network gave frame 48, every SOP below it too;
-    hython without the bridge did the same. Only frame 1 reset it. What the
-    nodes below get is not always that frame: a 3600-point POP network with a
-    1 MB cache, cooked 1-20 and set back to 5, held frame 19's time with no
-    objects and no points, so they got nothing. A session
-    measured and rendered frame 10 as frame 48. Said only when the
-    network maps time as by default, so its frame reads straight off its time.
-
-    Eviction only ever leaves a later frame: a simulation behind the scene
-    after a cook that raised nothing has not simulated up to it. Measured on
-    22.0.466: a network that failed at frames 2 and 3, cooked again with
-    force at 3, showed no error and held frame 1 with 0 MB cached.
-    """
+    """Why the simulation holds another frame than the scene, or None when it does..."""
 
     with contextlib.suppress(Exception):
         if node.evalParm('timeoffset') != 0 or node.evalParm('timescale') != 1:
@@ -316,15 +257,25 @@ def _cache_eviction_note(
         with contextlib.suppress(Exception):
             if not hou.simulationEnabled():
                 return (
-                    f'The simulation holds frame {sim_frame:g} while the scene is at frame {frame:g}: '
-                    'simulation is turned off in Houdini (hou.simulationEnabled() is False). '
+                    f'The simulation holds frame {sim_frame:g} while the scene is at '
+                    f'frame '
+                    f'{frame:g}: '
+                    'simulation is turned off in Houdini (hou.simulationEnabled() is '
+                    'False). '
                     'Ask before turning it back on.'
                 )
         return (
-            f'The simulation holds frame {sim_frame:g} while the scene is at frame {frame:g}: it has not '
-            'simulated up to it, though the cook raised no error, so the memory cache is not the cause. '
-            'A cook that failed and was forced again no longer shows its error. reset_simulation, then '
-            f'cook_frame_range forward from frame {start:g}, which names a frame that fails.'
+            f'The simulation holds frame {sim_frame:g} while the scene is at frame '
+            f'{frame:g}: '
+            f'it has not '
+            'simulated up to it, though the cook raised no error, so the memory cache '
+            'is '
+            'not the cause. '
+            'A cook that failed and was forced again no longer shows its error. '
+            'reset_simulation, '
+            'then '
+            f'cook_frame_range forward from frame {start:g}, which names a frame that '
+            f'fails.'
         )
     limit = None
     with contextlib.suppress(Exception):
@@ -336,32 +287,25 @@ def _cache_eviction_note(
         else 'the memory cache'
     )
     return (
-        f'The simulation holds frame {sim_frame:g} while the scene is at frame {frame:g}: frame {frame:g} '
+        f'The simulation holds frame {sim_frame:g} while the scene is at frame '
+        f'{frame:g}: '
+        f'frame {frame:g} '
         f'is no longer in {cache}, and Houdini does not simulate again to reach it. '
         + (
-            'The simulation has no objects, so the nodes reading this network get no geometry. '
+            'The simulation has no objects, so the nodes reading this network get no '
+            'geometry. '
             if object_count == 0
             else f"The nodes reading this network get frame {sim_frame:g}'s state. "
         )
-        + f'reset_simulation, then cook_frame_range forward from frame {start:g}, or raise cachemaxsize.'
+        + f'reset_simulation, then cook_frame_range forward from frame {start:g}, or '
+        f'raise '
+        f'cachemaxsize.'
     )
 
 
+@register_command(PluginCommand.DOPS_GET_SIMULATION_INFO)
 def _get_simulation_info(node_path: str) -> dict:
-    """Get DOP network simulation state information.
-
-    The network is cooked at the current frame first, as the viewport would:
-    a SOP below it can hold geometry from another cook, and the simulation's
-    time() is that of its last cook. `simulation_frame` is the frame of that
-    time, with a `note` when it is not the scene's. A cook that fails is
-    named in `cook_error`, not blamed on the cache.
-
-    A scene ahead of the simulation is simulated up to its frame here (the
-    cook and sim.objects() both do it: 150 frames on 22.0.368). As in
-    cook_frame_range, that runs under Houdini's interrupt dialog with no
-    deadline (dispatcher), so the artist can stop it and the client is not
-    told "timeout" while Houdini keeps cooking.
-    """
+    """Get DOP network simulation state information."""
 
     node = _get_dop_node(node_path)
     # Before the cook: a SOP solver given here would simulate, then fail.
@@ -449,7 +393,8 @@ def _get_simulation_info(node_path: str) -> dict:
             reply['interrupted'] = True
             reply['object_count'] = None
             reply['note'] = (
-                f"Stopped from Houdini's interrupt dialog at frame {sim_frame:g} of {frame:g}; "
+                f"Stopped from Houdini's interrupt dialog at frame {sim_frame:g} of "
+                f'{frame:g}; '
                 'cook_frame_range gets the rest of the way.'
             )
         elif not cook_error:
@@ -461,6 +406,7 @@ def _get_simulation_info(node_path: str) -> dict:
     return reply
 
 
+@register_command(PluginCommand.DOPS_LIST_DOP_OBJECTS)
 def _list_dop_objects(node_path: str) -> dict:
     """List all DOP objects and their types in the simulation."""
 
@@ -493,6 +439,7 @@ def _list_dop_objects(node_path: str) -> dict:
     }
 
 
+@register_command(PluginCommand.DOPS_GET_DOP_OBJECT)
 def _get_dop_object(node_path: str, object_name: str) -> dict:
     """Get detailed data for a specific simulation object."""
 
@@ -525,6 +472,7 @@ def _get_dop_object(node_path: str, object_name: str) -> dict:
     return result
 
 
+@register_command(PluginCommand.DOPS_GET_DOP_FIELD)
 def _get_dop_field(
     node_path: str,
     object_name: str,
@@ -565,7 +513,8 @@ def _get_dop_field(
                 break
     except Exception as e:
         raise hou.OperationFailed(
-            f"Error reading field '{field_name}' at data path '{data_path}': {readable_message(e)}"
+            f"Error reading field '{field_name}' at data path '{data_path}': "
+            f'{readable_message(e)}'
         ) from e
 
     if not found:
@@ -602,13 +551,9 @@ def _relationship_names(obj_records: dict, record_type: str) -> list:
     return [f.get('relname') for f in found if isinstance(f, dict) and f.get('relname')]
 
 
+@register_command(PluginCommand.DOPS_GET_DOP_RELATIONSHIPS)
 def _get_dop_relationships(node_path: str) -> dict:
-    """List relationships between DOP objects.
-
-    Relationships belong to the simulation, not to an object (``hou.DopObject``
-    has no ``relationships()``), so they come from ``sim.relationships()`` and
-    each object's ``RelInGroup``/``RelInAffectors`` records say who is in them.
-    """
+    """List relationships between DOP objects."""
 
     sim = _get_simulation(node_path)
 
@@ -654,6 +599,7 @@ def _get_dop_relationships(node_path: str) -> dict:
     }
 
 
+@register_command(PluginCommand.DOPS_STEP_SIMULATION)
 def _step_simulation(node_path: str, steps: int = 1) -> dict:
     """Advance the simulation by N frames."""
 
@@ -678,6 +624,7 @@ def _step_simulation(node_path: str, steps: int = 1) -> dict:
     }
 
 
+@register_command(PluginCommand.DOPS_RESET_SIMULATION)
 def _reset_simulation(node_path: str) -> dict:
     """Reset the simulation to its initial state."""
 
@@ -704,6 +651,7 @@ def _reset_simulation(node_path: str) -> dict:
     }
 
 
+@register_command(PluginCommand.DOPS_GET_SIM_MEMORY_USAGE)
 def _get_sim_memory_usage(node_path: str) -> dict:
     """Get a detailed memory breakdown for the simulation."""
 
@@ -747,15 +695,3 @@ def _get_sim_memory_usage(node_path: str) -> dict:
         'current_frame': hou.frame(),
         'simulation_time': sim.time(),
     }
-
-
-###### Registration
-
-register_command(PluginCommand.DOPS_GET_SIMULATION_INFO)(_get_simulation_info)
-register_command(PluginCommand.DOPS_LIST_DOP_OBJECTS)(_list_dop_objects)
-register_command(PluginCommand.DOPS_GET_DOP_OBJECT)(_get_dop_object)
-register_command(PluginCommand.DOPS_GET_DOP_FIELD)(_get_dop_field)
-register_command(PluginCommand.DOPS_GET_DOP_RELATIONSHIPS)(_get_dop_relationships)
-register_command(PluginCommand.DOPS_STEP_SIMULATION)(_step_simulation)
-register_command(PluginCommand.DOPS_RESET_SIMULATION)(_reset_simulation)
-register_command(PluginCommand.DOPS_GET_SIM_MEMORY_USAGE)(_get_sim_memory_usage)

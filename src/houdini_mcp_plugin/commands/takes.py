@@ -1,30 +1,18 @@
-"""Takes handlers for FXHoudini-MCP.
-
-Provides tools for listing, inspecting, creating, and switching
-between Houdini takes (parameter override system).
-"""
+"""Takes handlers for Houdini MCP."""
 
 from __future__ import annotations
 
-# Built-in
 from typing import Any
 
-# Third-party
 import hou
 
-# Internal
 from houdini_mcp_plugin.dispatcher import register_command
 from houdini_mcp_protocol import PluginCommand
 
-###### takes.list_takes
 
-
+@register_command(PluginCommand.TAKES_LIST_TAKES)
 def _list_takes(**_: Any) -> dict[str, Any]:
-    """List all takes in the scene with their hierarchy.
-
-    Returns each take's name, whether it is the current take, its
-    parent name, and the number of children.
-    """
+    """List all takes in the scene with their hierarchy."""
 
     current_take = hou.takes.currentTake()
     current_name = current_take.name() if current_take else None
@@ -51,18 +39,9 @@ def _list_takes(**_: Any) -> dict[str, Any]:
     }
 
 
-register_command(PluginCommand.TAKES_LIST_TAKES)(_list_takes)
-
-
-###### takes.get_current_take
-
-
+@register_command(PluginCommand.TAKES_GET_CURRENT_TAKE)
 def _get_current_take(**_: Any) -> dict[str, Any]:
-    """Get the current take and list its overridden parameters.
-
-    Returns the take name and all parameters that are overridden
-    in this take with their current values.
-    """
+    """Get the current take and list its overridden parameters."""
 
     current_take = hou.takes.currentTake()
     if current_take is None:
@@ -96,18 +75,9 @@ def _get_current_take(**_: Any) -> dict[str, Any]:
     }
 
 
-register_command(PluginCommand.TAKES_GET_CURRENT_TAKE)(_get_current_take)
-
-
-###### takes.set_current_take
-
-
+@register_command(PluginCommand.TAKES_SET_CURRENT_TAKE)
 def _set_current_take(*, name: str, **_: Any) -> dict[str, Any]:
-    """Set the current take by name.
-
-    Args:
-        name: Name of the take to make current.
-    """
+    """Set the current take by name."""
 
     target_take = None
     for take in hou.takes.takes():
@@ -127,27 +97,14 @@ def _set_current_take(*, name: str, **_: Any) -> dict[str, Any]:
     }
 
 
-register_command(PluginCommand.TAKES_SET_CURRENT_TAKE)(_set_current_take)
-
-
-###### takes.create_take
-
-
+@register_command(PluginCommand.TAKES_CREATE_TAKE)
 def _create_take(
     *,
     name: str,
     parent_name: str | None = None,
     **_: Any,
 ) -> dict[str, Any]:
-    """Create a new take, optionally as a child of an existing take.
-
-    If parent_name is provided, the new take is created as a child of
-    that take. Otherwise it is created under the current take.
-
-    Args:
-        name: Name for the new take.
-        parent_name: Optional name of the parent take.
-    """
+    """Create a new take, optionally as a child of an existing take."""
 
     if parent_name is not None:
         # Find and set the parent take as current first
@@ -176,6 +133,3 @@ def _create_take(
         'name': new_take.name(),
         'parent': actual_parent_name,
     }
-
-
-register_command(PluginCommand.TAKES_CREATE_TAKE)(_create_take)

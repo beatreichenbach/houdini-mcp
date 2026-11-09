@@ -1,15 +1,7 @@
-"""Graph intelligence handlers for FXHoudini-MCP.
-
-Senior-artist tooling: atomic network building with upfront validation,
-whole-network verification, version-exact node documentation, and cook
-profiling. These are the commands that let a client plan a whole graph,
-prove the plan against the running Houdini before mutating anything,
-and then look at the evidence afterwards.
-"""
+"""Graph intelligence handlers for Houdini MCP."""
 
 from __future__ import annotations
 
-# Built-in
 import contextlib
 import copy
 import json
@@ -21,7 +13,6 @@ import zipfile
 from difflib import get_close_matches
 from typing import Any
 
-# Third-party
 import hou
 
 from houdini_mcp_plugin.commands.nodes import (
@@ -48,8 +39,6 @@ from houdini_mcp_plugin.commands.parameters import (
     suggest_parms,
     template_labels,
 )
-
-# Internal
 from houdini_mcp_plugin.config import (
     layout_if_enabled,
     place_new_node,
@@ -64,8 +53,6 @@ from houdini_mcp_plugin.menus import items as menu_items
 from houdini_mcp_plugin.outputs import license_error
 from houdini_mcp_protocol import PluginCommand
 
-###### Helpers
-
 # Folder types whose contents are instance templates rather than parameters.
 # MultiparmBlock is the common one; the scroll and tab variants behave the same
 # way for naming purposes.
@@ -77,11 +64,7 @@ _MULTIPARM_FOLDERS = tuple(
 
 
 def _resolve_node_type(category: hou.NodeTypeCategory, type_name: str) -> Any:
-    """Resolve *type_name* in *category* the way createNode would.
-
-    hou.preferredNodeType maps an unversioned name to the version that
-    createNode actually instantiates (e.g. copytopoints -> ::2.0).
-    """
+    """Resolve *type_name* in *category* the way createNode would."""
 
     with contextlib.suppress(Exception):
         preferred = hou.preferredNodeType(f'{category.name()}/{type_name}')
@@ -101,14 +84,7 @@ def _resolve_node_type(category: hou.NodeTypeCategory, type_name: str) -> Any:
 
 
 def _instance_patterns(node_type: Any) -> list[re.Pattern]:
-    """Regexes matching the live names of a type's multiparm instances.
-
-    A fresh probe node has zero instances, so `usept0` and `pt0x` on an Add
-    SOP were reported as non-existent and a session fell back to a wrangle
-    to make three points. The template names carry `#` where the instance
-    number goes; a live name is that with digits, plus an optional vector
-    component suffix.
-    """
+    """Regexes matching the live names of a type's multiparm instances."""
 
     patterns: list[re.Pattern] = []
 
@@ -129,13 +105,7 @@ def _is_instance_parm(name: str, patterns: list[re.Pattern]) -> bool:
 
 
 def _is_dynamic_menu(probe: hou.Node, parm: hou.Parm) -> bool:
-    """A menu whose items depend on state a fresh probe cannot have.
-
-    The VOP ``signature`` menu lists only the signature the node currently
-    has ("default" on a fresh mtlxmultiply) while ``set()`` accepts every
-    signature the shader defines, so validating "color3" against that list
-    refused a valid build. Such a menu is left to Houdini.
-    """
+    """A menu whose items depend on state a fresh probe cannot have."""
 
     try:
         return parm.name() == 'signature' and probe.type().category().name() == 'Vop'
@@ -144,13 +114,7 @@ def _is_dynamic_menu(probe: hou.Node, parm: hou.Parm) -> bool:
 
 
 def _connectors_of(node: hou.Node) -> dict[str, list[dict[str, Any]]]:
-    """Input and output connectors of a live node, in order, with their names.
-
-    A VOP's inputs are addressed by name (`texcoord`), and their order is not
-    stable across versions; a SOP's are `input1`, `input2` behind labels such
-    as "Spine curve". Both the index and the name are reported so a caller can
-    wire by whichever the verb at hand accepts.
-    """
+    """Input and output connectors of a live node, in order, with their names."""
 
     outputs: list[dict[str, Any]] = []
     names: list[str] = []
@@ -177,15 +141,7 @@ def _connectors_of(node: hou.Node) -> dict[str, list[dict[str, Any]]]:
 def _probe_connectors(
     scratch: hou.Node, node_type: Any, parms: dict | None = None
 ) -> dict:
-    """Connectors of *node_type* created inside *scratch* with *parms* applied.
-
-    A VOP's `signature`, a multiparm count or a variadic HDA decides what a
-    node exposes, and a Bind VOP's `parmname` names its outputs, so
-    build_network probes a spec that sets parms AND names an input (or has
-    an output another spec takes by name) the way the build will configure
-    it: a dry run that passes then wires the same connectors the build
-    resolves.
-    """
+    """Connectors of *node_type* created inside *scratch* with *parms* applied."""
 
     with hou.undos.disabler():
         probe = scratch.createNode(node_type.name())
@@ -202,13 +158,7 @@ def _probe_connectors(
 def _instance_menu_errors(
     scratch: hou.Node, node_type: Any, parms: dict, patterns: list
 ) -> list[str]:
-    """Menu errors on multiparm instance parms (a wedge's type1), found by probing.
-
-    A fresh probe has no instances, so these menus went unchecked: a dry run
-    passed "type1": "int" and the build then rolled back on "Invalid menu
-    item". The probe gets the spec's other parms first, which creates the
-    instances, then each instance value is checked against its real menu.
-    """
+    """Menu errors on multiparm instance parms (a wedge's type1), found by probing."""
 
     wanted = {
         name: value
@@ -245,15 +195,7 @@ def _instance_menu_errors(
 
 
 def _locked_on_build(scratch: hou.Node, node_type: Any, spec: dict) -> dict[str, str]:
-    """Parms of *spec* that will still be locked when the build writes them.
-
-    Replays the spec's parms, in order, on a probe of the type -- callbacks
-    included when the spec asks for run_callbacks -- because the lock is the
-    node's own state: `res_mode` = manual with its callback unlocks
-    resolutiony, the same menu set without it does not. Answers {parm: why};
-    the build is refused before anything is created, instead of rolled back
-    after.
-    """
+    """Parms of *spec* that will still be locked when the build writes them."""
 
     found: dict[str, str] = {}
     override = bool(spec.get('override_expression'))
@@ -335,15 +277,7 @@ def _definition_stamp(node_type: Any) -> Any:
 
 
 def _is_strict_menu(template: Any) -> bool:
-    """A menu whose value build_network checks against its tokens.
-
-    Houdini itself refuses a value off the menu only on a Menu parm; a String
-    parm with a "normal" menu takes any text on set() (measured on 22.0.429).
-    Such a menu is still checked, because a typo in a token there writes a
-    value nothing reads -- but not on a code field (tag editor = 1), where the
-    menu only inserts snippets and the text is the point: a popforce's
-    VEXpression (localnoiseexpression) was refused as "not a menu item".
-    """
+    """A menu whose value build_network checks against its tokens."""
 
     if template.type() == hou.parmTemplateType.Menu:
         return True
@@ -358,17 +292,7 @@ def _is_strict_menu(template: Any) -> bool:
 
 
 def _generated_menus_of(node: hou.Node) -> dict[str, dict[str, Any]]:
-    """Menus a live node computes that its type's templates do not carry.
-
-    `filemerge::2.0` promotes `loadtype` from an inner `file1`, and its items
-    come from the script `opmenu -l -a file1 loadtype`. The type's template
-    answers menuItems() with an empty tuple, so the card showed a Menu with no
-    items, and a session took its tokens off another node's card. A live parm
-    runs the script and answers with all seven.
-
-    Returns {parm name: {"generator": script, "items": [...], "labels": [...]}};
-    "items" is absent when the live parm had none to offer either.
-    """
+    """Menus a live node computes that its type's templates do not carry."""
 
     generated: dict[str, dict[str, Any]] = {}
     with contextlib.suppress(Exception):
@@ -402,15 +326,7 @@ def _generated_menus_of(node: hou.Node) -> dict[str, dict[str, Any]]:
 
 
 def _radio_folder_sets_of(node: hou.Node) -> dict[str, dict[str, Any]]:
-    """Radio-button folder sets of a live node, as menus of their folders.
-
-    The set's own parameter (`switcher1` on an Add SOP) picks which folder's
-    parameters apply, so it decides the result: an Add with `attrname=id`
-    made 0 primitives under By Pattern and 126 under By Group. The type's
-    template walk skips folders, and the live name is not the template's
-    (`switcher`), so it is read off the probe. Tab folders are left out: they
-    only choose what the parameter pane shows.
-    """
+    """Radio-button folder sets of a live node, as menus of their folders."""
 
     sets: dict[str, dict[str, Any]] = {}
     with contextlib.suppress(Exception):
@@ -444,22 +360,7 @@ def _connectors_for_type(
     node_type: Any,
     generated_menus: dict | None = None,
 ) -> tuple[dict | None, str | None]:
-    """Connector names/labels of *node_type*, probed on a throwaway instance.
-
-    Returns (connectors, None), or (None, why) when there was nothing to probe
-    in or the probe failed: a card is never refused over its connectors, and
-    never reports "no inputs" when it did not look. When *generated_menus* is
-    given, it is filled from the same probe with the menus a script computes
-    (see _generated_menus_of): one probe, two questions. The probe runs with
-    undo disabled and without the type's creation scripts (a documentation
-    read must not run an asset's OnCreated for every type; the parms such a
-    script adds are read by _on_created_templates, only for a type that has
-    one); it still marks the scene modified, as build_network's dry run
-    does, once per type per session.
-    A type the usual container refuses is tried again in the category's
-    fallback parents (_FALLBACK_PROBE_PARENTS); the first failure is the one
-    reported.
-    """
+    """Connector names/labels of *node_type*, probed on a throwaway instance."""
 
     key = (category_name, node_type.name(), _definition_stamp(node_type))
     if key in _CONNECTOR_CACHE:
@@ -510,21 +411,7 @@ def _connectors_for_type(
 
 
 def _mark_parm_named_outputs(probe: hou.Node, connectors: dict) -> None:
-    """Flag the outputs whose names follow the value of a string parm.
-
-    A Bind VOP's outputs are named after its `parmname`: the card's probe,
-    left at the default, reads `parm` and `bound_parm`, while a bind set to
-    `orient` has `orient` and `bound_orient`, and a build wired by the
-    card's name was rolled back. Such an output carries `named_by_parm`, so
-    its name reads as "the value of that parm", not as a fixed name.
-
-    Checked, not guessed: each string parm whose value shows in an output
-    name is set to a sentinel on the throwaway probe, and only the outputs
-    whose names then change are flagged. A name match alone flagged
-    aanoise's `noise` (noisetype is a menu), global's `P` and methodsubnet's
-    `method`, which no parm renames, and missed rampparm's
-    `ramp_the_basis_strings` (21.0.440).
-    """
+    """Flag the outputs whose names follow the value of a string parm."""
 
     outputs = connectors.get('outputs') or []
     names = [entry.get('name') or '' for entry in outputs]
@@ -561,21 +448,7 @@ _ON_CREATED_CACHE: dict[tuple, list] = {}
 
 
 def _on_created_templates(category_name: str, node_type: Any) -> list:
-    """Parm templates the type's OnCreated script adds to every new node.
-
-    The Solaris edit-properties nodes build most of their interface there:
-    `rendergeometrysettings` has 16 templates on its type and 180 on a node
-    (loputils.addRendererParmFolders), so a card read off the type answered
-    `parm_count: 0` for "Render Points As". The connector probe skips
-    creation scripts; this second probe runs them, as build_network's
-    validation probe and the build itself do, and only for a type that has
-    an OnCreated section. Cached per type for the session; [] when the
-    probe fails, so a card is never refused over it.
-
-    Only for an asset shipped under $HFS: a Labs biome node's OnCreated writes
-    default JSON files under $HIP/data/biome, and a studio's or the user's
-    own asset may do anything. A documentation read must not.
-    """
+    """Parm templates the type's OnCreated script adds to every new node."""
 
     definition = None
     with contextlib.suppress(Exception):
@@ -604,7 +477,9 @@ def _on_created_templates(category_name: str, node_type: Any) -> list:
                 probe = scratch.createNode(node_type.name())
                 known = {
                     template.name()
-                    for template in node_type.parmTemplateGroup().entriesWithoutFolders()
+                    for template in (
+                        node_type.parmTemplateGroup().entriesWithoutFolders()
+                    )
                 }
                 added = [
                     template
@@ -628,14 +503,7 @@ _SIGNATURE_LINE_RE = re.compile(
 
 
 def _vop_signatures(node_type: Any) -> list[dict[str, Any]]:
-    """Every signature a VOP type defines, read off its DialogScript.
-
-    The live `signature` menu lists only what the node can take as wired: a
-    fresh setattrib offers `default` alone, and the tokens of the others
-    (`f`, `m3`, `v4`) had to be found by probing inputDataTypes() on
-    throwaway nodes. The type's DialogScript names them all, one
-    `signature "Label" token { input types }` line each.
-    """
+    """Every signature a VOP type defines, read off its DialogScript."""
 
     try:
         definition = node_type.definition()
@@ -660,30 +528,7 @@ def _parm_names_for_type(
     factory_expressions: dict | None = None,
     locked: dict | None = None,
 ) -> tuple[set, set, dict, list, dict]:
-    """Instantiate a type once to learn its parm names, tuple names, menus and
-    multiparm instance patterns.
-
-    The third element maps a strict-menu parm name to its token list (see
-    _is_strict_menu); a free-text field with a suggestion menu is not a menu.
-    The fourth is what `_instance_patterns` returns, the fifth the probe's
-    connectors (the same probe answers both questions, and probing is not
-    free). Creation scripts run here on purpose: the build that follows runs
-    them, so the names validated are the names the built node has.
-
-    The same probe fills two optional tables when they are passed:
-    *parm_types* maps each parm name to its template type name ("Int",
-    "Float", ...), which is how a string aimed at a numeric parm is caught
-    before the build starts; *factory_expressions* maps each parm and parm
-    tuple name whose components ship with an expression to {component:
-    expression}, so a dry run can name the literals that will not take;
-    *locked* maps each parm and parm tuple name with a component the fresh
-    node locks (resolutiony on a karmarendersettings) to those components.
-
-    Results are cached per type for the session (probing was 90% of a dry
-    run's time), keyed on the HDA definition's modification time, unless a
-    strict menu's items come from a script: those can follow the scene (the
-    filecache `take` menu lists its takes).
-    """
+    """Instantiate a type once to learn its parm names, tuple names, menus and..."""
 
     key = (node_type.category().name(), node_type.name(), _definition_stamp(node_type))
     cached = _PARM_PROBE_CACHE.get(key)
@@ -760,19 +605,17 @@ _PARM_PROBE_CACHE: dict[tuple, tuple] = {}
 
 
 def _menu_error(parm_name: str, value: Any, tokens: list[str]) -> str | None:
-    """Why `value` cannot be set on a strict menu parm, or None if it can.
-
-    Houdini only says "Invalid menu item" at set time, after the whole build
-    is under way, and build_network then rolls everything back. Catching it
-    at validation keeps a typo in one token from costing the whole graph.
-    """
+    """Why `value` cannot be set on a strict menu parm, or None if it can."""
 
     if isinstance(value, bool):
         return None
     if isinstance(value, int):
         if 0 <= value < len(tokens):
             return None
-        return f"parm '{parm_name}': menu index {value} is out of range (0-{len(tokens) - 1})"
+        return (
+            f"parm '{parm_name}': menu index {value} is out of range "
+            f'(0-{len(tokens) - 1})'
+        )
     if isinstance(value, str) and value not in tokens:
         close = get_close_matches(value, tokens, n=3, cutoff=0.4)
         hint = f' Did you mean: {close}?' if close else ''
@@ -794,11 +637,7 @@ def _expression_of(parm: hou.Parm) -> str | None:
 
 
 def _referenced_parm(parm: hou.Parm) -> str | None:
-    """Path of the parm a pure `ch()` reference points at, or None.
-
-    hou.Parm.set() writes THROUGH a bare channel reference: setting tx on a
-    node whose tx reads ch("../b1/sizex") changes b1's sizex, not tx.
-    """
+    """Path of the parm a pure `ch()` reference points at, or None."""
 
     with contextlib.suppress(Exception):
         target = parm.getReferencedParm()
@@ -879,12 +718,7 @@ def _expression_language(name: str) -> Any:
 
 
 def _spec_expressions(spec: dict) -> dict[str, str]:
-    """Every expression a spec asks for, from all three spellings.
-
-    The `expressions` block (or its alias `exprs`), plus any parm in `parms`
-    given as `{"expr": "..."}`: `parms` is where a caller reaches first, and a
-    bare expression string there used to fail the whole build.
-    """
+    """Every expression a spec asks for, from all three spellings."""
 
     found: dict[str, str] = {}
     for block in (spec.get('expressions'), spec.get('exprs')):
@@ -904,21 +738,7 @@ def _apply_parm(
     override_expression: bool = False,
     run_callbacks: bool = False,
 ) -> dict[str, dict[str, str]]:
-    """Set a parm or parm tuple, broadcasting scalars and coercing floats.
-
-    Answers what the write did to expressions, per component:
-    `expressions_kept` for an expression the literal did not replace (a Ray
-    SOP's factory `@N.x` on dir), `written_through` for a pure ch() reference
-    the value went through into the parm it reads, and `expressions_removed`
-    when *override_expression* cleared them first. Nothing is evaluated: an
-    eval outside a cook leaves errors on the node that the build's report
-    would then pick up.
-
-    A locked component raises LockedParmError before anything is written;
-    *run_callbacks* runs the parm's callback after the write, the way the UI
-    does -- which is what sets and clears such locks. A callback that raised
-    is reported in `callbacks_not_run`.
-    """
+    """Set a parm or parm tuple, broadcasting scalars and coercing floats."""
 
     parm = node.parm(name)
     parm_tuple = node.parmTuple(name)
@@ -951,7 +771,8 @@ def _apply_parm(
         if callback['run']:
             report['callbacks_run'] = {name: True}  # ty: ignore[invalid-assignment]
         else:
-            report['callbacks_not_run'] = {name: callback.get('error')}  # ty: ignore[invalid-assignment]
+            callbacks = {name: callback.get('error')}
+            report['callbacks_not_run'] = callbacks  # ty: ignore[invalid-assignment]
     if before and not override_expression:
         for component in components:
             after = _expression_of(component)
@@ -971,10 +792,7 @@ def _apply_parm(
 
 
 def _set_parm_value(name: str, parm: Any, parm_tuple: Any, value: Any) -> set[str]:
-    """The plain write behind _apply_parm.
-
-    Answers the components given an ``{"expr": ...}`` instead of a literal.
-    """
+    """The plain write behind _apply_parm."""
 
     if isinstance(value, (list, tuple)):
         if parm_tuple is None:
@@ -1017,11 +835,7 @@ def _set_parm_value(name: str, parm: Any, parm_tuple: Any, value: Any) -> set[st
 
 
 def _source_output(value: Any) -> int | str:
-    """An output index, or an output name to be resolved against the source.
-
-    A name ("v" on a VOP global, "P") used to die on a bare int() with
-    "invalid literal for int()", in a dry run too.
-    """
+    """An output index, or an output name to be resolved against the source."""
 
     if isinstance(value, bool):
         raise ValueError(
@@ -1036,11 +850,7 @@ def _source_output(value: Any) -> int | str:
 
 
 def _parse_input_entry(entry: Any, position: int) -> dict[str, Any]:
-    """What one `inputs` entry of a build_network spec asks for.
-
-    Validation and the build both read entries through this, so they cannot
-    disagree about what a spec means.
-    """
+    """What one `inputs` entry of a build_network spec asks for."""
 
     if not isinstance(entry, dict):
         return {
@@ -1067,11 +877,7 @@ _ATTRIB_SIZES.update(scale=3, orient=4, rot=4)
 
 
 def _misshapen_attribs(node: hou.Node) -> dict[tuple[str, str], int]:
-    """{("point", "pscale"): 3} for standard attributes with the wrong size.
-
-    Reads only geometry that is already cooked: never forces a cook, so an
-    undisplayed heavy branch costs nothing here.
-    """
+    """{("point", "pscale"): 3} for standard attributes with the wrong size."""
 
     try:
         if not hasattr(node, 'geometry') or node.needsToCook():
@@ -1112,12 +918,7 @@ _MESSAGE_LINES = 12
 
 
 def _condensed(message: str) -> str:
-    """A node message with repeated lines dropped and the rest capped.
-
-    An HDA solver reports each failing inner node once per field it merges:
-    a FLIP solver missing pscale came back as ~40 lines, the one that named
-    the cause buried among copies of "Error cooking SOP: .../FLIP_DATA".
-    """
+    """A node message with repeated lines dropped and the rest capped."""
 
     lines = list(
         dict.fromkeys(line.strip() for line in message.splitlines() if line.strip())
@@ -1131,16 +932,13 @@ def _condensed(message: str) -> str:
 
 
 def _node_report(node: hou.Node) -> dict[str, Any]:
-    """Path and type, plus errors / warnings / bypassed only when there are any.
-
-    A clean node used to carry errors: [], warnings: [] and bypassed: false,
-    which on a 40-node verify was most of the answer. Absent means none.
-    """
+    """Path and type, plus errors / warnings / bypassed only when there are any."""
 
     report: dict[str, Any] = {'path': node.path(), 'type': node.type().name()}
     # A dangling channel reference cooks clean in Houdini, so it is reported
     # as an error here: otherwise a build reads healthy while it is broken.
-    # ponytail: scans every parm of every node; cache per verify if large networks get slow.
+    # This scans every parm of every node; cache per verify if large
+    # networks get slow.
     errors = [_condensed(e) for e in node.errors()] + [
         e for p in node.parms() for e in broken_references(p)
     ]
@@ -1160,11 +958,7 @@ _STAGE_PRIM_CAP = 20000
 
 
 def _stage_summary(node: hou.Node) -> dict[str, Any] | None:
-    """Compact stage evidence for a LOP node: what a render of it would contain.
-
-    A Solaris build used to answer geometry: null, so "is there a camera, are
-    the lights in, does every gprim have a material" took three more calls.
-    """
+    """Compact stage evidence for a LOP node: what a render of it would contain."""
 
     try:
         from pxr import UsdGeom, UsdShade  # ty: ignore[import-not-found]
@@ -1210,8 +1004,7 @@ _VOLUME_SUMMARY_KEYS = ('name', 'resolution', 'min_value', 'max_value')
 
 
 def _geometry_summary(node: hou.Node) -> dict[str, Any] | None:
-    """Compact cooked evidence: geometry for a SOP, the stage for a LOP, the
-    image layer for a Copernicus COP (whose geometry() is one quad)."""
+    """Compact cooked evidence: geometry for a SOP, the stage for a LOP, the image..."""
 
     if hasattr(node, 'stage') and not hasattr(node, 'geometry'):
         return _stage_summary(node)
@@ -1283,23 +1076,13 @@ def _geometry_summary(node: hou.Node) -> dict[str, Any] | None:
     return summary
 
 
-###### graph.build_network
-
 # Tried in this order when a missing parent's container type is inferred from
 # the specs, so a spec of types every context has (null, merge) lands in SOPs.
 _INFERRED_CATEGORIES = ('Sop', 'Lop', 'Dop', 'Cop', 'Chop', 'Top', 'Driver', 'Vop')
 
 
 def _missing_parent_container(parent_path: str, nodes: Any) -> str | None:
-    """The type to create a missing *parent_path* as, or None.
-
-    Building from an empty /obj or /tasks is the usual start, and it used to
-    cost a separate create_node before build_network, whose dry run otherwise
-    stopped at "Parent not found" without checking a single spec. Only a
-    parent directly under an existing OBJ network (any context's container)
-    or TOP manager (a topnet) is created, and only when every spec type
-    resolves in one context.
-    """
+    """The type to create a missing *parent_path* as, or None."""
 
     head, _, name = parent_path.rstrip('/').rpartition('/')
     above = hou.node(head or '/')
@@ -1324,10 +1107,7 @@ def _missing_parent_container(parent_path: str, nodes: Any) -> str | None:
 def _dry_run_in_scratch(
     above: Any, container: str, name: str, nodes: list, parent_path: str
 ) -> dict:
-    """Validate *nodes* inside a throwaway container named like the real one.
-
-    Same name, so every path in the answer is the one the real build will use.
-    """
+    """Validate *nodes* inside a throwaway container named like the real one."""
 
     with hou.undos.disabler():
         scratch = above.createNode(container, name)
@@ -1342,7 +1122,7 @@ def _dry_run_in_scratch(
 def _upstream_with(
     node: hou.Node, method: str, include_self: bool = False
 ) -> hou.Node | None:
-    """*node* (when include_self) or the nearest node up its first inputs having *method*."""
+    """*node* (when include_self) or the nearest node up its first inputs having..."""
 
     current = node if include_self else (node.inputs() or (None,))[0]
     seen = set()
@@ -1357,7 +1137,7 @@ def _upstream_with(
 def _build_in_new_container(
     parent_path: str, container: str, nodes: list, dry_run: bool, layout: bool
 ) -> dict:
-    """build_network into a parent created for the purpose; a failed build removes it."""
+    """build_network into a parent created for the purpose; a failed build removes..."""
 
     head, _, name = parent_path.rstrip('/').rpartition('/')
     above = hou.node(head or '/')
@@ -1377,6 +1157,7 @@ def _build_in_new_container(
     return result
 
 
+@register_command(PluginCommand.GRAPH_BUILD_NETWORK)
 def build_network(
     parent_path: str,
     nodes: list,
@@ -1384,59 +1165,7 @@ def build_network(
     layout: bool = True,
     **_: Any,
 ) -> dict:
-    """Build a whole node network atomically, with upfront validation.
-
-    Every node type, parameter name, and input reference in the spec is
-    validated against the running Houdini BEFORE anything is created —
-    invalid specs return the full error list and mutate nothing. With
-    dry_run=True only the validation runs.
-
-    Args:
-        parent_path: Network to build inside (e.g. "/obj/geo1").
-        nodes: Node specs, each a dict:
-            type (str, required): node type name (unversioned ok).
-            name (str): node name, referenceable by later specs.
-            parms (dict): parameter values; lists set whole parm tuples.
-                A value written {"expr": "...", "language": "hscript" |
-                "python"} is set as an expression (hscript by default). A
-                string on a numeric parm is refused during validation and
-                answered with that spelling. A literal on a parm that holds
-                an expression (a Ray SOP's factory `@N.x` on dir) does not
-                replace it: the dry run lists these in
-                `expressions_in_the_way`, the build reports
-                `expressions_kept`.
-            expressions (dict): parm name -> expression, as a whole block
-                (alias: exprs). Names are validated like those in `parms`.
-            override_expression (bool): clear the expressions that literals
-                in `parms` land on, so the literals take. Parms are written
-                in the order given.
-            run_callbacks (bool): run each parm's callback after its write, as
-                the UI does. A LOCKED parm (karmarendersettings resolutiony
-                under res_mode autoheight) is refused at validation, nothing
-                built, with the lock's controlling menu named in
-                `locked_parms`; its callback is what unlocks it, so
-                {"res_mode": "manual", "resolution": [...]} with
-                run_callbacks: true builds.
-            inputs (list): wiring. Entries are either a source string
-                (wired positionally) or {"index" | "input_name", "source",
-                "source_output"}; "input_name" is a connector name or
-                label, as get_node_card lists them, and wins over "index";
-                "source_output" is an output index or an output name or
-                label ("v", "P").
-                Sources resolve to spec node names first, then children of
-                parent, then absolute paths. {"indirect_input": n} instead
-                of "source" wires from connector n of the parent subnet
-                itself.
-            flags (dict): display/render/bypass/template booleans.
-            color (list[3]) and comment (str): network annotations.
-            Any other key, in a spec or in an input entry, is a validation
-            error with a did-you-mean, not a request dropped in silence.
-        dry_run: Validate only; never mutates the scene.
-        layout: Also lay out the whole parent network afterwards, which only
-            happens when FXHOUDINIMCP_AUTO_LAYOUT is enabled. It does not gate
-            placement: the nodes this call creates are always positioned, each
-            relative to its inputs, and nodes that already existed never move.
-    """
+    """Build a whole node network atomically, with upfront validation."""
 
     parent = hou.node(parent_path)
     errors: list[str] = []
@@ -1465,8 +1194,6 @@ def build_network(
             'valid': False,
             'errors': ["'nodes' must be a non-empty list"],
         }
-
-    ###### Phase 1: validate everything before touching the scene
 
     spec_names: list[str] = []
     existing = {child.name() for child in parent.children()}
@@ -1508,7 +1235,8 @@ def build_network(
                 )
                 hint = f' Did you mean: {close}?' if close else ''
                 errors.append(
-                    f"node {label}: type '{type_name}' does not exist in {category.name()}.{hint}"
+                    f"node {label}: type '{type_name}' does not exist in "
+                    f'{category.name()}.{hint}'
                 )
                 continue
             resolved_types[type_name] = node_type
@@ -1675,7 +1403,8 @@ def build_network(
                 )
                 hint = f' Did you mean: {close}?' if close else ''
                 errors.append(
-                    f"node {label}: no parm '{parm_name}' to put an expression on.{hint}"
+                    f"node {label}: no parm '{parm_name}' to put an expression "
+                    f'on.{hint}'
                 )
             for parm_name, value in (spec.get('parms') or {}).items():
                 if isinstance(value, (list, tuple)):
@@ -1684,7 +1413,9 @@ def build_network(
                             _wrapped_expression(component)
                         except ValueError as exc:
                             errors.append(
-                                f"node {label}: parm '{parm_name}' component {position}: {exc}"
+                                f"node {label}: parm '{parm_name}' component "
+                                f'{position}: '
+                                f'{exc}'
                             )
                 if is_ramp_value(value):
                     # A whole ramp, written as one value; on any other parm a
@@ -1704,13 +1435,16 @@ def build_network(
                     unknown = sorted(set(value) - {'expr', 'language'})
                     if 'expr' not in value:
                         errors.append(
-                            f"node {label}: parm '{parm_name}' was given a dict without "
-                            f'\'expr\'. Write {{"expr": "ch(\'../x\')"}} for an expression, '
+                            f"node {label}: parm '{parm_name}' was given a dict "
+                            f'without '
+                            f'\'expr\'. Write {{"expr": "ch(\'../x\')"}} for '
+                            f'an expression, '
                             f'or a plain value.'
                         )
                     elif unknown:
                         errors.append(
-                            f"node {label}: parm '{parm_name}': unknown key(s) {unknown} "
+                            f"node {label}: parm '{parm_name}': unknown key(s) "
+                            f'{unknown} '
                             f"in the expression value (known: ['expr', 'language'])"
                         )
                     elif str(value.get('language', 'hscript')).strip().lower() not in (
@@ -1858,8 +1592,6 @@ def build_network(
             )
         return result
 
-    ###### Phase 2: build (atomic — any failure rolls back)
-
     created: dict[str, hou.Node] = {}
     # Per node path: what the literals in `parms` did to expressions.
     parm_reports: dict[str, dict[str, dict[str, str]]] = {}
@@ -1886,7 +1618,8 @@ def build_network(
                         items = menu_items(node.parm(parm_name))
                     shown = f' Menu items: {items[:20]}' if items else ''
                     raise RuntimeError(
-                        f"{node.path()} parm '{parm_name}': {readable_message(exc)}.{shown}"
+                        f"{node.path()} parm '{parm_name}': "
+                        f'{readable_message(exc)}.{shown}'
                     ) from exc
                 for kind, found in written.items():
                     parm_reports.setdefault(node.path(), {}).setdefault(
@@ -1920,7 +1653,8 @@ def build_network(
                     node, wire['index'], wire['input_name']
                 )
                 if wire['indirect'] is not None:
-                    source = parent_connectors()[int(wire['indirect'])]  # ty: ignore[not-subscriptable]
+                    connectors = parent_connectors() or []
+                    source = connectors[int(wire['indirect'])]
                 else:
                     source_name = wire['source']
                     source = (
@@ -1995,8 +1729,6 @@ def build_network(
         # by the auto-layout flag as before.
         layout_if_enabled(parent)
 
-    ###### Phase 3: verify — cook and report evidence
-
     display = parent.displayNode() if hasattr(parent, 'displayNode') else None
     if display is None:
         display = list(created.values())[-1]
@@ -2012,7 +1744,10 @@ def build_network(
         # Shaders built inside a Material Library: the evidence is the stage
         # the library now authors (its Material prims), not null.
         with contextlib.suppress(Exception):
-            evidence = {'stage_of': parent.path(), **_stage_summary(parent)}  # ty: ignore[invalid-argument-type]
+            evidence = {
+                'stage_of': parent.path(),
+                **(_stage_summary(parent) or {}),
+            }
     result = {
         'success': True,
         'valid': True,
@@ -2071,9 +1806,6 @@ def build_network(
     return result
 
 
-###### graph.verify_network
-
-
 def _needs_to_cook(node: hou.Node) -> bool:
     with contextlib.suppress(Exception):
         return bool(node.needsToCook())
@@ -2086,27 +1818,9 @@ def _has_errors(node: hou.Node) -> bool:
     return False
 
 
+@register_command(PluginCommand.GRAPH_VERIFY_NETWORK)
 def verify_network(parent_path: str, force_cook: bool = False, **_: Any) -> dict:
-    """Inspect every node in a network: the 'middle-click everything' pass.
-
-    Cooks the display node, then reports per-node errors/warnings/flags
-    plus cooked-geometry evidence, so claims about a build can be checked
-    against reality in one call.
-
-    `node.errors()` is the verdict of the node's last cook. A node off the
-    display chain whose cause of failure was fixed since (a File SOP given
-    a path that now exists) keeps listing the old error until something
-    cooks it. Such a node, one with errors that needs a cook, is marked
-    `stale` and named in `stale_error_nodes`.
-
-    `force_cook=True` cooks the display node with force and recooks every
-    node that has errors before the report is taken, so the verdict is about
-    the network as it is now. Every erroring node, not only the dirty ones:
-    an error left by evaluating a parameter outside a cook does not mark the
-    node dirty, and only a forced cook of that node clears it. The default
-    cooks the display node only, as before, so a heavy scene is not
-    recooked without being asked.
-    """
+    """Inspect every node in a network: the 'middle-click everything' pass."""
 
     parent = hou.node(parent_path)
     if parent is None:
@@ -2176,8 +1890,6 @@ def verify_network(parent_path: str, force_cook: bool = False, **_: Any) -> dict
     return result
 
 
-###### graph.get_node_card
-
 _HELP_ZIP_INDEX: dict[str, str] | None = None
 
 _CATEGORY_HELP_DIRS = {
@@ -2231,6 +1943,7 @@ def _help_text(node_type: Any, category_name: str) -> str | None:
     return embedded or None
 
 
+@register_command(PluginCommand.GRAPH_GET_NODE_CARD)
 def get_node_card(
     node_type: str,
     context: str = 'Sop',
@@ -2238,12 +1951,7 @@ def get_node_card(
     include_help: bool = True,
     **_: Any,
 ) -> dict:
-    """Version-exact documentation card for a node type.
-
-    Sources everything from the running Houdini: real connector labels,
-    real parameter names/defaults/menus, and the node's own shipped help
-    text — so there is never a reason to guess.
-    """
+    """Version-exact documentation card for a node type."""
 
     categories = hou.nodeTypeCategories()
     category = categories.get(context)
@@ -2416,7 +2124,9 @@ def get_node_card(
                 'menu': found['items'],
                 'menu_labels': labels,
                 'menu_source': 'folder_set',
-                'note': "Radio folders: the index picks which folder's parameters apply.",
+                'note': (
+                    "Radio folders: the index picks which folder's parameters apply."
+                ),
             }
         )
 
@@ -2498,21 +2208,14 @@ def get_node_card(
     return card
 
 
-###### graph.find_expensive_nodes
-
-
+@register_command(PluginCommand.GRAPH_FIND_EXPENSIVE_NODES)
 def find_expensive_nodes(
     root_path: str = '/',
     frame: float | None = None,
     limit: int = 15,
     **_: Any,
 ) -> dict:
-    """Profile cooking under *root_path* and rank nodes by cook cost.
-
-    Records a hou.perfMon profile while force-cooking the display SOPs
-    under the root, then returns the most expensive nodes — how a senior
-    finds the slow node instead of guessing.
-    """
+    """Profile cooking under *root_path* and rank nodes by cook cost."""
 
     root = hou.node(root_path)
     if root is None:
@@ -2597,16 +2300,6 @@ def find_expensive_nodes(
     }
 
 
-###### Registration
-
-register_command(PluginCommand.GRAPH_BUILD_NETWORK)(build_network)
-register_command(PluginCommand.GRAPH_VERIFY_NETWORK)(verify_network)
-register_command(PluginCommand.GRAPH_GET_NODE_CARD)(get_node_card)
-register_command(PluginCommand.GRAPH_FIND_EXPENSIVE_NODES)(find_expensive_nodes)
-
-
-###### graph.cook_frame_range
-
 # A sequential solver has to be cooked in order, one frame at a time, and the
 # only evidence that it is doing anything is how its output changes across those
 # frames. Doing that from the client costs one round trip per frame -- ~50ms
@@ -2620,11 +2313,7 @@ _FRAME_ATTRIB_CAP = 8
 
 
 def _frame_stats(entry: dict[str, Any]) -> dict[str, Any]:
-    """One attribute's aggregates for a frame row, per axis for a vector.
-
-    min/max over all of P's components mixes x, y and z, so "did the liquid
-    land on the ground" could not be read off it; the y range answers that.
-    """
+    """One attribute's aggregates for a frame row, per axis for a vector."""
 
     row = {k: v for k, v in entry.items() if k in ('min', 'max', 'mean', 'sum')}
     if entry.get('per_component'):
@@ -2696,6 +2385,7 @@ def _cook_was_interrupted(node: hou.Node) -> bool:
         return False
 
 
+@register_command(PluginCommand.GRAPH_COOK_FRAME_RANGE)
 def cook_frame_range(
     node_path: str,
     start: float | None = None,
@@ -2705,31 +2395,7 @@ def cook_frame_range(
     volumes: bool = False,
     **_: Any,
 ) -> dict[str, Any]:
-    """Cook a node frame by frame and report what changed on each frame.
-
-    This is the tool for proving a simulation is doing something, and the only
-    correct way to advance a sequential solver: frames are cooked in order, so a
-    SOP solver, a DOP network or a plain animated chain all accumulate properly.
-
-    The frame is left at the last one cooked, because that is what stepping a
-    solver means; the caller usually wants to screenshot or read it afterwards.
-
-    There is no deadline: the range runs under Houdini's progress bar, and when
-    it is stopped from there the frames cooked so far come back with
-    ``interrupted``. A node that keeps its own cache across frames (Trail, a
-    SOP Solver) starts from what it already holds: press its reset button
-    (press_button, e.g. Trail's ``clear``) or reset_simulation first, then
-    cook from the first frame.
-
-    Args:
-        node_path: Node to cook. Its output is what gets measured.
-        start: First frame. Defaults to the playbar start.
-        end: Last frame, inclusive. Defaults to the playbar end.
-        step: Frame increment. 1.0 for a sequential solver -- skipping frames
-            gives a solver a discontinuous time step and invalid results.
-        attribs: Point attributes to aggregate per frame (min/max/mean/sum).
-        volumes: Also report per-volume name, resolution and value range.
-    """
+    """Cook a node frame by frame and report what changed on each frame."""
 
     node = hou.node(node_path)
     if node is None:
@@ -2837,7 +2503,8 @@ def cook_frame_range(
         result['interrupted'] = True
         result['interrupted_at_frame'] = interrupted_at
         result['interrupted_note'] = (
-            f"Stopped from Houdini's progress bar at frame {interrupted_at:g}; the rows "
+            f"Stopped from Houdini's progress bar at frame {interrupted_at:g}; the "
+            f'rows '
             'above are the frames cooked before that.'
         )
     if frames:
@@ -2877,26 +2544,9 @@ def _thin_frame_rows(frames: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [frames[i] for i in sorted(keep)]
 
 
-register_command(PluginCommand.GRAPH_COOK_FRAME_RANGE)(cook_frame_range)
-
-
-###### graph.get_cook_status
-
-
+@register_command(PluginCommand.GRAPH_GET_COOK_STATUS)
 def get_cook_status(node_path: str = '/obj', **_: Any) -> dict:
-    """Whether a node has cooked, how often, and whether it changes per frame.
-
-    Read the limitation first: every command runs on Houdini's main thread, so a
-    long cook BLOCKS the bridge and cannot be polled from outside while it runs.
-    A recorded session ended up watching the Houdini process's CPU from
-    PowerShell for exactly that reason, and no tool can change that shape. What
-    this answers is the after-the-fact question -- did the thing actually recook,
-    is it time dependent, did it end up in error. For genuinely asynchronous
-    work, use a ROP's background execution and poll get_render_progress.
-
-    Args:
-        node_path: Node to report on.
-    """
+    """Whether a node has cooked, how often, and whether it changes per frame."""
 
     node = hou.node(node_path)
     if node is None:
@@ -2921,6 +2571,3 @@ def get_cook_status(node_path: str = '/obj', **_: Any) -> dict:
     with contextlib.suppress(Exception):
         result['hip_file'] = hou.hipFile.path()
     return result
-
-
-register_command(PluginCommand.GRAPH_GET_COOK_STATUS)(get_cook_status)

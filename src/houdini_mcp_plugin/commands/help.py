@@ -1,29 +1,16 @@
-"""Documentation handlers for FXHoudini-MCP.
-
-Full-text search and page retrieval over the documentation that Houdini
-itself ships in $HFS/houdini/help (nodes, VEX, expressions, HOM,
-Solaris, TOPs, character, general reference). Because everything is
-read from the RUNNING Houdini's install, the docs are always
-version-exact and need no network — and on builds that ship without
-local help, the tools degrade into a clear error instead of guessing.
-"""
+"""Documentation handlers for Houdini MCP."""
 
 from __future__ import annotations
 
-# Built-in
 import os
 import zipfile
 from difflib import get_close_matches
 from typing import Any
 
-# Third-party
 import hou
 
-# Internal
 from houdini_mcp_plugin.dispatcher import register_command
 from houdini_mcp_protocol import PluginCommand
-
-###### Corpus access
 
 # Scopes are discovered from the install, not listed here. Houdini 22.0 ships 47
 # help archives and a hardcoded nine served only 27.6 of 34.3 MB of text. What it
@@ -158,11 +145,7 @@ _PAGE_CAP = 20_000
 
 
 def _sections_of(text: str) -> list[dict]:
-    """Each "== Section ==" (level 1) and "~~ Subsection ~~" (level 2) with its offset.
-
-    On a node page these are the parameter tabs and their folders: Wind and
-    Buoyancy of the Pyro Solver are level 2, inside "== Shape ==".
-    """
+    """Each "== Section ==" (level 1) and "~~ Subsection ~~" (level 2) with its..."""
 
     sections = []
     offset = 0
@@ -187,26 +170,14 @@ def _excerpt(text: str, lower: str, token: str, width: int = 220) -> str:
     return ('...' if start else '') + snippet
 
 
-###### help.search_help
-
-
+@register_command(PluginCommand.HELP_SEARCH_HELP)
 def search_help(
     query: str,
     scope: str | None = None,
     limit: int = 10,
     **_: Any,
 ) -> dict:
-    """Full-text search over the running Houdini's shipped documentation.
-
-    All query words must appear in a page; pages are ranked by hit
-    count with strong boosts for filename and title matches.
-
-    Args:
-        query: Search words (e.g. "pyro shaping", "pcfind", "ramp parameter").
-        scope: Restrict to one corpus — nodes, vex, expressions, hom,
-            solaris, tops, character, ref, shelf. Default: all.
-        limit: Max results.
-    """
+    """Full-text search over the running Houdini's shipped documentation."""
 
     available = _require_help()
     tokens = [t for t in query.lower().split() if t]
@@ -251,29 +222,11 @@ def search_help(
     }
 
 
-register_command(PluginCommand.HELP_SEARCH_HELP)(search_help)
-
-
-###### help.get_help_page
-
-
+@register_command(PluginCommand.HELP_GET_HELP_PAGE)
 def get_help_page(
     path: str, offset: int = 0, section: str | None = None, **_: Any
 ) -> dict:
-    """Fetch one documentation page by path (as returned by search_help).
-
-    A page is served 20,000 characters at a time. nodes/sop/pyrosolver is
-    50,925: it stopped in Fields, and Shape, Wind and Buoyancy could not be
-    read at all. A longer page now names its `sections` with their
-    offsets and `next_offset`; *offset* or *section* reads on from there.
-
-    Args:
-        path: "scope/entry", e.g. "nodes/sop/scatter", "vex/functions/noise",
-            "expressions/ch". The .txt extension is optional.
-        offset: Character offset to start from, e.g. a `next_offset`.
-        section: A section title (or the start of one, any case) to start at;
-            overrides *offset*.
-    """
+    """Fetch one documentation page by path (as returned by search_help)."""
 
     _require_help()
     normalized = path.strip().strip('/')
@@ -304,7 +257,8 @@ def get_help_page(
         ]
         if not found:
             raise ValueError(
-                f'No section {section!r} in {scope}/{entry}. Its sections: {[s["title"] for s in sections]}'
+                f'No section {section!r} in {scope}/{entry}. Its sections: '
+                f'{[s["title"] for s in sections]}'
             )
         offset = found[0]['offset']
     offset = int(offset or 0)
@@ -331,6 +285,3 @@ def get_help_page(
     if len(text) > _PAGE_CAP:
         reply['sections'] = sections
     return reply
-
-
-register_command(PluginCommand.HELP_GET_HELP_PAGE)(get_help_page)

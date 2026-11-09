@@ -138,7 +138,9 @@ def _render_product_paths(node: hou.Node) -> list[str]:
                 None,
             )
         paths = []
-        for target in settings.GetProductsRel().GetTargets():  # ty: ignore[unresolved-attribute]
+        for target in (
+            settings.GetProductsRel().GetTargets()  # ty: ignore[unresolved-attribute]
+        ):
             name = (
                 UsdRender.Product(stage.GetPrimAtPath(target))
                 .GetProductNameAttr()

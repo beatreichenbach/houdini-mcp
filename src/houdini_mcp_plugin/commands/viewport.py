@@ -1,22 +1,14 @@
-"""Viewport and UI handlers for FXHoudini-MCP.
-
-Provides tools for inspecting and controlling Houdini's viewport panes,
-network editor navigation, display modes, camera assignment, and
-screenshot capture of various pane types.
-"""
+"""Viewport and UI handlers for Houdini MCP."""
 
 from __future__ import annotations
 
-# Built-in
 import contextlib
 import logging
 import os
 from typing import Any
 
-# Third-party
 import hou
 
-# Internal
 from houdini_mcp_plugin.dispatcher import register_command
 from houdini_mcp_plugin.ui import (
     keep_viewer_state,
@@ -33,27 +25,14 @@ logger = logging.getLogger(__name__)
 
 
 def _no_mplay(settings: Any) -> None:
-    """Keep a flipbook from launching MPlay.
-
-    MPlay is a child process of Houdini and inherits its file descriptors, the
-    hwebserver listening socket among them. After Houdini exits, that MPlay
-    keeps the port open and the next Houdini's auto-start fails with "an
-    existing server is running on port N". The frame is written to disk either
-    way; a viewer nobody asked for is not worth losing the next session's
-    server.
-    """
+    """Keep a flipbook from launching MPlay."""
 
     with contextlib.suppress(Exception):
         settings.outputToMPlay(False)
 
 
 def _capture_pane_tab_qt(pane_tab: Any, output_path: str) -> None:
-    """Capture a pane tab screenshot via Qt.
-
-    Houdini 20.x exposed PaneTab.qtParentWidget(); Houdini 21 removed it
-    in favor of qtParentWindow()/qtScreenGeometry(), so fall back to
-    grabbing the pane's screen region.
-    """
+    """Capture a pane tab screenshot via Qt."""
 
     pixmap = None
 
@@ -107,17 +86,13 @@ def _capture_pane_tab_qt(pane_tab: Any, output_path: str) -> None:
     if not pixmap.save(output_path):
         raise RuntimeError(
             f"Failed to save screenshot to '{output_path}'. "
-            f'Ensure the path is writable and the format is supported (e.g. .png, .jpg).'
+            f'Ensure the path is writable and the format is supported (e.g. .png, '
+            f'.jpg).'
         )
 
 
 def _viewer_stage(scene_viewer: Any) -> Any:
-    """The USD stage a Solaris viewer is displaying, or None.
-
-    Tried in order because which of these is a LOP depends on what the user last
-    clicked: the current node, the network the viewer is in, and that network's
-    display node.
-    """
+    """The USD stage a Solaris viewer is displaying, or None."""
 
     candidates = []
     with contextlib.suppress(Exception):
@@ -150,13 +125,7 @@ def _camera_prims(stage: Any, limit: int = 12) -> list[str]:
 
 
 def _is_scene_graph_view(scene_viewer: Any) -> bool:
-    """Whether Hydra delegates apply at all.
-
-    hydraRenderers() raises "Specified view is not a scene graph view" in an
-    object-level viewport, which is a different situation from a build that has
-    no such API, and reporting them the same way sent a caller looking for a
-    Houdini upgrade instead of a Solaris viewport.
-    """
+    """Whether Hydra delegates apply at all."""
 
     try:
         scene_viewer.hydraRenderers()
@@ -165,9 +134,7 @@ def _is_scene_graph_view(scene_viewer: Any) -> bool:
     return True
 
 
-###### viewport.list_panes
-
-
+@register_command(PluginCommand.VIEWPORT_LIST_PANES)
 def list_panes() -> dict:
     """List all visible pane tabs, their types, and associated information."""
 
@@ -206,15 +173,9 @@ def list_panes() -> dict:
     }
 
 
-###### viewport.get_viewport_info
-
-
+@register_command(PluginCommand.VIEWPORT_GET_VIEWPORT_INFO)
 def get_viewport_info(pane_name: str | None = None) -> dict:
-    """Get current viewport settings including camera, display mode, and view transform.
-
-    Args:
-        pane_name: Optional pane tab name. If None, uses the first Scene Viewer found.
-    """
+    """Get current viewport settings including camera, display mode, and view..."""
 
     scene_viewer = _find_scene_viewer(pane_name)
     viewport = scene_viewer.curViewport()
@@ -289,19 +250,12 @@ def get_viewport_info(pane_name: str | None = None) -> dict:
     return info
 
 
-###### viewport.set_viewport_camera
-
-
+@register_command(PluginCommand.VIEWPORT_SET_VIEWPORT_CAMERA)
 def set_viewport_camera(
     camera_path: str,
     pane_name: str | None = None,
 ) -> dict:
-    """Set the viewport to look through a specific camera.
-
-    Args:
-        camera_path: Path to the camera node (e.g. '/obj/cam1').
-        pane_name: Optional pane tab name.
-    """
+    """Set the viewport to look through a specific camera."""
 
     scene_viewer = _find_scene_viewer(pane_name)
     viewport = scene_viewer.curViewport()
@@ -381,9 +335,6 @@ def set_viewport_camera(
     }
 
 
-###### viewport.set_viewport_display
-
-
 # color_scheme's spellings, mapped to hou.viewportColorScheme names.
 _COLOR_SCHEMES = {
     'dark': 'Dark',
@@ -395,6 +346,7 @@ _COLOR_SCHEMES = {
 }
 
 
+@register_command(PluginCommand.VIEWPORT_SET_VIEWPORT_DISPLAY)
 def set_viewport_display(
     display_mode: str | None = None,
     pane_name: str | None = None,
@@ -403,23 +355,7 @@ def set_viewport_display(
     point_size: float | None = None,
     color_scheme: str | None = None,
 ) -> dict:
-    """Set how the viewport draws: shading, background, grid, point size, colours.
-
-    Args:
-        display_mode: One of 'wireframe', 'shaded', 'smooth', 'smooth_wire',
-            'hidden_line', 'flat', 'flat_wire', 'point'.
-        pane_name: Optional pane tab name.
-        environment_background: Show (True) or hide (False) an environment
-            light's map behind the scene, on every view of the viewer.
-        reference_plane: Show (True) or hide (False) the reference plane (the
-            grid).
-        point_size: Diameter in pixels of particles drawn as points, on every
-            view of the viewer.
-        color_scheme: 'dark', 'darkgrey', 'grey' or 'light', on every view.
-
-    Each setting is read back rather than echoed: the per-view ones as a
-    ``{view name: value}`` map.
-    """
+    """Set how the viewport draws: shading, background, grid, point size, colours."""
 
     asked = (
         display_mode,
@@ -439,7 +375,9 @@ def set_viewport_display(
         scheme = _COLOR_SCHEMES.get(str(color_scheme).strip().lower().replace(' ', ''))
         if scheme is None:
             raise ValueError(
-                f"Unknown color_scheme '{color_scheme}'. Supported: dark, darkgrey, grey, light."
+                f"Unknown color_scheme '{color_scheme}'. Supported: dark, darkgrey, "
+                f'grey, '
+                f'light.'
             )
     size = None
     if point_size is not None:
@@ -470,7 +408,8 @@ def set_viewport_display(
         gl_mode = mode_map.get(display_mode.lower())
         if gl_mode is None:
             raise ValueError(
-                f"Unknown display mode: '{display_mode}'. Supported modes: {list(mode_map.keys())}"
+                f"Unknown display mode: '{display_mode}'. Supported modes: "
+                f'{list(mode_map.keys())}'
             )
 
     scene_viewer = _find_scene_viewer(pane_name)
@@ -528,9 +467,6 @@ def set_viewport_display(
     return result
 
 
-###### viewport.set_viewport_direction
-
-
 def _vector3(value: Any, name: str) -> tuple:
     """Three floats from *value*, or a ValueError naming *name*."""
 
@@ -544,11 +480,7 @@ def _vector3(value: Any, name: str) -> tuple:
 
 
 def _looked_through(viewport: Any) -> tuple[str | None, bool]:
-    """(camera the viewport looks through, whether it is a USD prim), or (None, False).
-
-    A USD camera prim is no node: camera() is None there and only cameraPath()
-    names it.
-    """
+    """(camera the viewport looks through, whether it is a USD prim), or (None,..."""
 
     bound = viewport.camera()
     if bound is not None:
@@ -557,6 +489,7 @@ def _looked_through(viewport: Any) -> tuple[str | None, bool]:
     return path, path is not None
 
 
+@register_command(PluginCommand.VIEWPORT_SET_VIEWPORT_DIRECTION)
 def set_viewport_direction(
     direction: str | None = None,
     pane_name: str | None = None,
@@ -564,24 +497,7 @@ def set_viewport_direction(
     pivot: list | None = None,
     distance: float | None = None,
 ) -> dict:
-    """Set the viewport to a standard viewing direction, or place the free view.
-
-    Args:
-        direction: One of 'front', 'back', 'top', 'bottom', 'left', 'right',
-            'perspective'.
-        pane_name: Optional pane tab name.
-        rotation: [rx, ry, rz] in degrees: the free view's rotation about its
-            pivot.
-        pivot: [x, y, z] the free view orbits.
-        distance: How far the free view sits from its pivot along its view
-            axis (the dolly). A sideways pan is kept and not counted, so with
-            a panned view the eye is farther from the pivot than this.
-
-    rotation, pivot and distance place the viewport's own (non-camera) view,
-    after *direction* if both are given, and the reply reads it back as
-    ``view``. A viewport looking through a camera is refused: what it shows
-    is the camera, so the camera is what to move.
-    """
+    """Set the viewport to a standard viewing direction, or place the free view."""
 
     direction_map = {
         'front': hou.geometryViewportType.Front,
@@ -603,7 +519,8 @@ def set_viewport_direction(
         view_type = direction_map.get(str(direction).lower())
         if view_type is None:
             raise ValueError(
-                f"Unknown direction '{direction}'. Supported: {list(direction_map.keys())}"
+                f"Unknown direction '{direction}'. Supported: "
+                f'{list(direction_map.keys())}'
             )
     # Checked before the viewer is touched, so a bad value never half-applies.
     angles = _vector3(rotation, 'rotation') if rotation is not None else None
@@ -681,23 +598,12 @@ def set_viewport_direction(
     return result
 
 
-###### viewport.set_viewport_renderer
-
-
+@register_command(PluginCommand.VIEWPORT_SET_VIEWPORT_RENDERER)
 def set_viewport_renderer(
     renderer: str,
     pane_name: str | None = None,
 ) -> dict:
-    """Set the viewport's Hydra rendering delegate.
-
-    In LOPs/Solaris the viewport can render through different Hydra delegates
-    (GL, Storm, Karma CPU, Karma XPU, etc.) without writing to disk.
-
-    Args:
-        renderer: Renderer name — e.g. "GL", "Storm", "Karma CPU",
-            "Karma XPU", "Houdini GL". Case-insensitive partial match.
-        pane_name: Optional pane tab name.
-    """
+    """Set the viewport's Hydra rendering delegate."""
 
     scene_viewer = _find_scene_viewer(pane_name)
     viewport = scene_viewer.curViewport()
@@ -805,15 +711,9 @@ def set_viewport_renderer(
     }
 
 
-###### viewport.frame_selection
-
-
+@register_command(PluginCommand.VIEWPORT_FRAME_SELECTION)
 def frame_selection(pane_name: str | None = None) -> dict:
-    """Frame the current selection in the viewport.
-
-    Args:
-        pane_name: Optional pane tab name.
-    """
+    """Frame the current selection in the viewport."""
 
     scene_viewer = _find_scene_viewer(pane_name)
     viewport = scene_viewer.curViewport()
@@ -827,15 +727,8 @@ def frame_selection(pane_name: str | None = None) -> dict:
     }
 
 
-###### viewport.frame_all
-
-
 def _world_bounds(node: hou.Node) -> list | None:
-    """[xmin, ymin, zmin, xmax, ymax, zmax] of what *node* shows, in world space.
-
-    An object is its display SOP; a SOP's geometry is in its object's space,
-    so it goes through that object's world transform. None without geometry.
-    """
+    """[xmin, ymin, zmin, xmax, ymax, zmax] of what *node* shows, in world space."""
 
     owner, target = node, node
     if isinstance(node, hou.ObjNode):
@@ -865,24 +758,13 @@ def _world_bounds(node: hou.Node) -> list | None:
     ]
 
 
+@register_command(PluginCommand.VIEWPORT_FRAME_ALL)
 def frame_all(
     pane_name: str | None = None,
     node_paths: list | None = None,
     bounds: list | None = None,
 ) -> dict:
-    """Frame all geometry in the viewport (home all), or only some of it.
-
-    Args:
-        pane_name: Optional pane tab name.
-        node_paths: Frame the world bounds of these objects or SOPs only.
-        bounds: Frame [xmin, ymin, zmin, xmax, ymax, zmax], in world space.
-
-    With *node_paths* or *bounds* (both: the box around all of them), the
-    reply carries ``framed_bounds``, and ``no_geometry`` names any node that
-    had nothing to frame. An object frames what it draws: a null its marker,
-    a camera or a light its icon. A box with no size (a point) is framed as a
-    1-unit cube around it, and ``padded`` says so.
-    """
+    """Frame all geometry in the viewport (home all), or only some of it."""
 
     box = None
     empty: list = []
@@ -930,7 +812,8 @@ def frame_all(
     if looks_through:
         result['camera_released'] = looks_through
         result['note'] = (
-            f'The viewport stopped looking through {looks_through} to frame; the camera '
+            f'The viewport stopped looking through {looks_through} to frame; the '
+            f'camera '
             f'did not move. set_viewport_camera looks through it again.'
         )
     if box is None:
@@ -948,20 +831,12 @@ def frame_all(
     return result
 
 
-###### viewport.capture_screenshot
-
-
+@register_command(PluginCommand.VIEWPORT_CAPTURE_SCREENSHOT)
 def capture_screenshot(
     output_path: str,
     pane_name: str | None = None,
 ) -> dict:
-    """Capture a screenshot of a specific pane tab, or the active viewport.
-
-    Args:
-        output_path: Destination image path.
-        pane_name: Name of the pane tab to capture. If not provided,
-            captures the first Scene Viewer found.
-    """
+    """Capture a screenshot of a specific pane tab, or the active viewport."""
 
     out_dir = os.path.dirname(output_path)
     if out_dir and not os.path.isdir(out_dir):
@@ -1011,8 +886,6 @@ def capture_screenshot(
     }
 
 
-###### viewport.capture_network_editor
-
 # Network units of context around the framed node, each side: enough for its
 # immediate neighbours to show, few enough that the node is still readable.
 _FRAME_PAD_X = 5.0
@@ -1029,20 +902,7 @@ def _bounds_list(bounds: Any) -> list | None:
 
 
 def _frame_node(network_editor: Any, node: Any) -> list:
-    """Put *node* in the middle of the editor at once, not after a flight.
-
-    ``homeToSelection()`` animates the view over the next event-loop ticks,
-    while the capture runs in this same tick, so the image came out mid-flight:
-    the whole network, or an empty stretch between the previous node and this
-    one. ``setVisibleBounds(transition_time=0)`` moves the view before the grab.
-
-    ``set_center_when_scale_rejected``: a rect at the zoom the editor already
-    has counts as a rejected scale change, and without the flag the call then
-    changes nothing at all, so every capture after the first stayed on the
-    first node (measured on 22.0.429).
-
-    Returns the node's own rect in network space.
-    """
+    """Put *node* in the middle of the editor at once, not after a flight."""
 
     pos = node.position()
     size = node.size()
@@ -1061,20 +921,12 @@ def _frame_node(network_editor: Any, node: Any) -> list:
     return [round(v, 3) for v in (xmin, ymin, xmax, ymax)]
 
 
+@register_command(PluginCommand.VIEWPORT_CAPTURE_NETWORK_EDITOR)
 def capture_network_editor(
     output_path: str,
     node_path: str | None = None,
 ) -> dict:
-    """Capture a screenshot of the network editor.
-
-    Args:
-        output_path: Destination image path.
-        node_path: Optional node path to frame before capture.
-
-    The reply carries ``visible_bounds`` (the network space the image shows)
-    and, with *node_path*, ``node_bounds`` and ``node_in_view``, so what the
-    image holds can be checked without opening it.
-    """
+    """Capture a screenshot of the network editor."""
 
     out_dir = os.path.dirname(output_path)
     if out_dir and not os.path.isdir(out_dir):
@@ -1137,34 +989,9 @@ def capture_network_editor(
     return result
 
 
-###### viewport.set_current_network
-
-
+@register_command(PluginCommand.VIEWPORT_SET_CURRENT_NETWORK)
 def set_current_network(network_path: str, other_objects: str | None = 'hide') -> dict:
-    """Navigate the network editor to a specific network path.
-
-    The viewer follows the network editor into the object, and *other_objects*
-    sets what it draws of every other object (the viewport's Y hotkey): "hide"
-    by default, so work in one object is not drawn over, and slowed by, the
-    rest of the scene. No display flag changes.
-
-    A DOP network becomes the current one, where DOP shelf tools build, as
-    Houdini does when the editor enters it (measured on 22.0.429; it stays
-    current after the editor leaves). model_popnet does not make its new
-    network current, and a session set it through execute_python, not
-    knowing this did: it is set here explicitly and named in
-    `current_dop_network`.
-
-    The viewport's Visible Objects pattern is saved with the hip, and one
-    left at another object drew this one not at all: a session's
-    screenshots came out black. Unless *other_objects* is None, a
-    pattern that leaves this object out is set back to "*" and named in
-    `visible_objects_reset`; other objects stay hidden by *other_objects*.
-
-    Args:
-        network_path: Path to the network to navigate to (e.g. '/obj/geo1').
-        other_objects: "hide", "ghost", "show", or None to leave the viewer as is.
-    """
+    """Navigate the network editor to a specific network path."""
 
     node = hou.node(network_path)
     if node is None:
@@ -1227,18 +1054,12 @@ def set_current_network(network_path: str, other_objects: str | None = 'hide') -
     return reply
 
 
-###### viewport.find_error_nodes
-
-
 _ERROR_NODE_CAP = 50
 
 
+@register_command(PluginCommand.VIEWPORT_FIND_ERROR_NODES)
 def find_error_nodes(root_path: str = '/') -> dict:
-    """Find all nodes with errors or warnings, recursively from a root path.
-
-    Args:
-        root_path: Root node path to start searching from. Defaults to '/'.
-    """
+    """Find all nodes with errors or warnings, recursively from a root path."""
 
     root = hou.node(root_path)
     if root is None:
@@ -1251,12 +1072,7 @@ def find_error_nodes(root_path: str = '/') -> dict:
     counts = {'errors': 0, 'warnings': 0}
 
     def _check_node(node: Any) -> Any:
-        """Recursively check nodes for errors and warnings.
-
-        Messages are condensed (one upstream error repeats on every node
-        downstream of it) and each list holds the first 50 nodes; the counts
-        stay complete. `name` is gone: it is the tail of `path`.
-        """
+        """Recursively check nodes for errors and warnings."""
 
         for kind, reader, bucket in (
             ('errors', node.errors, error_nodes),
@@ -1298,26 +1114,15 @@ def find_error_nodes(root_path: str = '/') -> dict:
     }
 
 
-###### Helpers
-
-
 def _find_scene_viewer(pane_name: str | None = None) -> Any:
-    """Find a Scene Viewer pane tab by name, or the first one available.
-
-    Args:
-        pane_name: Optional specific pane tab name.
-
-    Returns:
-        A hou.SceneViewer pane tab.
-
-    Raises:
-        RuntimeError: If no Scene Viewer is found.
-        ValueError: If the named pane is not a Scene Viewer.
-    """
+    """Find a Scene Viewer pane tab by name, or the first one available."""
 
     require_ui(
         'find a Scene Viewer',
-        alternative='Geometry can still be inspected with get_geometry_info and sample_geometry.',
+        alternative=(
+            'Geometry can still be inspected with get_geometry_info and '
+            'sample_geometry.'
+        ),
     )
     if pane_name is not None:
         pane_tab = _find_pane_by_name(pane_name)
@@ -1335,17 +1140,7 @@ def _find_scene_viewer(pane_name: str | None = None) -> Any:
 
 
 def _find_pane_by_name(pane_name: str) -> Any:
-    """Find a pane tab by its name.
-
-    Args:
-        pane_name: The pane tab name.
-
-    Returns:
-        The matching hou.PaneTab.
-
-    Raises:
-        ValueError: If no pane with the given name exists.
-    """
+    """Find a pane tab by its name."""
 
     require_ui(f'find the pane {pane_name!r}')
     for pane_tab in hou.ui.paneTabs():
@@ -1356,17 +1151,9 @@ def _find_pane_by_name(pane_name: str) -> Any:
     raise ValueError(f"Pane tab not found: '{pane_name}'. Available panes: {available}")
 
 
-###### viewport.log_status
-
-
+@register_command(PluginCommand.VIEWPORT_LOG_STATUS)
 def log_status(message: str, severity: str = 'message') -> dict:
-    """Display a status message in Houdini's status bar.
-
-    Args:
-        message: The status message to display.
-        severity: Severity level — "message" (default), "important",
-            "warning", or "error".
-    """
+    """Display a status message in Houdini's status bar."""
 
     severity_map = {
         'message': hou.severityType.Message,
@@ -1380,50 +1167,17 @@ def log_status(message: str, severity: str = 'message') -> dict:
     else:
         # Headless sessions (hython/hbatch) have no status bar; stay a
         # harmless no-op so instruction-following clients never error.
-        print(f'[status] {message}')
+        logger.info('[status] %s', message)
     return {'message': message, 'severity': severity}
 
 
-###### Registration
-
-register_command(PluginCommand.VIEWPORT_LIST_PANES)(list_panes)
-register_command(PluginCommand.VIEWPORT_GET_VIEWPORT_INFO)(get_viewport_info)
-register_command(PluginCommand.VIEWPORT_SET_VIEWPORT_CAMERA)(set_viewport_camera)
-register_command(PluginCommand.VIEWPORT_SET_VIEWPORT_DISPLAY)(set_viewport_display)
-register_command(PluginCommand.VIEWPORT_SET_VIEWPORT_DIRECTION)(set_viewport_direction)
-register_command(PluginCommand.VIEWPORT_SET_VIEWPORT_RENDERER)(set_viewport_renderer)
-register_command(PluginCommand.VIEWPORT_FRAME_SELECTION)(frame_selection)
-register_command(PluginCommand.VIEWPORT_FRAME_ALL)(frame_all)
-register_command(PluginCommand.VIEWPORT_CAPTURE_SCREENSHOT)(capture_screenshot)
-register_command(PluginCommand.VIEWPORT_CAPTURE_NETWORK_EDITOR)(capture_network_editor)
-register_command(PluginCommand.VIEWPORT_SET_CURRENT_NETWORK)(set_current_network)
-register_command(PluginCommand.VIEWPORT_FIND_ERROR_NODES)(find_error_nodes)
-register_command(PluginCommand.VIEWPORT_LOG_STATUS)(log_status)
-
-
-###### viewport.set_viewer_context
-
-
+@register_command(PluginCommand.VIEWPORT_SET_VIEWER_CONTEXT)
 def set_viewer_context(
     network_path: str,
     current_node: str | None = None,
     pane_name: str | None = None,
 ) -> dict:
-    """Point the Scene Viewer at a network, and optionally a node within it.
-
-    set_current_network moves the network EDITOR. This moves the VIEWER, which is
-    a different pane and the one that decides whether a scene graph view exists at
-    all. Without it there was no way to enter Solaris, so no way to preview a USD
-    stage or set a Hydra delegate: a recorded session burned several
-    execute_python calls on exactly this, and even this project's own GUI checks
-    had to reach for Python.
-
-    Args:
-        network_path: Network for the viewer to display, e.g. "/stage".
-        current_node: Optional node inside it to make current, which is what
-            selects the stage a Solaris viewport shows.
-        pane_name: Optional pane tab name.
-    """
+    """Point the Scene Viewer at a network, and optionally a node within it."""
 
     network = hou.node(network_path)
     if network is None:
@@ -1452,6 +1206,3 @@ def set_viewer_context(
         current = scene_viewer.currentNode()
         result['current_node'] = current.path() if current else None
     return result
-
-
-register_command(PluginCommand.VIEWPORT_SET_VIEWER_CONTEXT)(set_viewer_context)

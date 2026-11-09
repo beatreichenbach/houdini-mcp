@@ -31,8 +31,9 @@ menu at all, entries are made strings. A Button with a generator is not a
 menu (``menuItems()`` refuses it without running anything), so it is left to
 Houdini. Checked against ``menuItems()`` over every Python menu of every
 type in hython (3435 menus of SOP and LOP, 649 of OBJ, DOP, VOP, COP and
-TOP): identical wherever Houdini's script ran clean. Where it raised, Houdini answered ``[]`` -- or, now and then, the
-items of the menu read before it.
+TOP): identical wherever Houdini's script ran clean.
+Where it raised, Houdini answered ``[]`` -- or, now and then, the items of the menu read
+before it.
 """
 
 from __future__ import annotations
@@ -49,11 +50,15 @@ import hou
 
 
 class MenuScriptError(RuntimeError):
-    """A parameter's Python menu script raised; the message carries its traceback tail."""
+    """
+    A parameter's Python menu script raised; the message carries its traceback tail.
+    """
 
 
 def generator_script(parm: hou.Parm) -> tuple[str, bool]:
-    """The parm's menu generator script and whether it is Python; ("", False) if none."""
+    """
+    The parm's menu generator script and whether it is Python; ("", False) if none.
+    """
 
     with contextlib.suppress(Exception):
         template = parm.parmTemplate()
@@ -115,7 +120,9 @@ def run_python_menu(parm: hou.Parm, script: str) -> list[str]:
             raise TypeError('Python menu scripts must return a sequence of strings')
         flat = [str(entry) for entry in result]
     except Exception as exc:
-        frames = traceback.format_tb(exc.__traceback__.tb_next)[-3:]  # ty: ignore[unresolved-attribute]
+        frames = traceback.format_tb(
+            exc.__traceback__.tb_next  # ty: ignore[unresolved-attribute]
+        )[-3:]
         tail = ''.join(frames).rstrip()
         raise MenuScriptError(
             f'Menu script of {name} raised {type(exc).__name__}: {exc}\n{tail}'
@@ -154,7 +161,9 @@ def _read(flat: list[str]) -> tuple[list[str], list[str]]:
 
 
 def items_and_labels(parm: hou.Parm) -> tuple[list[str], list[str]]:
-    """The parm's menu tokens and labels; MenuScriptError if its Python script raises."""
+    """
+    The parm's menu tokens and labels; MenuScriptError if its Python script raises.
+    """
 
     if script := _python_generator(parm):
         return _read(run_python_menu(parm, script))

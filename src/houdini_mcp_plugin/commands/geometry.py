@@ -1,38 +1,21 @@
-"""Geometry (SOP) handlers for FXHoudini-MCP.
-
-Each handler reads or modifies geometry on SOP nodes.
-All functions run on the main thread via the dispatcher.
-"""
+"""Geometry (SOP) handlers for Houdini MCP."""
 
 from __future__ import annotations
 
-# Built-in
 import collections
 import contextlib
 import random
 from typing import Any
 
-# Third-party
 import hou
 
-# Internal
 from houdini_mcp_plugin.config import place_new_node, update_mode_warning
 from houdini_mcp_plugin.dispatcher import register_command
 from houdini_mcp_protocol import PluginCommand
 
-###### Helpers
-
 
 def _get_sop_geo(node_path: str, output_index: int = 0) -> hou.Geometry:
-    """Return the cooked read-only geometry for a SOP node.
-
-    output_index picks a secondary output: a FLIP compress node or a Vellum
-    solver carries different streams on outputs 1 and 2, and "no tool reports
-    per-output geometry" sent a session to execute_python for them.
-
-    Raises:
-        hou.OperationFailed: if the node doesn't exist or has no geometry.
-    """
+    """Return the cooked read-only geometry for a SOP node."""
 
     node = hou.node(node_path)
     if node is None:
@@ -46,11 +29,7 @@ def _get_sop_geo(node_path: str, output_index: int = 0) -> hou.Geometry:
 
 
 def _cook_errors(node: hou.Node) -> str:
-    """The node's own cook errors as a sentence tail ("" when it has none).
-
-    "Node has no geometry" is what a node whose cook failed answers, and the
-    cook error (a missing file, a bad expression) was the part that said why.
-    """
+    """The node's own cook errors as a sentence tail ("" when it has none)."""
 
     errors: list = []
     with contextlib.suppress(Exception):
@@ -59,7 +38,7 @@ def _cook_errors(node: hou.Node) -> str:
 
 
 def _vec_to_list(v: Any) -> Any:
-    """Convert hou.Vector2/3/4, hou.Color, etc. to a plain list."""
+    """Convert hou.Vector2/3/4, hou.Color, etc."""
 
     if isinstance(
         v, (hou.Vector2, hou.Vector3, hou.Vector4, hou.Quaternion, hou.Color)
@@ -111,16 +90,8 @@ def _attrib_class_key(attrib_class: str) -> str:
     return key
 
 
-###### geometry.get_geometry_info
-
-
 def _loop_context(node: hou.Node) -> dict[str, str] | None:
-    """The for-each block *node* sits in, as {begin, end} paths — or None.
-
-    A node between a block_begin and its block_end cooks once per iteration.
-    Read on its own, outside the loop, it is one iteration's slice at best,
-    never the loop's merged result.
-    """
+    """The for-each block *node* sits in, as {begin, end} paths — or None."""
 
     try:
         parent = node.parent()
@@ -144,15 +115,7 @@ def _loop_context(node: hou.Node) -> dict[str, str] | None:
 
 
 def _cook_state(node: hou.Node) -> tuple[dict[str, Any], list[str]]:
-    """How the numbers about to be reported came to be — read BEFORE geometry().
-
-    `geometry()` cooks a dirty node on the spot, so the counts are current; but
-    a node inside a for-each block is then cooked standalone, outside the loop
-    (no iteration metadata, one slice at best), and those numbers are not the
-    loop's result. A healthy floor inside a loop read "bbox 0 at 4 points" that
-    way and sent a session hunting a defect that was not there. The state says
-    whether this call cooked the node and whether it sits in a loop.
-    """
+    """How the numbers about to be reported came to be — read BEFORE geometry()."""
 
     state: dict[str, Any] = {}
     warnings: list[str] = []
@@ -165,9 +128,13 @@ def _cook_state(node: hou.Node) -> tuple[dict[str, Any], list[str]]:
         state['inside_loop'] = True
         state['loop'] = loop
         warnings.append(
-            f'Node sits inside for-each loop {loop["begin"]} → {loop["end"]}: read this '
-            f'way it shows one iteration at best (the last one the block_end cooked, or '
-            f"the loop's initial input), so these numbers are not the loop's result. Read {loop['end']} for "
+            f'Node sits inside for-each loop {loop["begin"]} → {loop["end"]}: read '
+            f'this '
+            f'way it shows one iteration at best (the last one the block_end cooked, '
+            f'or '
+            f"the loop's initial input), so these numbers are not the loop's result. "
+            f'Read '
+            f'{loop["end"]} for '
             f'the merged output.'
         )
     return state, warnings
@@ -178,13 +145,7 @@ _PACKED_SUBTYPES = ('Agent', 'PackedGeometry', 'PackedFragment')
 
 
 def prim_type_counts(geo: hou.Geometry) -> dict[str, int]:
-    """Exact primitive counts per type, e.g. {"Polygon": 12, "Volume": 2}.
-
-    countPrimType runs in C++ (0.4 ms for every type on 1000 agents); the old
-    per-prim walk sampled 2,500 prims and scaled the counts up. PackedPrim
-    counts every packed prim, agents included, so only the packed prims no
-    more specific type claims are reported under it.
-    """
+    """Exact primitive counts per type, e.g."""
 
     counts: dict[str, int] = {}
     for name in dir(hou.primType):
@@ -207,6 +168,7 @@ def prim_type_counts(geo: hou.Geometry) -> dict[str, int]:
     return counts
 
 
+@register_command(PluginCommand.GEOMETRY_GET_GEOMETRY_INFO)
 def _get_geometry_info(
     *, node_path: str, output_index: int = 0, **_: Any
 ) -> dict[str, Any]:
@@ -254,12 +216,7 @@ def _get_geometry_info(
     return result
 
 
-register_command(PluginCommand.GEOMETRY_GET_GEOMETRY_INFO)(_get_geometry_info)
-
-
-###### geometry.get_points
-
-
+@register_command(PluginCommand.GEOMETRY_GET_POINTS)
 def _get_points(
     *,
     node_path: str,
@@ -268,11 +225,7 @@ def _get_points(
     count: int = 200,
     group: str | None = None,
 ) -> dict[str, Any]:
-    """Read point positions and attributes with pagination.
-
-    Uses indexed access (geo.point) so the cost scales with the page
-    size, never with the total point count.
-    """
+    """Read point positions and attributes with pagination."""
 
     geo = _get_sop_geo(node_path)
 
@@ -312,12 +265,7 @@ def _get_points(
     }
 
 
-register_command(PluginCommand.GEOMETRY_GET_POINTS)(_get_points)
-
-
-###### geometry.get_prims
-
-
+@register_command(PluginCommand.GEOMETRY_GET_PRIMS)
 def _get_prims(
     *,
     node_path: str,
@@ -373,12 +321,7 @@ def _get_prims(
     }
 
 
-register_command(PluginCommand.GEOMETRY_GET_PRIMS)(_get_prims)
-
-
-###### geometry.get_attrib_values
-
-
+@register_command(PluginCommand.GEOMETRY_GET_ATTRIB_VALUES)
 def _get_attrib_values(
     *,
     node_path: str,
@@ -387,12 +330,7 @@ def _get_attrib_values(
     start: int = 0,
     count: int = 200,
 ) -> dict[str, Any]:
-    """Read attribute values as a flat array with pagination.
-
-    Values are element-major (e.g. for a float3 attribute with tuple_size=3,
-    every 3 consecutive values belong to one element).  Use start/count to
-    page through large attributes without blowing the LLM context.
-    """
+    """Read attribute values as a flat array with pagination."""
 
     geo = _get_sop_geo(node_path)
 
@@ -448,12 +386,7 @@ def _get_attrib_values(
 
 
 def _attrib_array(geo: Any, cls: str, attrib: Any) -> Any:
-    """Every value of one attribute, flat: a numpy view for numbers.
-
-    The tuple of Python floats this used to build is 3M objects for P on a
-    1M-point mesh, made to return a 200-element page. The raw buffer costs
-    one copy in C and the page is sliced out of it.
-    """
+    """Every value of one attribute, flat: a numpy view for numbers."""
 
     name = attrib.name()
     data = attrib.dataType()
@@ -471,24 +404,14 @@ def _attrib_array(geo: Any, cls: str, attrib: Any) -> Any:
     return getattr(geo, f'{cls}StringAttribValues')(name)
 
 
-register_command(PluginCommand.GEOMETRY_GET_ATTRIB_VALUES)(_get_attrib_values)
-
-
-###### geometry.set_detail_attrib
-
-
+@register_command(PluginCommand.GEOMETRY_SET_DETAIL_ATTRIB)
 def _set_detail_attrib(
     *,
     node_path: str,
     attrib_name: str,
     value: Any,
 ) -> dict[str, Any]:
-    """Set a detail (global) attribute via an appended Attribute Create SOP.
-
-    SOP geometry cannot be edited in place from outside a node cook
-    (hou.SopNode has no setGeometry), so this wires an attribcreate node
-    after *node_path* and moves the display/render flags to it.
-    """
+    """Set a detail (global) attribute via an appended Attribute Create SOP."""
 
     node = hou.node(node_path)
     if node is None:
@@ -540,12 +463,7 @@ def _set_detail_attrib(
     }
 
 
-register_command(PluginCommand.GEOMETRY_SET_DETAIL_ATTRIB)(_set_detail_attrib)
-
-
-###### geometry.get_groups
-
-
+@register_command(PluginCommand.GEOMETRY_GET_GROUPS)
 def _get_groups(*, node_path: str) -> dict[str, Any]:
     """List all point/prim/edge groups with membership counts."""
 
@@ -607,12 +525,7 @@ def _group_size(group: Any, counter: str, lister: str) -> int:
         return len(getattr(group, lister)())
 
 
-register_command(PluginCommand.GEOMETRY_GET_GROUPS)(_get_groups)
-
-
-###### geometry.get_group_members
-
-
+@register_command(PluginCommand.GEOMETRY_GET_GROUP_MEMBERS)
 def _get_group_members(
     *,
     node_path: str,
@@ -679,12 +592,7 @@ def _get_group_members(
     }
 
 
-register_command(PluginCommand.GEOMETRY_GET_GROUP_MEMBERS)(_get_group_members)
-
-
-###### geometry.get_bounding_box
-
-
+@register_command(PluginCommand.GEOMETRY_GET_BOUNDING_BOX)
 def _get_bounding_box(*, node_path: str) -> dict[str, Any]:
     """Get axis-aligned bounding box for a SOP node's geometry."""
 
@@ -700,12 +608,7 @@ def _get_bounding_box(*, node_path: str) -> dict[str, Any]:
     }
 
 
-register_command(PluginCommand.GEOMETRY_GET_BOUNDING_BOX)(_get_bounding_box)
-
-
-###### geometry.get_attribute_info
-
-
+@register_command(PluginCommand.GEOMETRY_GET_ATTRIBUTE_INFO)
 def _get_attribute_info(
     *,
     node_path: str,
@@ -744,12 +647,7 @@ def _get_attribute_info(
     }
 
 
-register_command(PluginCommand.GEOMETRY_GET_ATTRIBUTE_INFO)(_get_attribute_info)
-
-
-###### geometry.sample_geometry
-
-
+@register_command(PluginCommand.GEOMETRY_SAMPLE_GEOMETRY)
 def _sample_geometry(
     *,
     node_path: str,
@@ -810,12 +708,6 @@ def _sample_geometry(
     }
 
 
-register_command(PluginCommand.GEOMETRY_SAMPLE_GEOMETRY)(_sample_geometry)
-
-
-###### geometry.get_prim_intrinsics
-
-
 def _intrinsic_row(prim: Any, names: list[str] | None) -> dict[str, Any]:
     """One prim's intrinsics, all of them or just the ones asked for."""
 
@@ -856,11 +748,7 @@ def _intrinsic_table(
     names: list[str] | None,
     total_prims: int,
 ) -> dict[str, Any]:
-    """A table of intrinsics over many prims, with extremes per column.
-
-    Finding the packed prims whose `bounds` ran away used to cost one call
-    per prim: 281 calls, about 14 s at 50 ms each.
-    """
+    """A table of intrinsics over many prims, with extremes per column."""
 
     rows: list[dict[str, Any]] = []
     for index in indices:
@@ -935,6 +823,7 @@ _INTRINSIC_ROWS_SHOWN = 100
 _INTRINSIC_ROW_CAP = 2000
 
 
+@register_command(PluginCommand.GEOMETRY_GET_PRIM_INTRINSICS)
 def _get_prim_intrinsics(
     *,
     node_path: str,
@@ -943,17 +832,7 @@ def _get_prim_intrinsics(
     prim_range: list[int] | None = None,
     intrinsics: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Get intrinsic values for primitives.
-
-    If prim_index is None and nothing else narrows the request, return a
-    summary across all primitives. With prim_index, return the intrinsics of
-    that one primitive.
-
-    prim_indices or prim_range read many prims in one call and answer with a
-    table (`prims`) plus `stats`: min/max/avg per intrinsic and the prim each
-    extreme belongs to. `intrinsics` narrows the columns; given alone, it
-    sweeps every prim for those intrinsics.
-    """
+    """Get intrinsic values for primitives."""
 
     geo = _get_sop_geo(node_path)
     total_prims = geo.intrinsicValue('primitivecount')
@@ -1000,7 +879,8 @@ def _get_prim_intrinsics(
     if prim_index is not None:
         if prim_index < 0 or prim_index >= total_prims:
             raise hou.OperationFailed(
-                f'Prim index {prim_index} out of range (0..{total_prims - 1}) on {node_path}'
+                f'Prim index {prim_index} out of range (0..{total_prims - 1}) on '
+                f'{node_path}'
             )
         prim = geo.prim(prim_index)
         return {
@@ -1076,12 +956,7 @@ def _get_prim_intrinsics(
     return result
 
 
-register_command(PluginCommand.GEOMETRY_GET_PRIM_INTRINSICS)(_get_prim_intrinsics)
-
-
-###### geometry.find_nearest_point
-
-
+@register_command(PluginCommand.GEOMETRY_FIND_NEAREST_POINT)
 def _find_nearest_point(
     *,
     node_path: str,
@@ -1146,12 +1021,6 @@ def _find_nearest_point(
     }
 
 
-register_command(PluginCommand.GEOMETRY_FIND_NEAREST_POINT)(_find_nearest_point)
-
-
-###### geometry.get_attrib_stats
-
-
 _STATS_ATTRIB_CAP = 12
 
 
@@ -1181,6 +1050,7 @@ def _element_count(geo: hou.Geometry, cls: str, element_getter: Any) -> int:
     return len(element_getter())
 
 
+@register_command(PluginCommand.GEOMETRY_GET_ATTRIB_STATS)
 def _get_attrib_stats(
     *,
     node_path: str | None = None,
@@ -1193,20 +1063,7 @@ def _get_attrib_stats(
     unique: bool = False,
     distance_to: str | None = None,
 ) -> dict[str, Any]:
-    """The statistics below, for one node now, or for several nodes over several frames.
-
-    Counting particles at a handful of frames across several variants of a
-    setup took a set_frame plus a get_attrib_stats per node per frame, by the
-    hundred, or a loop in execute_python. *frames* and *node_paths* make
-    it one call: a row per node per frame, frames visited in increasing order
-    (a simulation cooks forward), and the current frame put back afterwards. A
-    node that fails is a row with its error, not a failed call. *percentiles*
-    (e.g. [5, 50, 95]) adds the distribution a median or a framing needs.
-    *group* narrows the elements to a group pattern (`grp`, `@id>=0`, `0-99`),
-    *unique* counts distinct values of integer and string attributes, and
-    *distance_to* measures each point's distance to another SOP's surface. An
-    attribute name written "age/life" is the ratio of two attributes.
-    """
+    """The statistics below, for one node now, or for several nodes over several..."""
 
     if node_path is not None and node_paths:
         # node_paths used to win and node_path was dropped without a word.
@@ -1293,13 +1150,7 @@ def _attrib_stats_once(
     unique: bool = False,
     distance_to: str | None = None,
 ) -> dict[str, Any]:
-    """Aggregate statistics for numeric attributes: min, max, mean, sum.
-
-    get_geometry_info names the attributes and get_attrib_values returns every
-    value, which on a 62k-point cache is unusable in a conversation. Proving a
-    simulation is doing something needs the aggregate, not the values, and that
-    is otherwise only reachable through execute_python.
-    """
+    """Aggregate statistics for numeric attributes: min, max, mean, sum."""
 
     geo = _get_sop_geo(node_path)
 
@@ -1541,12 +1392,7 @@ def _ratio_stats(
     rows: list[int] | None,
     percentiles: Any,
 ) -> dict[str, Any]:
-    """Statistics of one attribute divided by another, element by element.
-
-    An element whose denominator is zero is counted in `zero_denominator`,
-    not used. A missing or non-scalar attribute is an `error` in the entry,
-    not a failed call.
-    """
+    """Statistics of one attribute divided by another, element by element."""
 
     names = [part.strip() for part in ratio.split('/', 1)]
     columns = []
@@ -1574,13 +1420,7 @@ def _ratio_stats(
 def _distance_stats(
     geo: Any, cls: str, target_path: str, rows: list[int] | None, percentiles: Any
 ) -> dict[str, Any]:
-    """How far each point is from another SOP's surface: crawling, hovering, sticking.
-
-    nearestPrim in a Python loop costs about 4 ms a point. The Ray SOP's
-    Minimum Distance runs as a verb on a copy in memory instead (20 000
-    points in 8 ms on 22.0.429, the same distances); the scene is not
-    touched and no node is created.
-    """
+    """How far each point is from another SOP's surface: crawling, hovering,..."""
 
     if cls != 'point':
         raise ValueError(f'distance_to measures points, not {cls!r} elements')
@@ -1614,12 +1454,7 @@ def _numpy_stats(
     rows: list[int] | None = None,
     unique: bool = False,
 ) -> dict[str, Any] | None:
-    """min/max/sum/mean (and per component) from the raw buffer, or None.
-
-    The list-of-floats path built one Python float per component and walked
-    it several times: 645 ms for P on a 1M-point grid, paid again on every
-    frame of cook_frame_range. The buffer goes straight into numpy instead.
-    """
+    """min/max/sum/mean (and per component) from the raw buffer, or None."""
 
     try:
         import numpy as np  # ty: ignore[import-not-found]
@@ -1679,12 +1514,6 @@ def _numpy_stats(
     if counted is not None:
         entry.update(counted)
     return entry
-
-
-register_command(PluginCommand.GEOMETRY_GET_ATTRIB_STATS)(_get_attrib_stats)
-
-
-###### geometry.get_volume_info
 
 
 # Volume statistics come from intrinsics, which is the only route that works for
@@ -1772,7 +1601,8 @@ def _named_volume(geo: hou.Geometry, name: str, node_path: str) -> Any:
             return prim
     have = sorted({_volume_name(prim) for prim in prims} - {''})
     raise ValueError(
-        f"No volume named '{name}' on {node_path}. It has: {', '.join(have) or 'no named volumes'}."
+        f"No volume named '{name}' on {node_path}. It has: "
+        f'{", ".join(have) or "no named volumes"}.'
     )
 
 
@@ -1786,12 +1616,7 @@ _MAX_VOXELS_READ = 64_000_000
 
 
 def _voxel_array(prim: Any) -> Any:
-    """A volume's voxels as a float numpy array indexed [z, y, x], and its index origin.
-
-    A VDB gives only its active region, and its bounding box maxvec is
-    exclusive, so the shape is max - min (a box from 5 to 16 holds 11 voxels
-    per axis, checked on Houdini 22.0).
-    """
+    """A volume's voxels as a float numpy array indexed [z, y, x], and its index..."""
 
     import numpy as np  # ty: ignore[import-not-found]
 
@@ -1805,7 +1630,8 @@ def _voxel_array(prim: Any) -> Any:
             return np.zeros((0, 0, 0)), origin
         if count > _MAX_VOXELS_READ:
             raise ValueError(
-                f'{count} active voxels is more than the {_MAX_VOXELS_READ} this reads. '
+                f'{count} active voxels is more than the {_MAX_VOXELS_READ} this '
+                f'reads. '
                 'Call get_volume_info without threshold/bins for the intrinsics.'
             )
         values = np.asarray(prim.voxelRangeAsFloat(box), dtype=np.float64)
@@ -1814,7 +1640,8 @@ def _voxel_array(prim: Any) -> Any:
         origin = [0, 0, 0]
         if shape[0] * shape[1] * shape[2] > _MAX_VOXELS_READ:
             raise ValueError(
-                f'A {shape} grid is more than the {_MAX_VOXELS_READ} voxels this reads. '
+                f'A {shape} grid is more than the {_MAX_VOXELS_READ} voxels this '
+                f'reads. '
                 'Call get_volume_info without threshold/bins for the intrinsics.'
             )
         # The byte string is about 6x faster than allVoxels() on an 8M grid.
@@ -1823,7 +1650,8 @@ def _voxel_array(prim: Any) -> Any:
         )
     if values.size != shape[0] * shape[1] * shape[2]:
         raise ValueError(
-            f'Houdini gave {values.size} voxels for a {shape} region, so the array has no '
+            f'Houdini gave {values.size} voxels for a {shape} region, so the array has '
+            f'no '
             'shape. Use sample_volume to read it at positions.'
         )
     return values.reshape(shape[2], shape[1], shape[0]), origin
@@ -1843,7 +1671,7 @@ def _edges(bins: Any) -> Any:
 def _value_summary(
     values: Any, bins: Any = 0, threshold: float | None = None
 ) -> dict[str, Any]:
-    """Count, extremes, mean, sum, percentiles; on request a histogram and a threshold split."""
+    """Count, extremes, mean, sum, percentiles; on request a histogram and a..."""
 
     import numpy as np  # ty: ignore[import-not-found]
 
@@ -1883,7 +1711,7 @@ def _value_summary(
 def _box_above(
     prim: Any, array: Any, origin: list[int], threshold: float
 ) -> dict[str, Any] | None:
-    """World box of the voxels over ``threshold``: where the smoke is, not where the grid is."""
+    """World box of the voxels over ``threshold``: where the smoke is, not where..."""
 
     import numpy as np  # ty: ignore[import-not-found]
 
@@ -1903,6 +1731,7 @@ def _box_above(
     }
 
 
+@register_command(PluginCommand.GEOMETRY_GET_VOLUME_INFO)
 def _get_volume_info(
     *,
     node_path: str,
@@ -1910,16 +1739,7 @@ def _get_volume_info(
     threshold: float | None = None,
     bins: Any = 0,
 ) -> dict[str, Any]:
-    """Per-volume names, resolution, active voxels and value ranges.
-
-    get_geometry_info reports a primitive count, which cannot distinguish a
-    correctly named non-empty density field from an empty one. get_cop_vdb
-    covers Copernicus; this is the SOP side of the same question.
-
-    Without threshold or bins only intrinsics are read. With either, the voxels
-    are read once per volume for percentiles, a histogram, the split at the
-    threshold and the world box of the voxels over it.
-    """
+    """Per-volume names, resolution, active voxels and value ranges."""
 
     geo = _get_sop_geo(node_path)
     volumes = _volume_prims(geo)
@@ -1948,12 +1768,6 @@ def _get_volume_info(
     }
 
 
-register_command(PluginCommand.GEOMETRY_GET_VOLUME_INFO)(_get_volume_info)
-
-
-###### geometry.sample_volume
-
-
 def _points_at(positions: list) -> hou.Geometry:
     points = hou.Geometry()
     points.createPoints([hou.Vector3(*position) for position in positions])
@@ -1961,7 +1775,7 @@ def _points_at(positions: list) -> hou.Geometry:
 
 
 def _read_fields_at(geo: hou.Geometry, fields: list[str], points: hou.Geometry) -> dict:
-    """Each field's value at each point, sampled in compiled code by the attribfromvolume verb."""
+    """Each field's value at each point, sampled in compiled code by the..."""
 
     import numpy as np  # ty: ignore[import-not-found]
 
@@ -1977,6 +1791,7 @@ def _read_fields_at(geo: hou.Geometry, fields: list[str], points: hou.Geometry) 
     return found
 
 
+@register_command(PluginCommand.GEOMETRY_SAMPLE_VOLUME)
 def _sample_volume(
     *,
     node_path: str,
@@ -1998,7 +1813,9 @@ def _sample_volume(
         points = _points_at(positions)
     else:
         raise ValueError(
-            'Give positions ([[x, y, z], ...]) or from_node (a SOP whose points to read at).'
+            'Give positions ([[x, y, z], ...]) or from_node (a SOP whose points to '
+            'read '
+            'at).'
         )
     read = _read_fields_at(geo, fields, points)
     count = len(next(iter(read.values()))) if read else 0
@@ -2017,14 +1834,8 @@ def _sample_volume(
     return report
 
 
-register_command(PluginCommand.GEOMETRY_SAMPLE_VOLUME)(_sample_volume)
-
-
-###### geometry.compare_volumes
-
-
 def _grid_positions(prim: Any, most: int = 30000) -> list:
-    """Voxel-centred world positions over a volume's box, coarsened until under ``most``."""
+    """Voxel-centred world positions over a volume's box, coarsened until under..."""
 
     box = prim.boundingBox()
     size, low = box.sizevec(), box.minvec()
@@ -2047,6 +1858,7 @@ def _grid_positions(prim: Any, most: int = 30000) -> list:
     ]
 
 
+@register_command(PluginCommand.GEOMETRY_COMPARE_VOLUMES)
 def _compare_volumes(
     *,
     node_path: str,
@@ -2055,13 +1867,7 @@ def _compare_volumes(
     against_node: str | None = None,
     bands: Any = 10,
 ) -> dict[str, Any]:
-    """How much of ``field`` sits where ``against`` is in each band.
-
-    "How much density is inside the collider", with the collider an SDF, is
-    bands=[-1e9, 0, 1e9] and the total in the first band. Both fields are
-    sampled in world space on a grid over the first one's box, so a Volume and
-    a VDB compare the same way.
-    """
+    """How much of ``field`` sits where ``against`` is in each band."""
 
     import numpy as np  # ty: ignore[import-not-found]
 
@@ -2097,8 +1903,6 @@ def _compare_volumes(
             }
             for i in range(len(counts))
         ],
-        'note': 'Totals sum sampled values, not integrals: compare bands, not absolute amounts.',
+        'note': 'Totals sum sampled values, not integrals: compare bands, not absolute '
+        'amounts.',
     }
-
-
-register_command(PluginCommand.GEOMETRY_COMPARE_VOLUMES)(_compare_volumes)

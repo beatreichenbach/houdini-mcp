@@ -1,37 +1,19 @@
-"""Shelf tool handlers for FXHoudini-MCP.
-
-Some of Houdini's most useful setups are not authored by node creation at all:
-they are shelf tools. The ocean procedural is the clear case -- its internals come
-from ``dopparticlefluidtoolutils.largeOcean``, so build_network structurally
-cannot produce it. A recorded session spent seven execute_python calls listing
-shelf tools, reading their scripts and calling the worker functions by hand, every
-one of them noting that no dedicated tool exposes any of this.
-
-Reading the script matters as much as running it: SideFX's own recipe for a
-horizon-scale ocean (layered spectra on an 8km grid, so the waves do not visibly
-tile) lives in that script, and it is the difference between a fire-shaped blob
-and the real thing.
-"""
+"""Shelf tool handlers for Houdini MCP."""
 
 from __future__ import annotations
 
-# Built-in
 import contextlib
 import fnmatch
 import re
 from collections.abc import Iterator
 from typing import Any
 
-# Third-party
 import hou
 
-# Internal
 from houdini_mcp_plugin.dispatcher import register_command
 from houdini_mcp_plugin.errors import as_int, as_text
 from houdini_mcp_plugin.ui import keep_viewer_state
 from houdini_mcp_protocol import PluginCommand
-
-###### Helpers
 
 _LIST_CAP = 60
 _SCRIPT_CAP = 20_000
@@ -70,23 +52,13 @@ def _tool_entry(tool: Any, include_help: bool = False) -> dict[str, Any]:
     return entry
 
 
-###### shelf.list_shelf_tools
-
-
+@register_command(PluginCommand.SHELF_LIST_SHELF_TOOLS)
 def list_shelf_tools(
     filter: str | None = None,
     limit: int = _LIST_CAP,
     **_: Any,
 ) -> dict[str, Any]:
-    """Find shelf tools by name, label or keyword.
-
-    A full install ships around 8,000 of them, so an unfiltered list is useless;
-    filter by what the setup is called ("ocean", "vellum", "fracture").
-
-    Args:
-        filter: Substring matched against name, label and keywords.
-        limit: Maximum tools to return.
-    """
+    """Find shelf tools by name, label or keyword."""
 
     tools = hou.shelves.tools()
     needle = as_text(filter, 'filter').strip().lower()
@@ -116,22 +88,9 @@ def list_shelf_tools(
     }
 
 
-register_command(PluginCommand.SHELF_LIST_SHELF_TOOLS)(list_shelf_tools)
-
-
-###### shelf.get_shelf_tool_script
-
-
+@register_command(PluginCommand.SHELF_GET_SHELF_TOOL_SCRIPT)
 def get_shelf_tool_script(tool_name: str, **_: Any) -> dict[str, Any]:
-    """The script a shelf tool runs, plus its help.
-
-    This is how you learn SideFX's own recipe for a setup rather than
-    reinventing it. Most scripts are a couple of lines that call a worker in a
-    toolutils module, which names exactly what to read next.
-
-    Args:
-        tool_name: Internal tool name, as returned by list_shelf_tools.
-    """
+    """The script a shelf tool runs, plus its help."""
 
     tools = hou.shelves.tools()
     tool = tools.get(tool_name)
@@ -166,12 +125,6 @@ def get_shelf_tool_script(tool_name: str, **_: Any) -> dict[str, Any]:
     )
     result['imports'] = modules
     return result
-
-
-register_command(PluginCommand.SHELF_GET_SHELF_TOOL_SCRIPT)(get_shelf_tool_script)
-
-
-###### shelf.run_shelf_tool
 
 
 # Calls that block the main thread until a person clicks in a viewport or a
@@ -227,11 +180,7 @@ class InteractivePrompt(RuntimeError):
 
 
 class UnusableSelection(InteractivePrompt):
-    """The caller's ``selection`` had nothing the tool's prompt accepts.
-
-    Not retried as a Ctrl+click: that builds the default setup, which ignores
-    what the caller asked for.
-    """
+    """The caller's ``selection`` had nothing the tool's prompt accepts."""
 
 
 def interactive_markers(script: str) -> list[str]:
@@ -241,19 +190,7 @@ def interactive_markers(script: str) -> list[str]:
 
 
 def _object_selection(given: list | None) -> Any:
-    """A stand-in for SceneViewer.selectObjects that answers without a click.
-
-    With use_existing_selection (the default) Houdini hands a tool the objects
-    already selected, which is how dynamics_makeflip (FLIP from an object) is
-    used: refusing every selectObjects turned it down with /obj/ball selected.
-    *given* (the caller's ``selection``) answers in place of the scene's
-    selection, which is left as the artist has it. Anything else still
-    refuses. The positional order is HOM's: (self, prompt, sel_index,
-    allow_drag, quick_select, use_existing_selection, allow_multisel,
-    allowed_types, ...). Every prompt gets the same answer: a tool asking
-    for several roles in turn (createSculptedFluid: fluid, terrain, obstacles)
-    gets *given* for each.
-    """
+    """A stand-in for SceneViewer.selectObjects that answers without a click."""
 
     def select_objects(*args: Any, **kwargs: Any) -> tuple:
         use_existing = kwargs.get(
@@ -288,14 +225,7 @@ def _object_selection(given: list | None) -> Any:
 
 @contextlib.contextmanager  # ty: ignore[deprecated]
 def _selection_kept() -> Iterator[None]:
-    """Put the node selection and each editor's current node back after the block.
-
-    A shelf script selects what it builds, as a click from the artist should,
-    and makes it current (toolutils.genericTool: setCurrent), which moves the
-    parameter pane. Run by an agent it would take the artist's selection, and
-    with it the parameter pane and the next hotkey. Tools leave both as they
-    found them (#128).
-    """
+    """Put the node selection and each editor's current node back after the block."""
 
     selected: list[str] = []
     current: list[tuple[Any, str]] = []
@@ -327,14 +257,7 @@ def _selection_kept() -> Iterator[None]:
 
 @contextlib.contextmanager  # ty: ignore[deprecated]
 def _editor_in(network: hou.Node) -> Iterator[hou.Node | None]:
-    """A network editor showing *network* for the block, back where it was after.
-
-    A SOP tool places its nodes in the network its pane shows. With no pane,
-    toolutils falls back to the Scene Viewer, which asks for a selection, and
-    the Ctrl+click retry then built model_popnet's network as a new object
-    instead of inside the SOP network given as parent_path. None when there
-    is no editor to lend.
-    """
+    """A network editor showing *network* for the block, back where it was after."""
 
     editor = None
     with contextlib.suppress(Exception):
@@ -358,14 +281,7 @@ def _editor_in(network: hou.Node) -> Iterator[hou.Node | None]:
 
 @contextlib.contextmanager
 def _no_prompts(tool_name: str, selection: list | None = None, tool: Any = None) -> Any:
-    """Make every viewport selection and dialog raise instead of waiting.
-
-    An object selection is the exception: it is answered with *selection*, or
-    with the objects already selected, as Houdini does (_object_selection).
-    hou.shelves.runningTool() answers *tool* for the run, as it does for a
-    click: run from here it answered None, and dop_rbdpackedobject died in
-    doptoolutils on runningTool().name().
-    """
+    """Make every viewport selection and dialog raise instead of waiting."""
 
     def refuse(name: Any) -> Any:
         def _raise(*_a: Any, **_k: Any) -> Any:
@@ -413,17 +329,7 @@ _GENERIC_TOOL_RE = re.compile(
 def _prompt_free_alternatives(
     script: str, tools: dict, tool_name: str
 ) -> dict[str, str]:
-    """Node type -> a shelf tool that builds it without asking, for each branch of *script*.
-
-    dynamics_rbdfracturedobject asks "RBD Packed Object or RBD Fractured
-    Object?" in a dialog and then calls genericTool(kwargs, 'rbdpackedobject')
-    or 'rbdfracturedobject' -- which is all dop_rbdpackedobject does, with no
-    dialog. Naming those turns a refusal into the next step.
-
-    Only the tools whose name holds the node type are read: a tool's script
-    loads on first access, and reading all 8091 took 23 s on 22.0.429 -- the
-    refusal waited for it. dop_rbdpackedobject holds rbdpackedobject.
-    """
+    """Node type -> a shelf tool that builds it without asking, for each branch of..."""
 
     wanted = set(_GENERIC_TOOL_RE.findall(script))
     if not wanted:
@@ -464,11 +370,7 @@ def _refusal(tool_name: str, why: str) -> ValueError:
 
 
 def _tree(networks: list) -> dict[int, hou.Node]:
-    """Every node under *networks*, by session id, not entering locked assets.
-
-    By id, not path: a node the tool renamed or moved is not new, and on a
-    refusal must not be destroyed with what the tool built.
-    """
+    """Every node under *networks*, by session id, not entering locked assets."""
 
     nodes: dict[int, hou.Node] = {}
     for network in networks:
@@ -487,15 +389,7 @@ def _new_by_path(
 
 
 def _remove_new(watched: list, before: dict[int, hou.Node]) -> list[str] | None:
-    """Destroy what a run created under *watched*, inside existing networks too.
-
-    Whatever a tool built before it asked for a click or failed is half a
-    setup: dop_rbdpackedobject, failing, left rest1 without an input and a DOP
-    object without an output. Returns the paths removed, or None, touching
-    nothing, when a node from before is gone: collapseIntoSubnet, moveNodesTo
-    and changeNodeType give the artist's own nodes new session ids, so they
-    would read as new and be destroyed with what the tool built (21.0.440).
-    """
+    """Destroy what a run created under *watched*, inside existing networks too."""
 
     tree = _tree(watched)
     if any(sid not in tree for sid in before):
@@ -521,11 +415,7 @@ def _restore_dop_network(target: hou.Node | None, before: str | None) -> None:
 
 
 def _is_sop_tool(tool: Any) -> bool:
-    """Whether *tool* is in a SOP tab menu, so it builds in its pane's network.
-
-    An object or DOP tool handed a network editor fails: dynamics_makeflip
-    calls sceneviewer.selectObjects on whatever toolutils.activePane returns.
-    """
+    """Whether *tool* is in a SOP tab menu, so it builds in its pane's network."""
 
     with contextlib.suppress(Exception):
         sop = hou.sopNodeTypeCategory()
@@ -545,6 +435,7 @@ def _current_dop_network() -> str | None:
     return None
 
 
+@register_command(PluginCommand.SHELF_RUN_SHELF_TOOL)
 def run_shelf_tool(
     tool_name: str,
     kwargs: dict | None = None,
@@ -553,27 +444,7 @@ def run_shelf_tool(
     dop_network: str | None = None,
     **_: Any,
 ) -> dict[str, Any]:
-    """Run a shelf tool, reporting what it created.
-
-    Most shelf tools reach for ``hou.ui``, because Houdini invokes them from a
-    click. That makes them work in a graphical session -- which is where this
-    plugin runs -- and fail in hython with a clear message rather than a
-    mysterious AttributeError.
-
-    Args:
-        tool_name: Internal tool name, as returned by list_shelf_tools.
-        kwargs: Overrides merged into the synthetic kwargs dict the script
-            reads. Pass e.g. {"nodetypename": "..."} when a tool expects it.
-        parent_path: An extra network to watch. /obj, /stage, /out, /mat and
-            /img are always watched. A SOP network is also where a SOP tool
-            places its nodes: a network editor shows it for the run.
-        selection: Object paths the tool takes as its object selection, in
-            place of the scene's (which is left alone). Without it a tool that
-            asks for objects takes the ones already selected, as in Houdini.
-        dop_network: DOP network made current before the run, where DOP tools
-            build. model_popnet creates one without making it current, so the
-            next DOP tool built into the previous network.
-    """
+    """Run a shelf tool, reporting what it created."""
 
     tools = hou.shelves.tools()
     tool = tools.get(tool_name)
@@ -590,7 +461,8 @@ def run_shelf_tool(
         refusal = _refusal(tool_name, ', '.join(blocking[:3]))
         if alternatives := _prompt_free_alternatives(script, tools, tool_name):
             refusal = ValueError(
-                f'{refusal} Tools that build the same node types without asking: {alternatives}.'
+                f'{refusal} Tools that build the same node types without asking: '
+                f'{alternatives}.'
             )
         raise refusal
 
@@ -719,7 +591,10 @@ def run_shelf_tool(
         if removed is None:
             left = _KEPT_HALF_SETUP
         elif removed:
-            left = f' The {len(removed)} node(s) it had built were removed: {removed[:_LIST_CAP]}.'
+            left = (
+                f' The {len(removed)} node(s) it had built were removed: '
+                f'{removed[:_LIST_CAP]}.'
+            )
         else:
             left = ''
         message = str(exc)[:200].rstrip('.')
@@ -783,6 +658,3 @@ def run_shelf_tool(
     if placed_in is not None:
         reply['placed_in'] = placed_in
     return reply
-
-
-register_command(PluginCommand.SHELF_RUN_SHELF_TOOL)(run_shelf_tool)

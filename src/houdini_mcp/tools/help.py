@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-# Built-in
 from typing import Any
 
-# Third-party
-# Internal
 from mcp.server.mcpserver.exceptions import ToolError
 
 from ..prompts import load_content

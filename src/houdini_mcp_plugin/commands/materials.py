@@ -1,15 +1,9 @@
-"""Materials & Shaders handlers for FXHoudini-MCP.
-
-Provides tools for listing, inspecting, creating, and assigning
-materials and shader networks within Houdini.
-"""
+"""Materials & Shaders handlers for Houdini MCP."""
 
 from __future__ import annotations
 
-# Built-in
 from typing import Any
 
-# Third-party
 import hou
 
 from houdini_mcp_plugin.commands.nodes import (
@@ -17,15 +11,11 @@ from houdini_mcp_plugin.commands.nodes import (
     _is_at_default,
     _refuse_taken_name,
 )
-
-# Internal
 from houdini_mcp_plugin.config import place_new_node
 from houdini_mcp_plugin.dispatcher import register_command
 from houdini_mcp_plugin.errors import as_text, readable_message
 from houdini_mcp_plugin.ui import focus_network_editor as _focus_network_editor
 from houdini_mcp_protocol import PluginCommand
-
-###### Helpers
 
 
 def _get_node(node_path: str) -> hou.Node:
@@ -43,12 +33,7 @@ _material_parm_cache: dict[str, list[str]] = {}
 
 
 def _material_parm_templates(node_type: hou.NodeType) -> list[str]:
-    """String parameter names of *node_type* that hold a material path.
-
-    Cached per type: the scene has thousands of nodes but a few dozen types.
-    Multiparm instances keep their "#" (shop_materialpath#) and are expanded
-    per node.
-    """
+    """String parameter names of *node_type* that hold a material path."""
 
     key = node_type.nameWithCategory()
     cached = _material_parm_cache.get(key)
@@ -76,14 +61,7 @@ def _material_parm_templates(node_type: hou.NodeType) -> list[str]:
 
 
 def _find_material_assignments(mat_path: str) -> tuple[list[str], int]:
-    """Paths of nodes whose material-path parameters name *mat_path*.
-
-    Reads only parameters whose name says "material path", on node types that
-    have one. The previous sweep evaluated EVERY parameter of EVERY node under
-    /obj: an expression such as npoints("../scatter") cooks its node when
-    evaluated, and 40 of them on a 4,160-node scene cost 27 s per call --
-    minutes on a production set. Returns (hits, nodes scanned).
-    """
+    """Paths of nodes whose material-path parameters name *mat_path*."""
 
     hits: list[str] = []
     scanned = 0
@@ -135,18 +113,9 @@ def _material_summary(node: hou.Node) -> dict[str, Any]:
     }
 
 
-###### materials.list_materials
-
-
+@register_command(PluginCommand.MATERIALS_LIST_MATERIALS)
 def _list_materials(*, root_path: str = '/mat', **_: Any) -> dict[str, Any]:
-    """List all material nodes under the given root path.
-
-    Walks children of the specified root (typically /mat) and also
-    checks /stage if it exists, collecting material node summaries.
-
-    Args:
-        root_path: Root path to search for materials (default: "/mat").
-    """
+    """List all material nodes under the given root path."""
 
     # The requested root must exist. The loop below tolerates a missing node so
     # that the /stage it adds on its own can be absent, but applying that tolerance
@@ -189,22 +158,9 @@ def _list_materials(*, root_path: str = '/mat', **_: Any) -> dict[str, Any]:
     }
 
 
-register_command(PluginCommand.MATERIALS_LIST_MATERIALS)(_list_materials)
-
-
-###### materials.get_material_info
-
-
+@register_command(PluginCommand.MATERIALS_GET_MATERIAL_INFO)
 def _get_material_info(*, node_path: str, **_: Any) -> dict[str, Any]:
-    """Get detailed information about a material node.
-
-    Returns the material's type, all non-default parameters, shader VOP
-    nodes inside (if it's a material builder), and geometry nodes that
-    reference this material.
-
-    Args:
-        node_path: Absolute path to the material node.
-    """
+    """Get detailed information about a material node."""
 
     node = _get_node(node_path)
 
@@ -252,12 +208,6 @@ def _get_material_info(*, node_path: str, **_: Any) -> dict[str, Any]:
     }
 
 
-register_command(PluginCommand.MATERIALS_GET_MATERIAL_INFO)(_get_material_info)
-
-
-###### materials.create_material_network
-
-
 # The documented create_material_network keys, per shader node type. Only
 # metalness happens to share its name with the mtlxstandard_surface parameter;
 # base_color and roughness were dropped on the floor, silently (#39).
@@ -275,12 +225,7 @@ _SHADER_PARM_ALIASES: dict[str, dict[str, str]] = {
 def _apply_shader_params(
     node: hou.Node, shader_type: str, params: dict[str, Any]
 ) -> tuple[dict[str, str], dict[str, str]]:
-    """Set *params* on a shader node; a list sets the parm tuple of that name.
-
-    Returns (applied, skipped): applied maps each key to the parameter it
-    landed on, skipped maps each key that landed nowhere to the reason, so a
-    caller sees a dropped key instead of a default value.
-    """
+    """Set *params* on a shader node; a list sets the parm tuple of that name."""
 
     aliases = _SHADER_PARM_ALIASES.get(shader_type, {})
     applied: dict[str, str] = {}
@@ -304,6 +249,7 @@ def _apply_shader_params(
     return applied, skipped
 
 
+@register_command(PluginCommand.MATERIALS_CREATE_MATERIAL_NETWORK)
 def _create_material_network(
     *,
     name: str,
@@ -311,17 +257,7 @@ def _create_material_network(
     params: dict[str, Any] | None = None,
     **_: Any,
 ) -> dict[str, Any]:
-    """Create a new material network in /mat.
-
-    Creates a material node of the specified shader type and optionally
-    sets parameter values from the provided dict.
-
-    Args:
-        name: Name for the new material node.
-        shader_type: Type of shader to create. "principled" creates a
-            principledshader::2.0; "materialx" creates mtlxstandard_surface.
-        params: Optional dict of parameter name -> value to set.
-    """
+    """Create a new material network in /mat."""
 
     mat_context = hou.node('/mat')
     if mat_context is None:
@@ -340,7 +276,8 @@ def _create_material_network(
         node = mat_context.createNode(actual_type, node_name=name)
     except hou.OperationFailed as e:
         raise ValueError(
-            f"Failed to create material of type '{actual_type}' in /mat: {readable_message(e)}"
+            f"Failed to create material of type '{actual_type}' in /mat: "
+            f'{readable_message(e)}'
         ) from e
 
     applied, skipped = _apply_shader_params(node, actual_type, params or {})
@@ -356,30 +293,14 @@ def _create_material_network(
     }
 
 
-register_command(PluginCommand.MATERIALS_CREATE_MATERIAL_NETWORK)(
-    _create_material_network
-)
-
-
-###### materials.assign_material
-
-
+@register_command(PluginCommand.MATERIALS_ASSIGN_MATERIAL)
 def _assign_material(
     *,
     geo_path: str,
     material_path: str,
     **_: Any,
 ) -> dict[str, Any]:
-    """Assign a material to a geometry node.
-
-    Finds the SOP network inside the geo node, creates a material SOP
-    after the last displayed node, sets the material path, and sets
-    the display flag on the new material SOP.
-
-    Args:
-        geo_path: Path to the geometry (Object-level) node.
-        material_path: Path to the material node to assign.
-    """
+    """Assign a material to a geometry node."""
 
     geo_node = _get_node(geo_path)
 
@@ -422,25 +343,13 @@ def _assign_material(
     }
 
 
-register_command(PluginCommand.MATERIALS_ASSIGN_MATERIAL)(_assign_material)
-
-
-###### materials.list_material_types
-
-
+@register_command(PluginCommand.MATERIALS_LIST_MATERIAL_TYPES)
 def _list_material_types(
     *,
     filter: str | None = None,
     **_: Any,
 ) -> dict[str, Any]:
-    """List available VOP/material node types.
-
-    Inspects the Vop and Shop node type categories to find available
-    material and shader types. Optionally filters by a substring.
-
-    Args:
-        filter: Optional substring to filter type names by.
-    """
+    """List available VOP/material node types."""
 
     results: list[dict[str, str]] = []
 
@@ -484,6 +393,3 @@ def _list_material_types(
 
 
 _TYPE_LIST_CAP = 200
-
-
-register_command(PluginCommand.MATERIALS_LIST_MATERIAL_TYPES)(_list_material_types)

@@ -1,19 +1,12 @@
-"""PDG/TOPs handlers for FXHoudini-MCP.
-
-Provides tools for querying and controlling TOP networks, work items,
-schedulers, and PDG graph cooking in Houdini.
-"""
+"""PDG/TOPs handlers for Houdini MCP."""
 
 from __future__ import annotations
 
-# Built-in
 import logging
 from typing import Any
 
-# Third-party
 import hou
 
-# Internal
 from houdini_mcp_plugin.dispatcher import register_command
 from houdini_mcp_plugin.errors import readable_message
 from houdini_mcp_protocol import PluginCommand
@@ -21,17 +14,8 @@ from houdini_mcp_protocol import PluginCommand
 logger = logging.getLogger(__name__)
 
 
-###### Helpers
-
-
 def _get_top_node(node_path: str) -> hou.Node:
-    """Return a TOP node or topnet, or say why the given node is neither.
-
-    This checked only existence despite its name. get_top_network_info on a box SOP
-    returned success with top_node_count 0 and cook_state "unknown", which reads as
-    "this TOP network is empty" -- so a caller starts adding work items to a box
-    instead of being told it picked the wrong node.
-    """
+    """Return a TOP node or topnet, or say why the given node is neither."""
 
     node = hou.node(node_path)
     if node is None:
@@ -63,19 +47,7 @@ def _get_pdg_node(node: hou.Node) -> Any:
 
 
 def _assert_has_generating_node(node: hou.Node) -> None:
-    """Raise unless *node* resolves to a TOP node that produces work items.
-
-    Blocking PDG calls (generateStaticWorkItems(True), cookWorkItems(block=True))
-    run on the main thread here, because the dispatcher marshals every hou.*
-    call through hdefereval. When the target cannot produce work items the
-    blocking call waits on a cook that never starts, and since the main thread
-    is what would advance that cook, Houdini's UI deadlocks and the app has to
-    be force-quit. A freshly created topnet hits this: it contains only a
-    localscheduler, so it is the common case rather than an exotic one.
-
-    Schedulers are the tell -- their PDG object has no ``nodeType``, while
-    Processor/Partitioner/Mapper nodes do.
-    """
+    """Raise unless *node* resolves to a TOP node that produces work items."""
 
     target = node
     if node.getPDGNode() is None and hasattr(node, 'displayNode'):
@@ -227,17 +199,9 @@ def _work_item_to_dict(work_item: Any) -> dict:
     return info
 
 
-###### tops.get_top_network_info
-
-
+@register_command(PluginCommand.TOPS_GET_TOP_NETWORK_INFO)
 def get_top_network_info(node_path: str) -> dict:
-    """Return an overview of a TOP network.
-
-    Provides node count, scheduler info, and cook state.
-
-    Args:
-        node_path: Path to a TOP network node (topnet) or a TOP node inside one.
-    """
+    """Return an overview of a TOP network."""
 
     node = _get_top_node(node_path)
 
@@ -306,21 +270,13 @@ def get_top_network_info(node_path: str) -> dict:
     }
 
 
-###### tops.cook_top_node
-
-
+@register_command(PluginCommand.TOPS_COOK_TOP_NODE)
 def cook_top_node(
     node_path: str,
     block: bool = True,
     generate_only: bool = False,
 ) -> dict:
-    """Cook a TOP node to execute its work items.
-
-    Args:
-        node_path: Path to the TOP node to cook.
-        block: If True, wait for cooking to complete before returning.
-        generate_only: If True, only generate work items without cooking.
-    """
+    """Cook a TOP node to execute its work items."""
 
     node = _get_top_node(node_path)
     if block or generate_only:
@@ -425,15 +381,9 @@ def cook_top_node(
     return result
 
 
-###### tops.cancel_top_cook
-
-
+@register_command(PluginCommand.TOPS_CANCEL_TOP_COOK)
 def cancel_top_cook(node_path: str) -> dict:
-    """Cancel any active cooking on a TOP network.
-
-    Args:
-        node_path: Path to a TOP node or TOP network.
-    """
+    """Cancel any active cooking on a TOP network."""
 
     node = _get_top_node(node_path)
 
@@ -450,15 +400,9 @@ def cancel_top_cook(node_path: str) -> dict:
     }
 
 
-###### tops.pause_top_cook
-
-
+@register_command(PluginCommand.TOPS_PAUSE_TOP_COOK)
 def pause_top_cook(node_path: str) -> dict:
-    """Pause cooking on a TOP network.
-
-    Args:
-        node_path: Path to a TOP node or TOP network.
-    """
+    """Pause cooking on a TOP network."""
 
     node = _get_top_node(node_path)
 
@@ -475,16 +419,9 @@ def pause_top_cook(node_path: str) -> dict:
     }
 
 
-###### tops.dirty_work_items
-
-
+@register_command(PluginCommand.TOPS_DIRTY_WORK_ITEMS)
 def dirty_work_items(node_path: str, remove_outputs: bool = False) -> dict:
-    """Dirty (invalidate) work items on a TOP node so they can be regenerated.
-
-    Args:
-        node_path: Path to the TOP node.
-        remove_outputs: If True, also remove output files from disk.
-    """
+    """Dirty (invalidate) work items on a TOP node so they can be regenerated."""
 
     node = _get_top_node(node_path)
 
@@ -509,18 +446,9 @@ def dirty_work_items(node_path: str, remove_outputs: bool = False) -> dict:
     }
 
 
-###### tops.get_work_item_states
-
-
+@register_command(PluginCommand.TOPS_GET_WORK_ITEM_STATES)
 def get_work_item_states(node_path: str) -> dict:
-    """Return the count of work items in each state for a TOP node.
-
-    States include: waiting, scheduled, cooking, cooked_success,
-    cooked_fail, cooked_cancel, etc.
-
-    Args:
-        node_path: Path to the TOP node.
-    """
+    """Return the count of work items in each state for a TOP node."""
 
     node = _get_top_node(node_path)
     pdg_node = _get_pdg_node(node)
@@ -544,16 +472,9 @@ def get_work_item_states(node_path: str) -> dict:
     }
 
 
-###### tops.get_work_item_info
-
-
+@register_command(PluginCommand.TOPS_GET_WORK_ITEM_INFO)
 def get_work_item_info(node_path: str, work_item_index: int) -> dict:
-    """Return detailed information about a specific work item.
-
-    Args:
-        node_path: Path to the TOP node.
-        work_item_index: Index of the work item within the node.
-    """
+    """Return detailed information about a specific work item."""
 
     node = _get_top_node(node_path)
     pdg_node = _get_pdg_node(node)
@@ -576,17 +497,9 @@ def get_work_item_info(node_path: str, work_item_index: int) -> dict:
     }
 
 
-###### tops.get_pdg_graph
-
-
+@register_command(PluginCommand.TOPS_GET_PDG_GRAPH)
 def get_pdg_graph(node_path: str) -> dict:
-    """Return the PDG dependency graph structure for a TOP network.
-
-    Shows nodes and their dependency connections.
-
-    Args:
-        node_path: Path to a TOP network node or TOP node inside one.
-    """
+    """Return the PDG dependency graph structure for a TOP network."""
 
     node = _get_top_node(node_path)
 
@@ -644,17 +557,9 @@ def get_pdg_graph(node_path: str) -> dict:
     }
 
 
-###### tops.generate_static_items
-
-
+@register_command(PluginCommand.TOPS_GENERATE_STATIC_ITEMS)
 def generate_static_items(node_path: str) -> dict:
-    """Generate static work items on a TOP node without cooking them.
-
-    This is useful for previewing what work items will be created.
-
-    Args:
-        node_path: Path to the TOP node.
-    """
+    """Generate static work items on a TOP node without cooking them."""
 
     node = _get_top_node(node_path)
     _assert_has_generating_node(node)
@@ -687,16 +592,9 @@ def generate_static_items(node_path: str) -> dict:
     }
 
 
-###### tops.get_top_scheduler_info
-
-
+@register_command(PluginCommand.TOPS_GET_TOP_SCHEDULER_INFO)
 def get_top_scheduler_info(node_path: str) -> dict:
-    """Return information about a TOP scheduler node.
-
-    Args:
-        node_path: Path to a TOP scheduler node or a TOP network
-                   (returns info about its default scheduler).
-    """
+    """Return information about a TOP scheduler node."""
 
     node = _get_top_node(node_path)
 
@@ -805,16 +703,9 @@ def _build_scheduler_info(sched_node: hou.Node) -> dict:
     return info
 
 
-###### tops.get_failed_work_items
-
-
+@register_command(PluginCommand.TOPS_GET_FAILED_WORK_ITEMS)
 def get_failed_work_items(node_path: str, limit: int = 10) -> dict:
-    """List the work items that failed on a TOP node, with what they were doing.
-
-    Args:
-        node_path: Path to the TOP node.
-        limit: Cap on the number of items returned.
-    """
+    """List the work items that failed on a TOP node, with what they were doing."""
 
     node = _get_top_node(node_path)
     pdg_node = _get_pdg_node(node)
@@ -863,14 +754,7 @@ def _log_uri_to_path(uri: str) -> str:
 
 
 def _work_item_log(work_item: Any) -> str:
-    """This item's log text, or empty.
-
-    In-process items (the default for Python Script, and every item cooked without
-    a scheduler process) keep their output and traceback in ``logMessages``, not in
-    a file. Out-of-process items have a ``logURI`` the scheduler wrote. Read both,
-    text first. Measured on 22.0.368: a raising Python Script TOP puts the full
-    traceback in logMessages and leaves node.errors() empty.
-    """
+    """This item's log text, or empty."""
 
     text = ''
     try:
@@ -894,22 +778,11 @@ def _work_item_log(work_item: Any) -> str:
     return ''
 
 
-###### tops.get_top_logs
-
-
+@register_command(PluginCommand.TOPS_GET_TOP_LOGS)
 def get_top_logs(
     node_path: str, work_item_index: int | None = None, tail: int = 4000
 ) -> dict:
-    """Return cook logs for a TOP node or one of its work items.
-
-    Node-level: the errors and warnings Houdini attached to the node. Item-level:
-    the scheduler's log for that work item, when one exists.
-
-    Args:
-        node_path: Path to the TOP node.
-        work_item_index: Index of a work item; omit for node-level messages.
-        tail: Maximum characters of log text returned (from the end).
-    """
+    """Return cook logs for a TOP node or one of its work items."""
 
     node = _get_top_node(node_path)
     result: dict = {'node_path': node.path()}
@@ -939,19 +812,3 @@ def get_top_logs(
             'and no scheduler log file exists.'
         )
     return result
-
-
-###### Registration
-
-register_command(PluginCommand.TOPS_GET_FAILED_WORK_ITEMS)(get_failed_work_items)
-register_command(PluginCommand.TOPS_GET_TOP_LOGS)(get_top_logs)
-register_command(PluginCommand.TOPS_GET_TOP_NETWORK_INFO)(get_top_network_info)
-register_command(PluginCommand.TOPS_COOK_TOP_NODE)(cook_top_node)
-register_command(PluginCommand.TOPS_CANCEL_TOP_COOK)(cancel_top_cook)
-register_command(PluginCommand.TOPS_PAUSE_TOP_COOK)(pause_top_cook)
-register_command(PluginCommand.TOPS_DIRTY_WORK_ITEMS)(dirty_work_items)
-register_command(PluginCommand.TOPS_GET_WORK_ITEM_STATES)(get_work_item_states)
-register_command(PluginCommand.TOPS_GET_WORK_ITEM_INFO)(get_work_item_info)
-register_command(PluginCommand.TOPS_GET_PDG_GRAPH)(get_pdg_graph)
-register_command(PluginCommand.TOPS_GENERATE_STATIC_ITEMS)(generate_static_items)
-register_command(PluginCommand.TOPS_GET_TOP_SCHEDULER_INFO)(get_top_scheduler_info)

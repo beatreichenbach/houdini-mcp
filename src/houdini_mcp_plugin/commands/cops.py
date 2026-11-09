@@ -1,22 +1,14 @@
-"""COP (Copernicus) handlers for FXHoudini-MCP.
-
-Provides tools for querying and manipulating COP nodes in Houdini 20.5+
-Copernicus compositing networks.
-"""
+"""COP (Copernicus) handlers for Houdini MCP."""
 
 from __future__ import annotations
 
-# Built-in
 import contextlib
 import logging
 from typing import Any
 
-# Third-party
 import hou
 
 from houdini_mcp_plugin.commands.nodes import _refuse_taken_name
-
-# Internal
 from houdini_mcp_plugin.dispatcher import register_command
 from houdini_mcp_plugin.errors import readable_message
 from houdini_mcp_plugin.ui import focus_network_editor as _focus_network_editor
@@ -25,19 +17,8 @@ from houdini_mcp_protocol import PluginCommand
 logger = logging.getLogger(__name__)
 
 
-###### Helpers
-
-
 def _get_cop_node(node_path: str) -> hou.Node:
-    """Return a COP node, or say why the given node is not one.
-
-    This checked only existence despite its name, so every cops.* command trusted
-    it and answered about whatever it was handed. get_cop_info on a box SOP came
-    back success with category "Sop", x_resolution None and planes [] -- it knew
-    the node was not a COP and reported an image summary anyway. A caller reading
-    "x_resolution: None" has no way to tell a wrong node type from an image with no
-    resolution, which is worse than an error.
-    """
+    """Return a COP node, or say why the given node is not one."""
 
     node = hou.node(node_path)
     if node is None:
@@ -55,17 +36,9 @@ def _get_cop_node(node_path: str) -> hou.Node:
     )
 
 
-###### cops.get_cop_info
-
-
+@register_command(PluginCommand.COPS_GET_COP_INFO)
 def get_cop_info(node_path: str) -> dict:
-    """Return information about a COP node.
-
-    Includes output type, data format, and resolution info.
-
-    Args:
-        node_path: Path to the COP node.
-    """
+    """Return information about a COP node."""
 
     node = _get_cop_node(node_path)
 
@@ -130,18 +103,9 @@ def get_cop_info(node_path: str) -> dict:
     return info
 
 
-###### cops.get_cop_geometry
-
-
+@register_command(PluginCommand.COPS_GET_COP_GEOMETRY)
 def get_cop_geometry(node_path: str, output_index: int = 0) -> dict:
-    """Get geometry representation from a COP node.
-
-    In Copernicus (Houdini 20.5+), COP nodes can output geometry data.
-
-    Args:
-        node_path: Path to the COP node.
-        output_index: Output connector index (default 0).
-    """
+    """Get geometry representation from a COP node."""
 
     node = _get_cop_node(node_path)
 
@@ -149,7 +113,9 @@ def get_cop_geometry(node_path: str, output_index: int = 0) -> dict:
         geo = node.geometry(output_index)
     except Exception as e:
         raise ValueError(
-            f'Failed to get geometry from COP node {node_path} at output {output_index}: {readable_message(e)}'
+            f'Failed to get geometry from COP node {node_path} at output '
+            f'{output_index}: '
+            f'{readable_message(e)}'
         ) from e
 
     if geo is None:
@@ -222,16 +188,9 @@ def get_cop_geometry(node_path: str, output_index: int = 0) -> dict:
     return result
 
 
-###### cops.get_cop_layer
-
-
+@register_command(PluginCommand.COPS_GET_COP_LAYER)
 def get_cop_layer(node_path: str, output_index: int = 0) -> dict:
-    """Get image layer data information from a COP node.
-
-    Args:
-        node_path: Path to the COP node.
-        output_index: Output connector index (default 0).
-    """
+    """Get image layer data information from a COP node."""
 
     node = _get_cop_node(node_path)
 
@@ -286,10 +245,7 @@ def get_cop_layer(node_path: str, output_index: int = 0) -> dict:
 
 
 def _layer_summary(layer: Any) -> dict:
-    """Resolution, channels and per-channel value range of a Copernicus layer.
-
-    computeMin/Max/Average run in Houdini, so no pixel crosses into Python.
-    """
+    """Resolution, channels and per-channel value range of a Copernicus layer."""
 
     summary: dict = {'available': True}
     with contextlib.suppress(Exception):
@@ -317,21 +273,13 @@ def _layer_summary(layer: Any) -> dict:
     return summary
 
 
-###### cops.create_cop_node
-
-
+@register_command(PluginCommand.COPS_CREATE_COP_NODE)
 def create_cop_node(
     parent_path: str,
     cop_type: str,
     name: str | None = None,
 ) -> dict:
-    """Create a Copernicus COP node.
-
-    Args:
-        parent_path: Path to the parent COP network.
-        cop_type: The COP node type to create (e.g. "file", "vopcop2gen").
-        name: Optional explicit name for the node.
-    """
+    """Create a Copernicus COP node."""
 
     parent = hou.node(parent_path)
     if parent is None:
@@ -345,7 +293,8 @@ def create_cop_node(
         )
     except hou.OperationFailed as e:
         raise ValueError(
-            f"Failed to create COP node of type '{cop_type}' under {parent_path}: {readable_message(e)}"
+            f"Failed to create COP node of type '{cop_type}' under {parent_path}: "
+            f'{readable_message(e)}'
         ) from e
 
     _focus_network_editor(node)
@@ -358,23 +307,14 @@ def create_cop_node(
     }
 
 
-###### cops.set_cop_flags
-
-
+@register_command(PluginCommand.COPS_SET_COP_FLAGS)
 def set_cop_flags(
     node_path: str,
     display: bool | None = None,
     export_flag: bool | None = None,
     compress: bool | None = None,
 ) -> dict:
-    """Set flags on a COP node.
-
-    Args:
-        node_path: Path to the COP node.
-        display: Set the display flag.
-        export_flag: Set the render/export flag.
-        compress: Set the compress flag.
-    """
+    """Set flags on a COP node."""
 
     node = _get_cop_node(node_path)
 
@@ -411,15 +351,9 @@ def set_cop_flags(
     }
 
 
-###### cops.list_cop_node_types
-
-
+@register_command(PluginCommand.COPS_LIST_COP_NODE_TYPES)
 def list_cop_node_types(filter: str | None = None) -> dict:
-    """List available COP node types.
-
-    Args:
-        filter: Optional substring filter for node type names.
-    """
+    """List available COP node types."""
 
     # Copernicus ("Cop", Houdini 20.5+) is what create_cop_node creates
     # inside a copnet; fall back to legacy Cop2 on older builds.
@@ -460,18 +394,9 @@ def list_cop_node_types(filter: str | None = None) -> dict:
     }
 
 
-###### cops.get_cop_vdb
-
-
+@register_command(PluginCommand.COPS_GET_COP_VDB)
 def get_cop_vdb(node_path: str, output_index: int = 0) -> dict:
-    """Get VDB data information from a COP node.
-
-    In Copernicus, COP nodes can work with volumetric (VDB) data.
-
-    Args:
-        node_path: Path to the COP node.
-        output_index: Output connector index (default 0).
-    """
+    """Get VDB data information from a COP node."""
 
     node = _get_cop_node(node_path)
 
@@ -479,7 +404,9 @@ def get_cop_vdb(node_path: str, output_index: int = 0) -> dict:
         geo = node.geometry(output_index)
     except Exception as e:
         raise ValueError(
-            f'Failed to get geometry from COP node {node_path} at output {output_index}: {readable_message(e)}'
+            f'Failed to get geometry from COP node {node_path} at output '
+            f'{output_index}: '
+            f'{readable_message(e)}'
         ) from e
 
     if geo is None:
@@ -550,14 +477,3 @@ def get_cop_vdb(node_path: str, output_index: int = 0) -> dict:
         'vdb_count': len(vdb_prims),
         'vdb_primitives': vdb_prims,
     }
-
-
-###### Registration
-
-register_command(PluginCommand.COPS_GET_COP_INFO)(get_cop_info)
-register_command(PluginCommand.COPS_GET_COP_GEOMETRY)(get_cop_geometry)
-register_command(PluginCommand.COPS_GET_COP_LAYER)(get_cop_layer)
-register_command(PluginCommand.COPS_CREATE_COP_NODE)(create_cop_node)
-register_command(PluginCommand.COPS_SET_COP_FLAGS)(set_cop_flags)
-register_command(PluginCommand.COPS_LIST_COP_NODE_TYPES)(list_cop_node_types)
-register_command(PluginCommand.COPS_GET_COP_VDB)(get_cop_vdb)

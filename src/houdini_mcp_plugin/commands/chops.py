@@ -1,27 +1,17 @@
-"""CHOP handlers for FXHoudini-MCP.
-
-Provides tools for inspecting, creating, and exporting CHOP
-(Channel Operator) nodes and their channel data within Houdini.
-"""
+"""CHOP handlers for Houdini MCP."""
 
 from __future__ import annotations
 
-# Built-in
 from typing import Any
 
-# Third-party
 import hou
 
 from houdini_mcp_plugin.commands.nodes import _refuse_taken_name
-
-# Internal
 from houdini_mcp_plugin.config import place_new_node
 from houdini_mcp_plugin.dispatcher import register_command
 from houdini_mcp_plugin.errors import readable_message
 from houdini_mcp_plugin.ui import focus_network_editor as _focus_network_editor
 from houdini_mcp_protocol import PluginCommand
-
-###### Helpers
 
 
 def _get_node(node_path: str) -> hou.Node:
@@ -33,9 +23,7 @@ def _get_node(node_path: str) -> hou.Node:
     return node
 
 
-###### chops.get_chop_data
-
-
+@register_command(PluginCommand.CHOPS_GET_CHOP_DATA)
 def _get_chop_data(
     *,
     node_path: str,
@@ -44,17 +32,7 @@ def _get_chop_data(
     end: int | None = None,
     **_: Any,
 ) -> dict[str, Any]:
-    """Get CHOP node track data.
-
-    If channel_name is given, returns that channel's samples within the
-    optional frame range. Otherwise returns all channel names and metadata.
-
-    Args:
-        node_path: Path to the CHOP node.
-        channel_name: Optional specific channel name to retrieve samples for.
-        start: Optional start sample index.
-        end: Optional end sample index.
-    """
+    """Get CHOP node track data."""
 
     node = _get_node(node_path)
 
@@ -122,12 +100,7 @@ def _get_chop_data(
     return result
 
 
-register_command(PluginCommand.CHOPS_GET_CHOP_DATA)(_get_chop_data)
-
-
-###### chops.create_chop_node
-
-
+@register_command(PluginCommand.CHOPS_CREATE_CHOP_NODE)
 def _create_chop_node(
     *,
     parent_path: str,
@@ -135,13 +108,7 @@ def _create_chop_node(
     name: str | None = None,
     **_: Any,
 ) -> dict[str, Any]:
-    """Create a CHOP node inside a parent network.
-
-    Args:
-        parent_path: Path to the parent network.
-        chop_type: Type of CHOP node to create (e.g. "wave", "noise", "math").
-        name: Optional name for the new node.
-    """
+    """Create a CHOP node inside a parent network."""
 
     parent = _get_node(parent_path)
     if name:
@@ -151,7 +118,8 @@ def _create_chop_node(
         node = parent.createNode(chop_type, node_name=name)
     except hou.OperationFailed as e:
         raise ValueError(
-            f"Failed to create CHOP node of type '{chop_type}' inside '{parent_path}': {readable_message(e)}"
+            f"Failed to create CHOP node of type '{chop_type}' inside '{parent_path}': "
+            f'{readable_message(e)}'
         ) from e
 
     place_new_node(node)
@@ -162,12 +130,6 @@ def _create_chop_node(
         'type': node.type().name(),
         'name': node.name(),
     }
-
-
-register_command(PluginCommand.CHOPS_CREATE_CHOP_NODE)(_create_chop_node)
-
-
-###### chops.list_chop_channels
 
 
 def _track_entry(track: Any) -> dict[str, Any]:
@@ -183,14 +145,9 @@ def _track_entry(track: Any) -> dict[str, Any]:
     }
 
 
+@register_command(PluginCommand.CHOPS_LIST_CHOP_CHANNELS)
 def _list_chop_channels(*, node_path: str, **_: Any) -> dict[str, Any]:
-    """List all tracks/channels on a CHOP node.
-
-    For each channel returns: name, length, sample_rate, and value range.
-
-    Args:
-        node_path: Path to the CHOP node.
-    """
+    """List all tracks/channels on a CHOP node."""
 
     node = _get_node(node_path)
 
@@ -206,12 +163,7 @@ def _list_chop_channels(*, node_path: str, **_: Any) -> dict[str, Any]:
     }
 
 
-register_command(PluginCommand.CHOPS_LIST_CHOP_CHANNELS)(_list_chop_channels)
-
-
-###### chops.export_chop_to_parm
-
-
+@register_command(PluginCommand.CHOPS_EXPORT_CHOP_TO_PARM)
 def _export_chop_to_parm(
     *,
     chop_path: str,
@@ -220,17 +172,7 @@ def _export_chop_to_parm(
     target_parm_name: str,
     **_: Any,
 ) -> dict[str, Any]:
-    """Create a CHOP export reference on a parameter.
-
-    Sets a chop() expression on the target parameter that references
-    the specified CHOP channel.
-
-    Args:
-        chop_path: Path to the CHOP node.
-        channel_name: Name of the channel to export.
-        target_node_path: Path to the target node containing the parameter.
-        target_parm_name: Name of the parameter to set the expression on.
-    """
+    """Create a CHOP export reference on a parameter."""
 
     # Validate the CHOP node and channel
     chop_node = _get_node(chop_path)
@@ -239,7 +181,8 @@ def _export_chop_to_parm(
         names = [t.name() for t in chop_node.tracks()]
         shown = names[:30] + (['...'] if len(names) > 30 else [])
         raise ValueError(
-            f"Channel '{channel_name}' not found on CHOP node: {chop_path}. Channels: {shown}"
+            f"Channel '{channel_name}' not found on CHOP node: {chop_path}. Channels: "
+            f'{shown}'
         )
 
     # Validate the target parameter
@@ -251,7 +194,8 @@ def _export_chop_to_parm(
         close = suggest_parms(target_parm_name, parm_labels(target_node))
         hint = f' Did you mean: {close}?' if close else ''
         raise ValueError(
-            f"Parameter '{target_parm_name}' not found on node: {target_node_path}.{hint}"
+            f"Parameter '{target_parm_name}' not found on node: "
+            f'{target_node_path}.{hint}'
         )
 
     from houdini_mcp_plugin.commands.parameters import set_whole_expression
@@ -267,6 +211,3 @@ def _export_chop_to_parm(
     if replaced_keys:
         result['replaced_keyframes'] = replaced_keys
     return result
-
-
-register_command(PluginCommand.CHOPS_EXPORT_CHOP_TO_PARM)(_export_chop_to_parm)

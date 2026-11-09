@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-# Built-in
-# Third-party
-# Internal
 from .context import BridgeContext, run_command
 from .registry import tool
 

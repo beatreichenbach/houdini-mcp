@@ -1,23 +1,15 @@
-"""Houdini-side handlers for parameter operations.
-
-Provides 14 command handlers for reading, writing, and managing
-node parameters, expressions, channel references, and spare parameters.
-"""
+"""Houdini-side handlers for parameter operations."""
 
 from __future__ import annotations
 
 import contextlib
 import os
 import re
-
-# Built-in
 from difflib import get_close_matches
 from typing import Any, cast
 
-# Third-party
 import hou
 
-# Internal
 from houdini_mcp_plugin.callbacks import (
     CallbackError,
     _is_python,
@@ -30,8 +22,6 @@ from houdini_mcp_plugin.errors import readable_message
 from houdini_mcp_plugin.menus import items as menu_items
 from houdini_mcp_plugin.serialize import geometry_summary, ramp_to_dict
 from houdini_mcp_protocol import PluginCommand
-
-###### Helpers
 
 
 def _resolve_node(node_path: str) -> hou.Node:
@@ -54,12 +44,7 @@ def _squash(text: str) -> str:
 
 
 def suggest_parms(wanted: str, labels: dict[str, str], n: int = 3) -> list[str]:
-    """Parm names a mistyped *wanted* most likely meant; *labels* maps name -> label.
-
-    Name spelling alone misses the usual mistake, which is guessing a name
-    from the label: "minvalue" for attribrandomize's `min` ("Min Value")
-    scores closer to `valuea` than to `min`. So label matches come first.
-    """
+    """Parm names a mistyped *wanted* most likely meant; *labels* maps name -> label."""
 
     by_label: dict[str, list[str]] = {}
     for name, label in labels.items():
@@ -74,18 +59,15 @@ def suggest_parms(wanted: str, labels: dict[str, str], n: int = 3) -> list[str]:
 
 
 def _wrapped_expression(value: Any) -> tuple[str, Any] | None:
-    """(expression, hou.exprLanguage) of an ``{"expr": ..., "language": ...}`` value.
-
-    None for anything else (a literal). Raises ValueError for a dict without
-    "expr", with other keys, or with a language other than hscript/python.
-    """
+    """(expression, hou.exprLanguage) of an ``{"expr": ..., "language": ...}`` value."""
 
     if not isinstance(value, dict):
         return None
     unknown = sorted(set(value) - {'expr', 'language'})
     if 'expr' not in value or unknown:
         raise ValueError(
-            f'an expression is written {{"expr": ..., "language": "hscript" | "python"}}, '
+            f'an expression is written '
+            f'{{"expr": ..., "language": "hscript" | "python"}}, '
             f'got {value!r}'
         )
     language = str(value.get('language', 'hscript')).strip().lower()
@@ -100,13 +82,7 @@ def _wrapped_expression(value: Any) -> tuple[str, Any] | None:
 
 
 def set_whole_expression(parm: hou.Parm, expression: str, language: Any = None) -> int:
-    """Make *expression* drive *parm* on every frame; returns keys replaced.
-
-    On an animated parm setExpression only rewrites the segment at the
-    current frame: a chop() export onto keys at 1/50/100 read the channel on
-    frame 1 and still 90 on frame 50 (measured on 22.0.368). The keys go
-    first, and the count is reported so the caller can say what was replaced.
-    """
+    """Make *expression* drive *parm* on every frame; returns keys replaced."""
 
     replaced = len(parm.keyframes())
     if replaced > 1:
@@ -165,7 +141,7 @@ _RAMP_KEYS = frozenset({'keys', 'values', 'basis', 'is_color', 'type'})
 
 
 def is_ramp_value(value: Any) -> bool:
-    """Whether *value* is a whole ramp: ``{"keys": [...], "values": [...], "basis": ...}``."""
+    """Whether *value* is a whole ramp: ``{"keys": [...], "values": [...],..."""
 
     return (
         isinstance(value, dict)
@@ -189,11 +165,7 @@ def _ramp_basis(name: Any) -> Any:
 
 
 def ramp_shape_error(value: dict) -> str | None:
-    """What is wrong with a ramp value whatever parm it goes to, or None.
-
-    The checks that need no parm, so a build_network dry run makes them too:
-    it answered valid for a ramp with a bad basis, and the build then failed.
-    """
+    """What is wrong with a ramp value whatever parm it goes to, or None."""
 
     try:
         keys = [float(k) for k in value['keys']]
@@ -205,7 +177,10 @@ def ramp_shape_error(value: dict) -> str | None:
     basis = value.get('basis', 'linear')
     names = list(basis) if isinstance(basis, (list, tuple)) else [basis] * len(keys)
     if len(names) != len(keys):
-        return f'a ramp takes one basis or one per key: {len(keys)} keys, {len(names)} bases'
+        return (
+            f'a ramp takes one basis or one per key: {len(keys)} keys, '
+            f'{len(names)} bases'
+        )
     try:
         for name in names:
             _ramp_basis(name)
@@ -215,12 +190,7 @@ def ramp_shape_error(value: dict) -> str | None:
 
 
 def ramp_from_value(parm: hou.Parm, value: dict) -> hou.Ramp:
-    """The hou.Ramp a ``{"keys", "values", "basis"}`` value describes, for *parm*.
-
-    `basis` is one name for every key or one per key, "linear" when left out;
-    a colour ramp takes [r, g, b] values, a float ramp numbers. A dict on a
-    parameter that is not a ramp is refused: there a dict is an expression.
-    """
+    """The hou.Ramp a ``{"keys", "values", "basis"}`` value describes, for *parm*."""
 
     template = parm.parmTemplate()
     if template.type() != hou.parmTemplateType.Ramp:
@@ -271,13 +241,7 @@ def _serialize_value(value: Any) -> Any:
 
 
 def _data_parm_summary(parm: hou.Parm, pt: hou.ParmTemplate) -> dict[str, Any]:
-    """What a Data parameter holds, never the blob itself.
-
-    Counts come from serialize.geometry_summary (intrinsics), not from
-    parm.asData(): that serialises the whole geometry to a string on the main
-    thread, which is ruinous on a heavy stash and measures characters, not
-    bytes.
-    """
+    """What a Data parameter holds, never the blob itself."""
 
     summary: dict[str, Any] = {'is_set': False}
     with contextlib.suppress(Exception):
@@ -300,13 +264,7 @@ def _data_parm_summary(parm: hou.Parm, pt: hou.ParmTemplate) -> dict[str, Any]:
 
 
 def _data_parm_value(parm: hou.Parm, pt: hou.ParmTemplate) -> dict[str, Any] | None:
-    """For a Data parameter, the fields a reader reports; None for any other.
-
-    eval() on a Data parameter is a hou.Geometry or None and rawValue() is
-    empty either way, so `value` alone cannot tell "unset" from "set to an
-    empty geometry". `value` stays the geometry summary it always serialised
-    to; `data` says whether the blob is set and what it holds.
-    """
+    """For a Data parameter, the fields a reader reports; None for any other."""
 
     if _parm_type_name(pt) != 'Data':
         return None
@@ -370,9 +328,7 @@ def _template_to_dict(pt: hou.ParmTemplate) -> dict[str, Any]:
     return info
 
 
-###### Handler: parameters.get_parameter
-
-
+@register_command(PluginCommand.PARAMETERS_GET_PARAMETER)
 def _get_parameter(node_path: str, parm_name: str, **_: Any) -> dict[str, Any]:
     """Get the current value, expression, keyframe info, and metadata of a parameter."""
 
@@ -407,12 +363,6 @@ def _get_parameter(node_path: str, parm_name: str, **_: Any) -> dict[str, Any]:
     return result
 
 
-register_command(PluginCommand.PARAMETERS_GET_PARAMETER)(_get_parameter)
-
-
-###### Handler: parameters.set_parameter
-
-
 class LockedParmError(ValueError):
     """A write refused because the parm is locked by its node's interface."""
 
@@ -431,11 +381,7 @@ def _words(text: str) -> list[str]:
 
 
 def _names_word(text: str, name: str) -> bool:
-    """Whether *name* is a whole word (or a run of words) of *text*.
-
-    `resolution` is a word of `updateResolutionParameters`; `t` is not a word
-    of `setTranslate`, which a plain substring test would have matched.
-    """
+    """Whether *name* is a whole word (or a run of words) of *text*."""
 
     wanted = _words(name)
     found = _words(text)
@@ -446,15 +392,7 @@ def _names_word(text: str, name: str) -> bool:
 
 
 def locked_controllers(parm: hou.Parm) -> list[dict[str, Any]]:
-    """Menu and toggle parms on *parm*'s node whose Python callback names its tuple.
-
-    A parm lock is set and cleared by the node's own interface scripts, not by
-    a value: on a karmarendersettings `res_mode` = autoheight locks
-    resolutiony, and only the callback of `res_mode` (loputils'
-    updateResolutionParameters) unlocks it. hou.Parm.set() does not run that
-    callback, which is why writing the menu through the bridge left the lock
-    in place. The callback text naming the tuple is the link.
-    """
+    """Menu and toggle parms on *parm*'s node whose Python callback names its tuple."""
 
     try:
         node = parm.node()
@@ -493,13 +431,7 @@ def locked_controllers(parm: hou.Parm) -> list[dict[str, Any]]:
 
 
 def locked_message(parm: hou.Parm) -> str | None:
-    """Why *parm* cannot be written because it is locked, or None.
-
-    Houdini answers every write to a locked parm -- set(), setExpression(),
-    revertToDefaults(), deleteAllKeyframes() -- with the same generic
-    "permission error ... locked assets, takes, product permissions", and the
-    #41 hint then sent callers to revert_parameter, which fails the same way.
-    """
+    """Why *parm* cannot be written because it is locked, or None."""
 
     if not _is_locked(parm):
         return None
@@ -522,20 +454,15 @@ def locked_message(parm: hou.Parm) -> str | None:
             f"UI does -- then write '{parm.name()}'."
         )
     else:
-        message += " Something in the node's interface sets the lock; see get_parm_template_tree."
+        message += (
+            " Something in the node's interface sets the lock; see "
+            'get_parm_template_tree.'
+        )
     return message
 
 
 def _run_callback(parm: hou.Parm) -> dict[str, Any] | None:
-    """Run *parm*'s callback script the way the UI does after an edit.
-
-    Through callbacks.press, not pressButton(): a Python callback that raises
-    there opens Houdini's modal "Error running callback" window and holds the
-    main thread -- and this bridge -- until someone clicks OK (res_mode's
-    callback raising on a locked resolutiony did exactly that). Answers None
-    when the parm has no callback, else {"run": bool, "route": ..., and
-    "error" when it raised}.
-    """
+    """Run *parm*'s callback script the way the UI does after an edit."""
 
     if not callback_script(parm):
         return None
@@ -565,14 +492,7 @@ def _callback_report(outcome: dict[str, Any] | None) -> dict[str, Any]:
 
 
 def _expression_driven(parms: list[hou.Parm]) -> str | None:
-    """A sentence naming the first of *parms* driven by an expression, or None.
-
-    Houdini answers a set() on such a parameter with a generic permission
-    error ("locked assets, takes, product permissions..."); resolutiony on a
-    karmarendersettings is the common case, driven by the autoheight expression
-    while res_mode says so (#41). A LOCKED parm is named as such instead: the
-    expression hint sends callers to revert_parameter, which a lock refuses too.
-    """
+    """A sentence naming the first of *parms* driven by an expression, or None."""
 
     for parm in parms:
         locked = locked_message(parm)
@@ -618,15 +538,7 @@ def _expression_of(parm: hou.Parm) -> str | None:
 
 
 def _expression_error(parm: hou.Parm) -> str | None:
-    """The error *parm*'s expression gives when evaluated, or None.
-
-    A failing expression does not raise: eval() returns an empty value and
-    Houdini puts "Unable to evaluate expression (... (<parm path>))" on the
-    node. That message outlives the fault -- it is still there after the
-    expression is fixed, until the node cooks (measured on 22.0.429) -- so a
-    message found is checked again after a forced cook, which clears it and
-    lets an expression that still fails put it back.
-    """
+    """The error *parm*'s expression gives when evaluated, or None."""
 
     suffix = f'{parm.path()})'
     node = parm.node()
@@ -648,14 +560,7 @@ def _expression_error(parm: hou.Parm) -> str | None:
 
 
 def _clear_expression(parm: hou.Parm) -> None:
-    """Remove *parm*'s expression without evaluating it.
-
-    deleteAllKeyframes() keeps the parm at its current value, so it evaluates
-    the expression it removes -- outside a cook, where a Ray SOP's `@N.x` or a
-    `$N` stamps "Local variable 'N' not found" on a healthy node, and that
-    warning outlives the build. A constant takes the expression's place first,
-    so the value kept is that constant; the caller's set() overwrites it.
-    """
+    """Remove *parm*'s expression without evaluating it."""
 
     with contextlib.suppress(Exception):
         parm.setExpression('0', hou.exprLanguage.Hscript, replace_expression=True)
@@ -676,14 +581,7 @@ def _values_match(requested: Any, actual: Any) -> bool:
 
 
 def _referenced_parm(parm: hou.Parm) -> str | None:
-    """Path of the parm a pure `ch()` reference points at, or None.
-
-    A parm holding a bare channel reference is a window onto another parm, and
-    hou.Parm.set() writes THROUGH it: setting tx on a node whose tx reads
-    ch("../b1/sizex") changes b1's sizex, not tx. eval() then answers with the
-    value asked for, so the write looks like a plain success while another
-    node quietly moved.
-    """
+    """Path of the parm a pure `ch()` reference points at, or None."""
 
     with contextlib.suppress(Exception):
         target = parm.getReferencedParm()
@@ -726,24 +624,7 @@ def _write_parm(
     override_expression: bool = False,
     run_callbacks: bool = False,
 ) -> dict[str, Any]:
-    """Set one parm and report honestly whether the write actually took.
-
-    hou.Parm.set() on a parm that holds an expression does NOT remove the
-    expression: eval() keeps answering with it, and the reply used to look
-    like a success anyway, the truth only in a `new_value` nobody compared
-    against what was asked for. override_expression clears it first, without
-    evaluating it (see _clear_expression).
-
-    Whether the expression survived decides `expression_kept`, not whether the
-    values differ: zeroing a factory `$N` that evaluates to 0 leaves the
-    expression in place just the same. A String parm echoes its raw text next
-    to the expanded one, since `$JOB/...` read back as an absolute path looks
-    like the very mistake a caller checks for.
-
-    A locked parm is refused before anything is tried, with the parm that
-    controls the lock named; *run_callbacks* runs the parm's callback after
-    the write, as the UI does, which is what sets and clears such locks.
-    """
+    """Set one parm and report honestly whether the write actually took."""
 
     locked = locked_message(parm)
     if locked:
@@ -808,16 +689,7 @@ def _set_tuple(
     override_expression: bool = False,
     run_callbacks: bool = False,
 ) -> tuple[Any | None, dict[str, Any]]:
-    """Apply a list value to the parm tuple of that name; None if there is none.
-
-    A list/tuple value addressed at a vector parameter name (e.g. "size" on a
-    box, "t" on a transform, a light's colour) is applied to the whole parm
-    tuple, so callers are not forced to know the per-component names.
-
-    Answers `(values, report)`, where *report* carries what _write_parm reports
-    for a single parm, per component: which kept an expression, which wrote
-    through a channel reference, and the raw text of String components.
-    """
+    """Apply a list value to the parm tuple of that name; None if there is none."""
 
     parm_tuple = node.parmTuple(parm_name)
     if parm_tuple is None:
@@ -918,6 +790,7 @@ def _set_tuple(
     return new_value, report
 
 
+@register_command(PluginCommand.PARAMETERS_SET_PARAMETER)
 def _set_parameter(
     node_path: str,
     parm_name: str,
@@ -966,12 +839,6 @@ def _set_parameter(
     return result
 
 
-register_command(PluginCommand.PARAMETERS_SET_PARAMETER)(_set_parameter)
-
-
-###### Handler: parameters.set_parameters
-
-
 def _error_entry(name: str, exc: Exception) -> dict[str, Any]:
     entry: dict[str, Any] = {'parm_name': name, 'error': str(exc)}
     if isinstance(exc, LockedParmError):
@@ -979,6 +846,7 @@ def _error_entry(name: str, exc: Exception) -> dict[str, Any]:
     return entry
 
 
+@register_command(PluginCommand.PARAMETERS_SET_PARAMETERS)
 def _set_parameters(
     node_path: str,
     params: dict[str, Any],
@@ -986,11 +854,7 @@ def _set_parameters(
     run_callbacks: bool = False,
     **_: Any,
 ) -> dict[str, Any]:
-    """Batch-set multiple parameters on a single node, in the order given.
-
-    Order matters with *run_callbacks*: a menu whose callback unlocks another
-    parm (`res_mode` before `resolutiony`) has to come first.
-    """
+    """Batch-set multiple parameters on a single node, in the order given."""
 
     node = _resolve_node(node_path)
     override = bool(override_expression)
@@ -1126,25 +990,14 @@ def _set_parameters(
     return reply
 
 
-register_command(PluginCommand.PARAMETERS_SET_PARAMETERS)(_set_parameters)
-
-
-###### Handler: parameters.get_parameter_schema
-
-
+@register_command(PluginCommand.PARAMETERS_GET_PARAMETER_SCHEMA)
 def _get_parameter_schema(
     node_path: str,
     parm_name: str | None = None,
     filter: str | None = None,
     **_: Any,
 ) -> dict[str, Any]:
-    """Get full parameter template info.
-
-    If *parm_name* is given, return info for that one parameter.
-    If *filter* is given, return only parameters whose name or label
-    contains the filter string (case-insensitive).
-    Otherwise return all non-hidden parameters.
-    """
+    """Get full parameter template info."""
 
     node = _resolve_node(node_path)
 
@@ -1199,12 +1052,7 @@ def _get_parameter_schema(
 _SCHEMA_CAP = 60
 
 
-register_command(PluginCommand.PARAMETERS_GET_PARAMETER_SCHEMA)(_get_parameter_schema)
-
-
-###### Handler: parameters.set_expression
-
-
+@register_command(PluginCommand.PARAMETERS_SET_EXPRESSION)
 def _set_expression(
     node_path: str,
     parm_name: str,
@@ -1252,12 +1100,7 @@ def _set_expression(
     return result
 
 
-register_command(PluginCommand.PARAMETERS_SET_EXPRESSION)(_set_expression)
-
-
-###### Handler: parameters.get_expression
-
-
+@register_command(PluginCommand.PARAMETERS_GET_EXPRESSION)
 def _get_expression(node_path: str, parm_name: str, **_: Any) -> dict[str, Any]:
     """Get the current expression on a parameter."""
 
@@ -1278,12 +1121,7 @@ def _get_expression(node_path: str, parm_name: str, **_: Any) -> dict[str, Any]:
     }
 
 
-register_command(PluginCommand.PARAMETERS_GET_EXPRESSION)(_get_expression)
-
-
-###### Handler: parameters.revert_parameter
-
-
+@register_command(PluginCommand.PARAMETERS_REVERT_PARAMETER)
 def _revert_parameter(node_path: str, parm_name: str, **_: Any) -> dict[str, Any]:
     """Revert a parameter to its default value."""
 
@@ -1321,19 +1159,8 @@ def _revert_parameter(node_path: str, parm_name: str, **_: Any) -> dict[str, Any
     return result
 
 
-register_command(PluginCommand.PARAMETERS_REVERT_PARAMETER)(_revert_parameter)
-
-
-###### Handler: parameters.link_parameters
-
-
 def _channel_function(parm: hou.Parm) -> str:
-    """The HScript channel function that reads *parm* as its own type.
-
-    ``ch()`` evaluates the referenced channel as a number, so a String parameter
-    linked with it reads back as "0". Strings need ``chs()``; every
-    numeric kind (float, int, toggle, int-valued menu) reads with ``ch()``.
-    """
+    """The HScript channel function that reads *parm* as its own type."""
 
     try:
         kind = parm.parmTemplate().type()
@@ -1343,13 +1170,7 @@ def _channel_function(parm: hou.Parm) -> str:
 
 
 def _relative_channel_path(dst: hou.Parm, src: hou.Parm) -> str:
-    """Path to *src* as *dst* would write it: relative, the way Houdini's own
-    Paste Relative References does.
-
-    An absolute path (``ch("/obj/gaps/CONTROL/mat")``) breaks the moment the
-    pair is moved, collapsed into a subnet or saved into an HDA and instanced
-    elsewhere; a relative one survives all three.
-    """
+    """Path to *src* as *dst* would write it: relative, the way Houdini's own..."""
 
     rel = dst.node().relativePathTo(src.node())
     if rel in ('', '.'):
@@ -1361,11 +1182,7 @@ _CH_REF = re.compile(r"""\bch[fis]?\(\s*["']([^"']+)["']\s*\)""")
 
 
 def _reaches(parm: hou.Parm, goal: str, seen: set[str]) -> bool:
-    """True when *parm* reads *goal* through static HScript ch() references.
-
-    Only literal ``ch("path")`` calls are followed; Python or computed
-    references cannot be validated and are treated as leaves.
-    """
+    """True when *parm* reads *goal* through static HScript ch() references."""
 
     if parm.path() == goal:
         return True
@@ -1381,6 +1198,7 @@ def _reaches(parm: hou.Parm, goal: str, seen: set[str]) -> bool:
     return False
 
 
+@register_command(PluginCommand.PARAMETERS_LINK_PARAMETERS)
 def _link_parameters(
     source_path: str,
     source_parm: str,
@@ -1389,17 +1207,7 @@ def _link_parameters(
     replace_existing: bool = False,
     **_: Any,
 ) -> dict[str, Any]:
-    """Create a channel reference from destination parameter to source parameter.
-
-    The expression uses ``chs()`` for a String destination and ``ch()`` for
-    everything else, and a path relative to the destination node. The reply
-    reads the destination back so the caller sees the linked value, not just
-    the expression text.
-
-    A destination that already has keyframes or an expression is refused
-    unless *replace_existing* is set, and a link whose source already reads
-    the destination through static ch() references is refused as a cycle.
-    """
+    """Create a channel reference from destination parameter to source parameter."""
 
     src = _resolve_parm(source_path, source_parm)
     dst = _resolve_parm(dest_path, dest_parm)
@@ -1431,19 +1239,15 @@ def _link_parameters(
     src_kind = _channel_function(src)
     if src_kind != function:
         reply['warning'] = (
-            f"'{dst.name()}' is a {'String' if function == 'chs' else 'numeric'} parameter "
+            f"'{dst.name()}' is a {'String' if function == 'chs' else 'numeric'} "
+            f'parameter '
             f'linked to a {"String" if src_kind == "chs" else "numeric"} source; '
             f'{function}() converts the value on read.'
         )
     return reply
 
 
-register_command(PluginCommand.PARAMETERS_LINK_PARAMETERS)(_link_parameters)
-
-
-###### Handler: parameters.lock_parameter
-
-
+@register_command(PluginCommand.PARAMETERS_LOCK_PARAMETER)
 def _lock_parameter(
     node_path: str, parm_name: str, locked: bool, **_: Any
 ) -> dict[str, Any]:
@@ -1460,23 +1264,10 @@ def _lock_parameter(
     }
 
 
-register_command(PluginCommand.PARAMETERS_LOCK_PARAMETER)(_lock_parameter)
-
-
-###### Handler: parameters.create_spare_parameter
-
-
 def _menu_template(
     parm_name: str, label: str, menu_items: Any, default_value: Any
 ) -> hou.MenuParmTemplate:
-    """A menu spare parm: items as set_hda_interface takes them, default by token or index.
-
-    A menu with no items came out with Houdini's placeholder "none" and the
-    reply said created: true; a token given as default_value was dropped
-    without a word; and labels could not differ from the tokens, so a CTRL
-    menu was rebuilt through execute_python. A list in
-    default_value, with no menu_items, is still read as the items.
-    """
+    """A menu spare parm: items as set_hda_interface takes them, default by token..."""
 
     from houdini_mcp_plugin.commands._helpers import _menu_default, _menu_pairs
 
@@ -1512,6 +1303,7 @@ def _menu_readback(parm: hou.Parm) -> dict[str, Any]:
     }
 
 
+@register_command(PluginCommand.PARAMETERS_CREATE_SPARE_PARAMETER)
 def _create_spare_parameter(
     node_path: str,
     parm_name: str,
@@ -1539,7 +1331,8 @@ def _create_spare_parameter(
     template_cls = type_map.get(parm_type.lower())
     if template_cls is None:
         raise ValueError(
-            f"Unsupported parm_type '{parm_type}'. Supported types: {list(type_map.keys())}"
+            f"Unsupported parm_type '{parm_type}'. Supported types: "
+            f'{list(type_map.keys())}'
         )
 
     # Build keyword arguments for the template constructor
@@ -1600,14 +1393,6 @@ def _create_spare_parameter(
         with contextlib.suppress(Exception):
             result.update(_menu_readback(node.parm(parm_name)))
     return result
-
-
-register_command(PluginCommand.PARAMETERS_CREATE_SPARE_PARAMETER)(
-    _create_spare_parameter
-)
-
-
-###### Handler: parameters.create_spare_parameters
 
 
 def _build_parm_template(spec: dict) -> hou.ParmTemplate:
@@ -1681,6 +1466,7 @@ _FOLDER_TYPE_MAP = {
 }
 
 
+@register_command(PluginCommand.PARAMETERS_CREATE_SPARE_PARAMETERS)
 def _create_spare_parameters(
     node_path: str,
     parameters: list,
@@ -1721,7 +1507,8 @@ def _create_spare_parameters(
             else all(p.isSpare() for p in current)
         ):
             raise ValueError(
-                f"'{spec['parm_name']}' is a built-in parameter; only spare parameters can be edited."
+                f"'{spec['parm_name']}' is a built-in parameter; only spare parameters "
+                f'can be edited.'
             )
         if existing.type() != pt.type():
             raise ValueError(
@@ -1757,13 +1544,6 @@ def _create_spare_parameters(
     }
 
 
-register_command(PluginCommand.PARAMETERS_CREATE_SPARE_PARAMETERS)(
-    _create_spare_parameters
-)
-
-
-###### parameters.get_parameters
-
 _GET_PARMS_CAP = 60
 
 # Rows a network sweep returns before it reports `truncated`.
@@ -1792,13 +1572,7 @@ def _parm_entry(parm: hou.Parm, include_defaults: bool) -> dict[str, Any]:
 
 
 def _default_of(parm: hou.Parm) -> dict[str, Any]:
-    """The template default of one parm component: `default`, `default_expression`.
-
-    is_at_default alone said "changed" without saying from what, so comparing
-    a few nodes against their defaults meant get_node_card per type plus
-    matching components by hand, or execute_python. A template with no default
-    (a folder, a button) answers nothing.
-    """
+    """The template default of one parm component: `default`, `default_expression`."""
 
     found: dict[str, Any] = {}
     with contextlib.suppress(Exception):
@@ -1829,12 +1603,7 @@ def _default_of(parm: hou.Parm) -> dict[str, Any]:
 
 
 def _off_default(parm: hou.Parm) -> bool:
-    """Whether *parm* was changed from its default (a type's own expression is not).
-
-    A ramp and its keys answer with isAtRampDefault: measured on 22.0, a
-    fresh popcolor's ramp2pos read as changed under isAtDefault, and the ramp
-    parm itself still read as default once a key had moved.
-    """
+    """Whether *parm* was changed from its default (a type's own expression is not)."""
 
     try:
         ramp = parm if parm.parmTemplate().type() == hou.parmTemplateType.Ramp else None
@@ -1864,17 +1633,7 @@ def _valueless(parm: hou.Parm) -> bool:
 
 
 def _ramp_key_folded(parm: hou.Parm, lowered: list[str] | None) -> bool:
-    """Whether *parm* is a ramp's key that non_default_only reports inside the ramp.
-
-    The ramp's own entry carries every key (`keys`, `values`, `basis`), the
-    shape set_parameters writes. Listed one by one, a 100-key colour ramp on
-    a Copernicus heightfield_visualize was 500 rows: 60 per node ran out at
-    the twelfth key, and a sweep of five such nodes spent its 2000 rows on
-    four and lost an edit on the fifth (22.0.429). A key a pattern names
-    apart from its ramp (`ramp2`, `ramp2pos`) is still listed. A pattern
-    every key shares (`pos`, or `value` in the label) names no key: it is
-    answered by the ramp, see _ramp_named_by_key.
-    """
+    """Whether *parm* is a ramp's key that non_default_only reports inside the ramp."""
 
     try:
         if not parm.isMultiParmInstance():
@@ -1895,11 +1654,7 @@ def _ramp_key_folded(parm: hou.Parm, lowered: list[str] | None) -> bool:
 
 
 def _ramp_named_by_key(parm: hou.Parm, lowered: list[str] | None) -> bool:
-    """Whether a pattern matches *parm*'s keys though not *parm*, a ramp.
-
-    `pos` on a colour ramp named every key and listed 100 of them; the keys
-    fold into the ramp, so the ramp is the answer.
-    """
+    """Whether a pattern matches *parm*'s keys though not *parm*, a ramp."""
 
     if lowered is None:
         return False
@@ -1924,6 +1679,7 @@ def _matches_patterns(parm: hou.Parm, lowered: list[str] | None) -> bool:
     return any(p in name or p in label for p in lowered)
 
 
+@register_command(PluginCommand.PARAMETERS_GET_PARAMETERS)
 def _get_parameters(
     node_path: str | None = None,
     patterns: list[str] | str | None = None,
@@ -1936,46 +1692,7 @@ def _get_parameters(
     value_contains: str | None = None,
     **_: Any,
 ) -> dict[str, Any]:
-    """Current values for every parameter matching any of several patterns.
-
-    set_parameters has been batch from the start while reading stayed one parm
-    per call, so checking five unrelated groups of settings cost five round
-    trips. get_node_card reports names and defaults for a node *type*; this
-    reports the live values on a specific node.
-
-    With *inside* instead of *node_path*, the same patterns are read across a
-    whole network and come back as one table of `rows`. "Every file parameter
-    of this material library, unexpanded" was find_nodes plus one
-    get_parameters per node: 68 calls in one session.
-
-    Args:
-        node_path: Node to read.
-        patterns: Substrings matched against parameter name and label. Omit for
-            every non-hidden parameter, up to the cap. Required with *inside*,
-            unless *non_default_only* or *value_contains*.
-        include_defaults: Also report whether each value is still the default,
-            and, where it differs, the default itself (`default`, and
-            `default_expression` when the template has one).
-        inside: A network to read instead of one node; answers `rows`.
-        recursive: With *inside*, every descendant, not only the children.
-        node_type: With *inside*, only nodes of this type name.
-        include_locked_assets: With *recursive*, also the nodes inside locked
-            HDAs (a POP solver's own file and include parameters). Off by
-            default: they buried the few real file paths of a network under
-            hundreds of rows.
-        non_default_only: Only parameters changed from their defaults, each
-            with its default beside the value. With *inside* no patterns are
-            needed then: "what was changed on these 33 nodes" was 33
-            get_node_info calls or execute_python.
-        value_contains: Only parameters whose raw text or expression holds
-            this substring (case-insensitive). With *inside* no patterns are
-            needed: "which parameters still name /obj/X" across a scene, a
-            deleted node included, was an allSubChildren() walk in
-            execute_python; get_parm_references reads one node, and sees no
-            reference to a node that no longer exists. Text, not resolved
-            paths: a relative "../X" does not hold "/obj/X", so search the
-            node's name to catch those too.
-    """
+    """Current values for every parameter matching any of several patterns."""
 
     if non_default_only:
         include_defaults = True
@@ -2052,14 +1769,7 @@ def _needle(value_contains: Any) -> str | None:
 
 
 def _holds_text(parm: hou.Parm, needle: str) -> bool:
-    """Whether *parm*'s raw text or expression contains *needle* (lowered).
-
-    Raw, not evaluated: a reference to a node that no longer exists is still
-    there as text ("/obj/X" in a string, `chs("/obj/X/file")`), which is what
-    a rename or delete audit is after; evaluating every parameter of a scene
-    would also cook it. Every keyframe's expression is read: rawValue() holds
-    only the one at the current frame.
-    """
+    """Whether *parm*'s raw text or expression contains *needle* (lowered)."""
 
     texts: list[str] = []
     with contextlib.suppress(Exception):
@@ -2178,7 +1888,9 @@ def _sweep_parameters(
             {
                 'skipped_inside_locked_assets': skipped_locked,
                 'note': (
-                    'Nodes inside locked HDAs were not read; include_locked_assets=True reads them.'
+                    'Nodes inside locked HDAs were not read; '
+                    'include_locked_assets=True '
+                    'reads them.'
                 ),
             }
             if skipped_locked
@@ -2186,11 +1898,6 @@ def _sweep_parameters(
         ),
     }
 
-
-register_command(PluginCommand.PARAMETERS_GET_PARAMETERS)(_get_parameters)
-
-
-###### Handler: parameters.get_parm_references
 
 # Every HScript function that reads a channel by path
 # ($HFS/houdini/help/expressions.zip). Longest first, so chsop is not read
@@ -2207,16 +1914,7 @@ _BACKTICKS_RE = re.compile(r'`([^`]*)`')
 
 
 def _outgoing_reference(parm: hou.Parm) -> dict[str, Any] | None:
-    """What *parm* reads from, or None when it reads no other channel.
-
-    A pure `ch("../src/tx")` resolves through getReferencedParm(). Anything
-    richer -- `ch("../src/scale") * 2` -- answers with the parm itself there
-    (measured on 22.0.429), so the channel references are read out of the
-    expression text and resolved relative to the node. A string parameter's
-    backtick expressions (`$HIP/`chs("../CTRL/version")`/geo.bgeo.sc`) are not
-    an expression() at all; they are read from unexpandedString(). An
-    expression that reads no channel (`$F * 2`) is not a reference.
-    """
+    """What *parm* reads from, or None when it reads no other channel."""
 
     expression = None
     with contextlib.suppress(Exception):
@@ -2278,15 +1976,7 @@ def _factory_type(node_type: hou.NodeType) -> bool:
 
 
 def broken_references(parm: hou.Parm) -> list[str]:
-    """Channel references in *parm* that point at a node or parameter that is not there.
-
-    Houdini evaluates such a reference to 0 or "" and reports nothing: no error,
-    no warning, and the node cooks clean. A terrain whose height reads a missing
-    ../CTRL null goes flat while every check says healthy, so this looks. Paths
-    built at runtime ($OS) are skipped rather than guessed at, and so is a parm
-    still at its factory default: that expression is the node type's, not the
-    caller's.
-    """
+    """Channel references in *parm* that point at a node or parameter that is not..."""
 
     # Cheap gate first: this runs over every parm of every node in a verify,
     # and _outgoing_reference raises and swallows on each plain value.
@@ -2325,6 +2015,7 @@ def _capped_paths(nodes: Any, exclude: str, limit: int) -> tuple[list[str], int]
     return paths[:limit], len(paths)
 
 
+@register_command(PluginCommand.PARAMETERS_GET_PARM_REFERENCES)
 def _get_parm_references(
     node_path: str,
     parm_name: str | None = None,
@@ -2333,19 +2024,7 @@ def _get_parm_references(
     include_node_level: bool | None = None,
     **_: Any,
 ) -> dict[str, Any]:
-    """Who references a parameter, and what it references -- both directions.
-
-    `incoming` lists, per parameter of *node_path* (or the one *parm_name*),
-    the parameters elsewhere whose expressions read it (parmsReferencingThis).
-    `outgoing` lists what this node's expressions and backtick strings read.
-    Node-level `dependents` / `references` round it off, so "what breaks if I
-    rename this control" is one call instead of a HOM script.
-
-    *include_node_level* decides whether the node-level lists are included.
-    None (the default) includes them for a whole-node query and leaves them
-    out when *parm_name* names one parameter: they answer a question about
-    the node, not about that parameter.
-    """
+    """Who references a parameter, and what it references -- both directions."""
 
     if direction not in ('both', 'incoming', 'outgoing'):
         raise ValueError("direction must be 'both', 'incoming' or 'outgoing'.")
@@ -2431,20 +2110,8 @@ def _get_parm_references(
     return result
 
 
-register_command(PluginCommand.PARAMETERS_GET_PARM_REFERENCES)(_get_parm_references)
-
-
-###### Handler: parameters.get_parm_template_tree
-
-
 def _template_tree_entry(pt: hou.ParmTemplate) -> dict[str, Any]:
-    """One template as the Type Properties dialog shows it: folders, ranges,
-    menus, conditionals, callbacks, defaults -- nothing evaluated.
-
-    Built on _template_to_dict, so the tree and get_parameter_schema report a
-    template with the same keys (default_value, is_hidden, min_is_strict,
-    menu_items...) and the same fixes; the tree adds what only the tree needs.
-    """
+    """One template as the Type Properties dialog shows it: folders, ranges,..."""
 
     entry = _template_to_dict(pt)
     with contextlib.suppress(Exception):
@@ -2529,8 +2196,7 @@ def _prune_tree(
 
 
 def _node_type_for_tree(context: str, type_name: str) -> Any:
-    """Resolve *type_name* in *context* the way createNode would, through the
-    same resolver build_network and get_node_card use."""
+    """Resolve *type_name* in *context* the way createNode would, through the same..."""
 
     from houdini_mcp_plugin.commands._helpers import _resolve_node_type
 
@@ -2551,6 +2217,7 @@ def _node_type_for_tree(context: str, type_name: str) -> Any:
     return resolved
 
 
+@register_command(PluginCommand.PARAMETERS_GET_PARM_TEMPLATE_TREE)
 def _get_parm_template_tree(
     node_path: str | None = None,
     type_name: str | None = None,
@@ -2560,14 +2227,7 @@ def _get_parm_template_tree(
     include_tags: bool = False,
     **_: Any,
 ) -> dict[str, Any]:
-    """The whole parameter interface as a tree -- folders, conditionals, menu
-    items, multiparm blocks, callbacks -- for a node or a node type.
-
-    get_hda_info shows the top folders and get_parameter_schema flattens the
-    rest away; neither can answer "what is in the Controls tab, in order,
-    with its Hide When rules". This does. `folder` narrows to one folder by
-    label (or a list of nested labels).
-    """
+    """The whole parameter interface as a tree -- folders, conditionals, menu..."""
 
     if node_path is not None:
         node = _resolve_node(node_path)
@@ -2626,13 +2286,6 @@ def _drop_key(entries: list, key: str) -> None:
         _drop_key(entry.get('children') or [], key)
 
 
-register_command(PluginCommand.PARAMETERS_GET_PARM_TEMPLATE_TREE)(
-    _get_parm_template_tree
-)
-
-
-###### Handler: parameters.promote_vop_parameters
-
 # kind -> hou.vopParmGenType member: what the network editor's input menu offers.
 _PARM_GEN_KINDS = {
     'parameter': 'Parameter',
@@ -2657,19 +2310,31 @@ def _check_promotion(
     if node is None:
         return f'promotions[{index}]: node not found: {item.get("node_path")!r}'
     if not isinstance(node, hou.VopNode):
-        return f'promotions[{index}]: {node.path()} is a {node.type().category().name()} node, not a VOP'
+        return (
+            f'promotions[{index}]: {node.path()} is a '
+            f'{node.type().category().name()} node, not a VOP'
+        )
     wanted = str(item.get('input', ''))
     names = list(node.inputNames())
     if wanted not in names:
         close = get_close_matches(wanted, names, n=3, cutoff=0.5)
         hint = f' Did you mean {close}?' if close else ''
-        return f'promotions[{index}]: {node.path()} has no input {wanted!r}.{hint} Inputs: {names}'
+        return (
+            f'promotions[{index}]: {node.path()} has no input '
+            f'{wanted!r}.{hint} Inputs: {names}'
+        )
     kind = str(item.get('kind', 'parameter'))
     if kind not in _PARM_GEN_KINDS:
-        return f'promotions[{index}]: kind must be one of {sorted(_PARM_GEN_KINDS)}, got {kind!r}'
+        return (
+            f'promotions[{index}]: kind must be one of '
+            f'{sorted(_PARM_GEN_KINDS)}, got {kind!r}'
+        )
     name = item.get('name')
     if name is not None and not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', str(name)):
-        return f'promotions[{index}]: name {name!r} is not a parameter name (letters, digits, _)'
+        return (
+            f'promotions[{index}]: name {name!r} is not a parameter '
+            'name (letters, digits, _)'
+        )
     if (node.path(), wanted) in seen:
         return f'promotions[{index}]: {node.path()} input {wanted!r} is listed twice'
     seen.add((node.path(), wanted))
@@ -2680,8 +2345,10 @@ def _check_promotion(
     )
     if source is not None:
         return (
-            f'promotions[{index}]: {node.path()} input {wanted!r} is already wired from '
-            f'{source.path()}; promoting it would replace that wire. Disconnect it first.'
+            f'promotions[{index}]: {node.path()} input {wanted!r} is already wired '
+            f'from '
+            f'{source.path()}; promoting it would replace that wire. Disconnect it '
+            f'first.'
         )
     # A Parameter VOP whose name the owner already has binds to that parm
     # instead of making one: fit1.srcmax promoted as "destmax" came back
@@ -2693,14 +2360,16 @@ def _check_promotion(
         keys = {('parm', o.path(), parm_name) for o in owners}
         if keys & seen:
             return (
-                f'promotions[{index}]: parm name {parm_name!r} is used twice in this batch '
+                f'promotions[{index}]: parm name {parm_name!r} is used twice in this '
+                f'batch '
                 'for the same network; give a name'
             )
         seen |= keys
         taken = next((o for o in owners if o.parmTuple(parm_name) is not None), None)
         if taken is not None:
             return (
-                f'promotions[{index}]: {taken.path()} already has a parm {parm_name!r}; '
+                f'promotions[{index}]: {taken.path()} already has a parm '
+                f'{parm_name!r}; '
                 'a Parameter VOP of that name would share it. Give another name.'
             )
     return node, wanted, kind
@@ -2719,15 +2388,9 @@ def _vop_owners(node: hou.Node) -> list[hou.Node]:
     return chain
 
 
+@register_command(PluginCommand.PARAMETERS_PROMOTE_VOP_PARAMETERS)
 def _promote_vop_parameters(promotions: list, **_: Any) -> dict[str, Any]:
-    """Promote VOP inputs, as the network editor's Promote Parameter does.
-
-    insertParmGenerator makes the Parameter VOP and wires it in, but the parm
-    appears on the VOP network that owns it (a POP VOP, an Attribute VOP)
-    only once that network is compiled: measured on 22.0.429, a cook did not
-    bring it, vop_forcecompile did. Each owner is compiled once
-    for the whole batch, and the reply says where every parm landed.
-    """
+    """Promote VOP inputs, as the network editor's Promote Parameter does."""
 
     if not isinstance(promotions, list) or not promotions:
         raise ValueError(
@@ -2803,8 +2466,10 @@ def _promote_vop_parameters(promotions: list, **_: Any) -> dict[str, Any]:
         else:
             entry['owner'] = None
             entry['note'] = (
-                f'The Parameter VOP is wired in, but no network above {node.path()} shows '  # ty: ignore[unresolved-attribute]
-                f'a parm {entry["parm_name"]!r}; compile its VOP network (vop_forcecompile).'
+                f'The Parameter VOP is wired in, but no network above '
+                f'{node.path()} shows '  # ty: ignore[unresolved-attribute]
+                f'a parm {entry["parm_name"]!r}; compile its VOP network '
+                f'(vop_forcecompile).'
             )
     return {
         'success': all(
@@ -2815,8 +2480,3 @@ def _promote_vop_parameters(promotions: list, **_: Any) -> dict[str, Any]:
         'promoted': results,
         'compiled': compiled,
     }
-
-
-register_command(PluginCommand.PARAMETERS_PROMOTE_VOP_PARAMETERS)(
-    _promote_vop_parameters
-)

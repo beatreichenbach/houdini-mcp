@@ -1,3 +1,5 @@
+"""Shared context helpers for tool registration."""
+
 from __future__ import annotations
 
 from typing import Any

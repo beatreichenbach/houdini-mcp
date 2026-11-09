@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-# Built-in
 from typing import Any
 
 from ..bridge import NO_TIMEOUT
-
-# Third-party
-# Internal
 from ..types import Value
 from .context import BridgeContext, run_command
 from .registry import tool

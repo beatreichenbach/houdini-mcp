@@ -1,29 +1,19 @@
-"""HDA (Houdini Digital Asset) handlers for FXHoudini-MCP.
-
-Provides tools for managing, inspecting, creating, and editing
-Houdini Digital Assets.
-"""
+"""HDA (Houdini Digital Asset) handlers for Houdini MCP."""
 
 from __future__ import annotations
 
-# Built-in
 import contextlib
 import os
 from difflib import get_close_matches
 from typing import Any
 
-# Third-party
 import hou
 
 from houdini_mcp_plugin.commands.parameters import _expression_error, _template_to_dict
-
-# Internal
 from houdini_mcp_plugin.config import require_inside_project_root
 from houdini_mcp_plugin.dispatcher import register_command
 from houdini_mcp_plugin.errors import as_text, readable_message
 from houdini_mcp_protocol import PluginCommand
-
-###### Helpers
 
 
 def _get_node(node_path: str) -> hou.Node:
@@ -41,17 +31,14 @@ def _get_definition(node: hou.Node) -> hou.HDADefinition:
     definition = node.type().definition()
     if definition is None:
         raise ValueError(
-            f"Node {node.path()} is not an HDA instance. Its type is '{node.type().name()}'."
+            f'Node {node.path()} is not an HDA instance. Its type is '
+            f"'{node.type().name()}'."
         )
     return definition
 
 
 def _is_embedded(definition: hou.HDADefinition) -> bool:
-    """True for a definition stored in the hip file.
-
-    HOM has no isEmbedded() (checked on 22.0.429); an embedded definition
-    answers the literal "Embedded" for its library path.
-    """
+    """True for a definition stored in the hip file."""
 
     return definition.libraryFilePath() == 'Embedded'
 
@@ -131,21 +118,9 @@ def _parm_template_to_dict(pt: Any) -> dict:
     return info
 
 
-###### hda.list_installed_hdas
-
-
+@register_command(PluginCommand.HDA_LIST_INSTALLED_HDAS)
 def list_installed_hdas(filter: str | None = None, limit: int = 100) -> dict:
-    """List installed HDA definitions, grouped by library file.
-
-    Unfiltered this answered every loaded definition, 3,636 on a stock 22.0
-    install with each row repeating its library path: about 150k tokens. It
-    is capped at *limit* definitions, with the total, and each file's path is
-    given once.
-
-    Args:
-        filter: Optional substring filter for HDA type names or file paths.
-        limit: Maximum definitions returned.
-    """
+    """List installed HDA definitions, grouped by library file."""
 
     needle = as_text(filter, 'filter').lower()
     libraries: dict[str, list[dict]] = {}
@@ -187,23 +162,13 @@ def list_installed_hdas(filter: str | None = None, limit: int = 100) -> dict:
     }
 
 
-###### hda.get_hda_info
-
-
+@register_command(PluginCommand.HDA_GET_HDA_INFO)
 def get_hda_info(
     node_path: str | None = None,
     hda_file: str | None = None,
     type_name: str | None = None,
 ) -> dict:
-    """Return detailed information about an HDA definition.
-
-    At least one of node_path, hda_file, or type_name must be provided.
-
-    Args:
-        node_path: Path to an HDA node instance.
-        hda_file: Path to an HDA file on disk.
-        type_name: Fully qualified HDA type name.
-    """
+    """Return detailed information about an HDA definition."""
 
     definition = None
 
@@ -295,16 +260,9 @@ def get_hda_info(
     return info
 
 
-###### hda.install_hda
-
-
+@register_command(PluginCommand.HDA_INSTALL_HDA)
 def install_hda(file_path: str, force: bool = False) -> dict:
-    """Install an HDA file into the current Houdini session.
-
-    Args:
-        file_path: Path to the HDA file to install.
-        force: If True, force reinstall even if already loaded.
-    """
+    """Install an HDA file into the current Houdini session."""
 
     # This guard sat inside the docstring above, where it never ran.
     require_inside_project_root(file_path, 'HDA file')
@@ -342,15 +300,9 @@ def install_hda(file_path: str, force: bool = False) -> dict:
     }
 
 
-###### hda.uninstall_hda
-
-
+@register_command(PluginCommand.HDA_UNINSTALL_HDA)
 def uninstall_hda(file_path: str) -> dict:
-    """Uninstall an HDA file from the current Houdini session.
-
-    Args:
-        file_path: Path to the HDA file to uninstall.
-    """
+    """Uninstall an HDA file from the current Houdini session."""
 
     # hou.hda.uninstallFile raises a bare "The attempted operation failed." for
     # anything wrong, which tells a caller nothing about what to do next. The
@@ -362,7 +314,8 @@ def uninstall_hda(file_path: str) -> dict:
         installed = list(hou.hda.loadedFiles())
     if installed and file_path not in installed:
         raise ValueError(
-            f'HDA file is not installed, so there is nothing to uninstall: {file_path}. '
+            f'HDA file is not installed, so there is nothing to uninstall: '
+            f'{file_path}. '
             f'Installed files: {installed[:6]}'
         )
     try:
@@ -380,15 +333,9 @@ def uninstall_hda(file_path: str) -> dict:
     }
 
 
-###### hda.reload_hda
-
-
+@register_command(PluginCommand.HDA_RELOAD_HDA)
 def reload_hda(file_path: str) -> dict:
-    """Reload an HDA file from disk.
-
-    Args:
-        file_path: Path to the HDA file to reload.
-    """
+    """Reload an HDA file from disk."""
 
     require_inside_project_root(file_path, 'HDA file')
     if not os.path.isfile(file_path):
@@ -410,9 +357,7 @@ def reload_hda(file_path: str) -> dict:
     }
 
 
-###### hda.create_hda
-
-
+@register_command(PluginCommand.HDA_CREATE_HDA)
 def create_hda(
     node_path: str,
     hda_file: str,
@@ -420,15 +365,7 @@ def create_hda(
     label: str,
     version: str = '1.0',
 ) -> dict:
-    """Create a new HDA from an existing subnet node.
-
-    Args:
-        node_path: Path to the subnet node to convert.
-        hda_file: Destination file path for the HDA.
-        type_name: The operator type name for the HDA.
-        label: Human-readable label for the HDA.
-        version: Version string (default "1.0").
-    """
+    """Create a new HDA from an existing subnet node."""
 
     require_inside_project_root(hda_file, 'HDA file')
     node = _get_node(node_path)
@@ -436,7 +373,8 @@ def create_hda(
     # Verify the node is a subnet
     if not node.isSubNetwork():
         raise ValueError(
-            f'Node {node_path} is not a subnet. Only subnet nodes can be converted to HDAs.'
+            f'Node {node_path} is not a subnet. Only subnet nodes can be converted to '
+            f'HDAs.'
         )
 
     # createDigitalAsset defaults to max_num_inputs=0, so a subnet that processes
@@ -472,13 +410,7 @@ def create_hda(
 
 
 def _promote_spares_to_definition(node: hou.Node) -> list[str]:
-    """Move a converted subnet's spare parameters into its asset definition.
-
-    createDigitalAsset leaves them as spares on the one converted node: the
-    definition's interface stayed empty, every new instance came without the
-    knobs, and its internals' ch("../seed") read parameters that were not there.
-    Values, expressions and keyframes on the converted node are kept.
-    """
+    """Move a converted subnet's spare parameters into its asset definition."""
 
     spares = list(node.spareParms())
     if not spares:
@@ -501,7 +433,10 @@ def _promote_spares_to_definition(node: hou.Node) -> list[str]:
             continue
         with contextlib.suppress(Exception):
             if stored[0] == 'expr':
-                parm.setExpression(stored[1], stored[2])  # ty: ignore[index-out-of-bounds]
+                parm.setExpression(
+                    stored[1],
+                    stored[2],  # ty: ignore[index-out-of-bounds]
+                )
             else:
                 parm.set(stored[1])
     return sorted({p.tuple().name() for p in spares})
@@ -523,12 +458,7 @@ _FOLDER_TYPES = {
 
 
 def _menu_pairs(spec: dict) -> tuple:
-    """Normalise menu_items into (values, labels).
-
-    Accepts ["a", "b"] or [["a", "A"], ["b", "B"]] — the second form is what
-    Houdini's ordered menus actually show, and typing it as pairs beats two
-    parallel lists that can silently drift apart.
-    """
+    """Normalise menu_items into (values, labels)."""
 
     items = spec.get('menu_items')
     if not items:
@@ -754,12 +684,7 @@ _NAMING_SCHEMES = {
 
 
 def _naming_scheme(spec: dict, default: Any) -> Any:
-    """The hou.parmNamingScheme a spec asks for (`naming_scheme`), else *default*.
-
-    A 2-component float called `fh_range` is `fh_rangex`/`fh_rangey` under the
-    default XYZW scheme and `fh_range1`/`fh_range2` under Base1 — the kind of
-    thing that otherwise has to be set by hand on every int and float pair.
-    """
+    """The hou.parmNamingScheme a spec asks for (`naming_scheme`), else *default*."""
 
     key = spec.get('naming_scheme')
     if key is None:
@@ -800,8 +725,7 @@ def _script_language(
 
 
 def _common_template_kwargs(spec: dict) -> dict:
-    """Constructor kwargs every value template accepts: hidden, join, help,
-    callback. Conditionals and default expressions are set afterwards."""
+    """Constructor kwargs every value template accepts: hidden, join, help, callback."""
 
     kwargs: dict = {}
     if spec.get('hidden'):
@@ -825,7 +749,9 @@ def _apply_default_expression(template: Any, spec: dict) -> None:
         return
     if not hasattr(template, 'setDefaultExpression'):
         raise ValueError(
-            f'{spec.get("name")!r}: a {template.type().name()} parameter has no default expression.'
+            f'{spec.get("name")!r}: a {template.type().name()} parameter has no '
+            f'default '
+            f'expression.'
         )
     components = template.numComponents()
     if isinstance(expression, (list, tuple)):
@@ -849,11 +775,7 @@ def _apply_default_expression(template: Any, spec: dict) -> None:
 
 
 def _describe_template(template: Any) -> dict:
-    """Read back what Houdini actually stored for one template.
-
-    Built on parameter_handlers._template_to_dict, so the readback carries
-    the default value and hidden state and uses get_parameter_schema's keys.
-    """
+    """Read back what Houdini actually stored for one template."""
 
     info = _template_to_dict(template)
     # Read back so a help text that did not reach the definition shows as
@@ -887,39 +809,14 @@ def _describe_template(template: Any) -> dict:
     return info
 
 
+@register_command(PluginCommand.HDA_SET_HDA_INTERFACE)
 def set_hda_interface(
     node_path: str,
     parameters: list,
     replace: bool = False,
     dry_run: bool = False,
 ) -> dict:
-    """Author an HDA's Type Properties interface — the definition, not spares.
-
-    `create_spare_parameter` adds parameters to a node INSTANCE; they never
-    reach the asset's type. This writes the definition's parameter interface:
-    tab folders, strict ranges, ordered menus and Hide/Disable When.
-
-    Each entry of `parameters` is a dict:
-        name, label, type (int|float|string|toggle|menu|folder),
-        default, min, max, min_strict, max_strict, components,
-        menu_items ([value, label] pairs or plain strings),
-        folder_type (tabs|simple|collapsible|radio) and children for folders,
-        hide_when / disable_when (Houdini conditional expressions), help.
-    create_spare_parameters' spelling (parm_name, parm_type, default_value,
-    min_val, max_val) is accepted too.
-
-    It is edit_hda_interface with one `insert` per entry (after clearing the
-    interface when `replace`): the same checks before anything is written,
-    the same single write and the same readback.
-
-    Args:
-        node_path: An instance of the HDA whose definition is edited.
-        parameters: Interface spec (see above).
-        replace: Start from an empty interface instead of appending to the
-            existing one. Built-in parameters of the node type cannot be
-            removed; Houdini puts them back (`reinstated_by_houdini`).
-        dry_run: Validate and report the plan without writing.
-    """
+    """Author an HDA's Type Properties interface — the definition, not spares."""
 
     _get_node(node_path)  # a bad path is named before a bad spec
     if not isinstance(parameters, (list, tuple)) or not parameters:
@@ -929,8 +826,6 @@ def set_hda_interface(
     result['replaced'] = bool(replace)
     return result
 
-
-###### hda.edit_hda_interface
 
 _COMPONENT_SUFFIXES = {
     'XYZW': ['x', 'y', 'z', 'w'],
@@ -945,14 +840,7 @@ _COMPONENT_SUFFIXES = {
 
 
 def _component_names(template: Any) -> list[str]:
-    """The parameter names a template creates on the node.
-
-    Houdini refuses the whole group when two templates produce the same
-    component name — a 2-float `fh_range` under Base1 makes `fh_range2`, which
-    collides with a template called `fh_range2` — and says only
-    "operation failed" (measured live on 22.0.429). The names are predicted
-    here so the collision is reported by name, before anything is written.
-    """
+    """The parameter names a template creates on the node."""
 
     name = template.name()
     if template.type().name() == 'Folder':
@@ -984,12 +872,7 @@ def _is_multiparm(template: Any) -> bool:
 
 
 def _flatten_templates(entries: Any, into_multiparms: bool = False) -> list:
-    """Every template in *entries*, folders included, depth-first.
-
-    A multiparm block's children (`item#`) are templates, not parameters of
-    the interface: they are left out unless *into_multiparms* (the collision
-    scan wants them, because two blocks with an `item#` both make `item1`).
-    """
+    """Every template in *entries*, folders included, depth-first."""
 
     flat = []
     for entry in entries:
@@ -1016,13 +899,7 @@ def _names_under(template: Any) -> set:
 
 
 def _component_collisions(group: Any) -> list[dict]:
-    """Pairs of templates whose names or component names collide.
-
-    Two templates of one name collide (Houdini: "Parameter name 'size' is
-    invalid or already exists", measured on 22.0.429) — except folders of
-    one tab set, which share a name by design. Multiparm children are
-    scanned too: two blocks with an `item#` both make `item1`.
-    """
+    """Pairs of templates whose names or component names collide."""
 
     owners: dict[str, tuple[str, bool]] = {}
     collisions: list[dict] = []
@@ -1049,12 +926,7 @@ def _folder_labels(target: Any) -> tuple | None:
 
 
 def _find_target(group: Any, target: Any, what: str = 'target') -> Any:
-    """Resolve an op target: a template name, a folder label, or nested labels.
-
-    Names are what `parm_name`s are (`stud_count`, `t`); folders are usually
-    addressed by label ("Controls") because their internal names are
-    Houdini's (`stdswitcher3_2`). Returns (template, kind).
-    """
+    """Resolve an op target: a template name, a folder label, or nested labels."""
 
     labels = _folder_labels(target)
     if labels is not None:
@@ -1348,21 +1220,9 @@ def _apply_op(group: Any, op: dict, index: int, existing: set) -> dict:
     )
 
 
+@register_command(PluginCommand.HDA_EDIT_HDA_INTERFACE)
 def edit_hda_interface(node_path: str, ops: list, dry_run: bool = False) -> dict:
-    """Edit an HDA's existing Type Properties interface — atomically.
-
-    `set_hda_interface` only appends. This takes a list of operations over
-    the definition's ParmTemplateGroup — insert at a position, remove, hide,
-    replace, modify (label / default / default_expression / conditionals /
-    menu / callback / rename), move — applies them all to a copy, checks the
-    result for name and component-name collisions, and writes once. Any
-    failing op leaves the definition untouched.
-
-    Args:
-        node_path: An instance of the HDA whose definition is edited.
-        ops: Operation dicts, applied in order.
-        dry_run: Validate and report the plan without writing.
-    """
+    """Edit an HDA's existing Type Properties interface — atomically."""
 
     _get_node(node_path)  # a bad path is named before bad ops
     if not isinstance(ops, (list, tuple)) or not ops:
@@ -1410,7 +1270,8 @@ def _edit_interface(
                 f'{c["templates"][1]!r}'
                 for c in collisions
             )
-            + '. A 2-component parameter under Base1 makes <name>1/<name>2; under XYZW, '
+            + '. A 2-component parameter under Base1 makes <name>1/<name>2; '
+            + 'under XYZW, '
             '<name>x/<name>y. Nothing was written.'
         )
 
@@ -1440,7 +1301,9 @@ def _edit_interface(
         definition.setParmTemplateGroup(group)
     except Exception as exc:
         raise ValueError(
-            f'Houdini refused the edited interface: {readable_message(exc)}. Nothing was written.'
+            f'Houdini refused the edited interface: {readable_message(exc)}. Nothing '
+            f'was '
+            f'written.'
         ) from exc
 
     stored_group = definition.parmTemplateGroup()
@@ -1559,8 +1422,10 @@ def _edit_interface(
     notes = []
     if result['renamed_by_houdini']:
         notes.append(
-            'Houdini renamed the folder(s) in renamed_by_houdini: a tab folder placed next '
-            'to an existing tab group joins that group and takes its naming series. The '
+            'Houdini renamed the folder(s) in renamed_by_houdini: a tab folder placed '
+            'next '
+            'to an existing tab group joins that group and takes its naming series. '
+            'The '
             'label and the parameters inside keep the names you asked for.'
         )
     if reinstated:
@@ -1595,15 +1460,9 @@ def _instance_expression_errors(node: Any, names: Any) -> list[dict]:
     return failures
 
 
-###### hda.update_hda
-
-
+@register_command(PluginCommand.HDA_UPDATE_HDA)
 def update_hda(node_path: str) -> dict:
-    """Save the current node contents back to its HDA definition.
-
-    Args:
-        node_path: Path to the HDA node instance.
-    """
+    """Save the current node contents back to its HDA definition."""
 
     node = _get_node(node_path)
     definition = _get_definition(node)
@@ -1661,17 +1520,9 @@ def update_hda(node_path: str) -> dict:
     }
 
 
-###### hda.get_hda_sections
-
-
+@register_command(PluginCommand.HDA_GET_HDA_SECTIONS)
 def get_hda_sections(node_path: str) -> dict:
-    """List all sections in an HDA definition.
-
-    Sections include DialogScript, PythonModule, Help, ExtraFileOptions, etc.
-
-    Args:
-        node_path: Path to an HDA node instance.
-    """
+    """List all sections in an HDA definition."""
 
     node = _get_node(node_path)
     definition = _get_definition(node)
@@ -1696,16 +1547,9 @@ def get_hda_sections(node_path: str) -> dict:
     }
 
 
-###### hda.get_hda_section_content
-
-
+@register_command(PluginCommand.HDA_GET_HDA_SECTION_CONTENT)
 def get_hda_section_content(node_path: str, section_name: str) -> dict:
-    """Read the content of a specific section in an HDA definition.
-
-    Args:
-        node_path: Path to an HDA node instance.
-        section_name: Name of the section to read (e.g. "PythonModule", "Help").
-    """
+    """Read the content of a specific section in an HDA definition."""
 
     node = _get_node(node_path)
     definition = _get_definition(node)
@@ -1734,23 +1578,13 @@ def get_hda_section_content(node_path: str, section_name: str) -> dict:
     }
 
 
-###### hda.set_hda_section_content
-
-
+@register_command(PluginCommand.HDA_SET_HDA_SECTION_CONTENT)
 def set_hda_section_content(
     node_path: str,
     section_name: str,
     content: str,
 ) -> dict:
-    """Write content to a specific section in an HDA definition.
-
-    Creates the section if it does not exist.
-
-    Args:
-        node_path: Path to an HDA node instance.
-        section_name: Name of the section to write (e.g. "PythonModule", "Help").
-        content: The content to write to the section.
-    """
+    """Write content to a specific section in an HDA definition."""
 
     node = _get_node(node_path)
     definition = _get_definition(node)
@@ -1772,15 +1606,9 @@ def set_hda_section_content(
     }
 
 
-###### hda.list_hda_versions
-
-
+@register_command(PluginCommand.HDA_LIST_HDA_VERSIONS)
 def list_hda_versions(node_path: str) -> dict:
-    """Every installed definition of a node's HDA type, across versions and files.
-
-    Args:
-        node_path: An HDA instance.
-    """
+    """Every installed definition of a node's HDA type, across versions and files."""
 
     node = _get_node(node_path)
     current = _get_definition(node)
@@ -1841,20 +1669,3 @@ def _version_key(version: Any) -> tuple:
     for piece in str(version).split('.'):
         parts.append((0, int(piece)) if piece.isdigit() else (1, piece))
     return (1, tuple(parts))
-
-
-###### Registration
-
-register_command(PluginCommand.HDA_LIST_HDA_VERSIONS)(list_hda_versions)
-register_command(PluginCommand.HDA_LIST_INSTALLED_HDAS)(list_installed_hdas)
-register_command(PluginCommand.HDA_GET_HDA_INFO)(get_hda_info)
-register_command(PluginCommand.HDA_INSTALL_HDA)(install_hda)
-register_command(PluginCommand.HDA_UNINSTALL_HDA)(uninstall_hda)
-register_command(PluginCommand.HDA_RELOAD_HDA)(reload_hda)
-register_command(PluginCommand.HDA_CREATE_HDA)(create_hda)
-register_command(PluginCommand.HDA_SET_HDA_INTERFACE)(set_hda_interface)
-register_command(PluginCommand.HDA_EDIT_HDA_INTERFACE)(edit_hda_interface)
-register_command(PluginCommand.HDA_UPDATE_HDA)(update_hda)
-register_command(PluginCommand.HDA_GET_HDA_SECTIONS)(get_hda_sections)
-register_command(PluginCommand.HDA_GET_HDA_SECTION_CONTENT)(get_hda_section_content)
-register_command(PluginCommand.HDA_SET_HDA_SECTION_CONTENT)(set_hda_section_content)

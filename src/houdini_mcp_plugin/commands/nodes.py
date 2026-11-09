@@ -1,8 +1,4 @@
-"""Node-level handlers for Houdini MCP.
-
-Provides tools for creating, inspecting, connecting, and manipulating
-nodes within Houdini's node graph.
-"""
+"""Node-level handlers for Houdini MCP."""
 
 from __future__ import annotations
 
@@ -12,10 +8,8 @@ import time
 from difflib import get_close_matches
 from typing import Any
 
-# Third-party
 import hou
 
-# Internal
 from houdini_mcp_plugin import constants
 from houdini_mcp_plugin.callbacks import (
     CallbackError,
@@ -35,8 +29,6 @@ from houdini_mcp_plugin.errors import readable_message
 from houdini_mcp_plugin.serialize import to_jsonable
 from houdini_mcp_plugin.ui import focus_network_editor as _focus_network_editor
 from houdini_mcp_protocol import PluginCommand
-
-###### Helpers
 
 
 def _get_node(node_path: str) -> hou.Node:
@@ -59,23 +51,14 @@ def _node_summary(node: hou.Node) -> dict:
     }
 
 
-###### nodes.create_node
-
-
+@register_command(PluginCommand.NODES_CREATE_NODE)
 def create_node(
     parent_path: str,
     node_type: str,
     name: str | None = None,
     position: list | None = None,
 ) -> dict:
-    """Create a new node inside the given parent network.
-
-    Args:
-        parent_path: Path to the parent network (e.g. "/obj" or "/obj/geo1").
-        node_type: Type name (e.g. "geo", "box", "grid", "merge").
-        name: Optional explicit node name.
-        position: Optional [x, y] position in the network editor.
-    """
+    """Create a new node inside the given parent network."""
 
     parent = _get_node(parent_path)
     if name:
@@ -85,7 +68,8 @@ def create_node(
         node = parent.createNode(node_type, node_name=name)
     except hou.OperationFailed as e:
         raise ValueError(
-            f"Failed to create node of type '{node_type}' inside '{parent_path}': {readable_message(e)}"
+            f"Failed to create node of type '{node_type}' inside '{parent_path}': "
+            f'{readable_message(e)}'
         ) from e
 
     if position is not None and len(position) >= 2:
@@ -112,19 +96,9 @@ def create_node(
     return result
 
 
-###### nodes.delete_node
-
-
+@register_command(PluginCommand.NODES_DELETE_NODE)
 def delete_node(node_path: str | None = None, node_paths: list | None = None) -> dict:
-    """Delete a node from the scene, or several in one call.
-
-    Args:
-        node_path: Absolute path to the node to delete.
-        node_paths: Several nodes at once, instead of node_path. Taking 16
-            copied networks apart cost 73 delete_node calls. Every path is
-            checked before anything is deleted; a node inside another one
-            on the list goes with it.
-    """
+    """Delete a node from the scene, or several in one call."""
 
     if (node_path is None) == (node_paths is None):
         raise ValueError('Pass node_path or node_paths, not both and not neither.')
@@ -145,11 +119,7 @@ def delete_node(node_path: str | None = None, node_paths: list | None = None) ->
 
 
 def _delete_nodes(node_paths: list) -> dict:
-    """delete_node over a list: every path resolved first, then deleted.
-
-    The dispatcher wraps the command in one undo group, so one undo brings
-    them all back.
-    """
+    """delete_node over a list: every path resolved first, then deleted."""
 
     if not isinstance(node_paths, (list, tuple)) or not node_paths:
         raise ValueError('node_paths must be a non-empty list of node paths.')
@@ -192,17 +162,8 @@ def _delete_nodes(node_paths: list) -> dict:
     return reply
 
 
-###### nodes.rename_node
-
-
 def _refuse_taken_name(parent: Any, name: str, node: Any = None) -> None:
-    """Raise when ``name`` belongs to another child of ``parent``.
-
-    Houdini's own answer to a clash is a silent "name1", which rename, copy and
-    create then reported as success under a name the caller never asked for,
-    so every later call on the requested name hit the other node. build_network
-    already refused; this makes the single-node tools agree.
-    """
+    """Raise when ``name`` belongs to another child of ``parent``."""
 
     taken = parent.node(name)
     if taken is not None and taken != node:
@@ -212,13 +173,9 @@ def _refuse_taken_name(parent: Any, name: str, node: Any = None) -> None:
         )
 
 
+@register_command(PluginCommand.NODES_RENAME_NODE)
 def rename_node(node_path: str, new_name: str) -> dict:
-    """Rename an existing node.
-
-    Args:
-        node_path: Absolute path to the node.
-        new_name: Desired new name for the node.
-    """
+    """Rename an existing node."""
 
     node = _get_node(node_path)
     old_name = node.name()
@@ -233,29 +190,14 @@ def rename_node(node_path: str, new_name: str) -> dict:
     }
 
 
-###### nodes.copy_node
-
-
+@register_command(PluginCommand.NODES_COPY_NODE)
 def copy_node(
     node_path: str,
     dest_parent: str | None = None,
     new_name: str | None = None,
     offset: list | None = None,
 ) -> dict:
-    """Copy a node, optionally into a different parent network.
-
-    ``hou.copyNodesTo`` keeps the original's position, so a copy made in the
-    same network lands exactly on top of its original and hides it. There
-    the copy is moved one node width (plus a unit of gap) to the right; in
-    another network it keeps the original's position. ``offset`` overrides
-    both, and ``position`` in the reply says where the copy is.
-
-    Args:
-        node_path: Path to the source node.
-        dest_parent: Destination parent path. If None, copies within the same parent.
-        new_name: Optional name for the copied node.
-        offset: Optional [dx, dy] from the original's position.
-    """
+    """Copy a node, optionally into a different parent network."""
 
     node = _get_node(node_path)
     parent = _get_node(dest_parent) if dest_parent else node.parent()
@@ -309,12 +251,7 @@ def copy_node(
 
 
 def _wires(node: hou.Node) -> dict[int, dict[str, Any]]:
-    """Each input of *node* by index: {"from": path}, or {"indirect_input": n}.
-
-    inputConnections(), not inputs(): measured on 22.0, a wire from a
-    subnet's input connector read in inputs() as the node feeding the subnet
-    from outside, a node the copy is not wired to.
-    """
+    """Each input of *node* by index: {"from": path}, or {"indirect_input": n}."""
 
     wires: dict[int, dict[str, Any]] = {}
     for conn in node.inputConnections():
@@ -326,16 +263,9 @@ def _wires(node: hou.Node) -> dict[int, dict[str, Any]]:
     return wires
 
 
-###### nodes.move_node
-
-
+@register_command(PluginCommand.NODES_MOVE_NODE)
 def move_node(node_path: str, dest_parent: str) -> dict:
-    """Move a node to a different parent network.
-
-    Args:
-        node_path: Path to the node to move.
-        dest_parent: Destination parent network path.
-    """
+    """Move a node to a different parent network."""
 
     node = _get_node(node_path)
     dest = _get_node(dest_parent)
@@ -350,9 +280,6 @@ def move_node(node_path: str, dest_parent: str) -> dict:
     }
 
 
-###### nodes.get_node_info
-
-
 # Parameter kinds that carry no value: pressing, grouping, decorating.
 _VALUELESS_PARM_TYPES = frozenset(
     {'Button', 'Folder', 'FolderSet', 'Separator', 'Label'}
@@ -360,13 +287,7 @@ _VALUELESS_PARM_TYPES = frozenset(
 
 
 def _component_default(parm: hou.Parm) -> Any:
-    """The default of *parm* itself, not of the tuple it belongs to.
-
-    ``parmTemplate().defaultValue()`` describes the whole tuple, so ``ty`` on
-    an xform used to be compared with ``(0.0, 0.0, 0.0)`` and every component
-    of every tuple came back "non-default" (34 entries on a bare xform with
-    one edit).
-    """
+    """The default of *parm* itself, not of the tuple it belongs to."""
 
     default = parm.parmTemplate().defaultValue()
     if isinstance(default, (tuple, list)):
@@ -381,12 +302,7 @@ def _component_default(parm: hou.Parm) -> Any:
 
 
 def _is_at_default(parm: hou.Parm, value: Any, default: Any) -> bool:
-    """Whether *parm* still holds its default.
-
-    Houdini's own answer (``isAtDefault``, which also sees an expression as a
-    change) is preferred; a component comparison is the fallback for
-    anything that cannot answer.
-    """
+    """Whether *parm* still holds its default."""
 
     try:
         answer = parm.isAtDefault()
@@ -408,7 +324,8 @@ def _is_at_default(parm: hou.Parm, value: Any, default: Any) -> bool:
 # for a pivot at the centroid, $BBX, $SIZEX, $XMIN, $NPT, $PT, a Group SOP's
 # factory $N), and `@attr` references (a Ray SOP's factory `@N.x`).
 _COOK_LOCAL = re.compile(
-    r'\$(?:CE[XYZ]|GC[XYZ]|BB[XYZ]|SIZE[XYZ]|[XYZ](?:MIN|MAX)|NPT|NPRIM|PT|PR|VTX|NVTX|NGRP|N)\b'
+    r'\$(?:CE[XYZ]|GC[XYZ]|BB[XYZ]|SIZE[XYZ]|[XYZ](?:MIN|MAX)|NPT|NPRIM|PT|PR|VTX|'
+    r'NVTX|NGRP|N)\b'
     r'|(?<![\w@])@[A-Za-z_]\w*'
 )
 
@@ -431,13 +348,7 @@ def _cook_local_expression(parm: hou.Parm) -> str | None:
 
 
 def _non_default_parms(node: hou.Node, parms: list[hou.Parm]) -> list[dict[str, Any]]:
-    """The parameters of *node* that differ from their defaults, as summaries.
-
-    Buttons, folders, separators and labels carry no value and are skipped.
-    An expression with a SOP local variable is named, not evaluated: a pivot
-    at ``$CEX $CEY $CEZ`` read as ``px = 0.0`` on a healthy Transform, and the
-    evaluation put an "Unable to evaluate expression" error on it.
-    """
+    """The parameters of *node* that differ from their defaults, as summaries."""
 
     summary: list[dict[str, Any]] = []
     for parm in parms:
@@ -495,11 +406,7 @@ def _non_default_parms(node: hou.Node, parms: list[hou.Parm]) -> list[dict[str, 
 def _name_input(
     entry: dict, node: Any, source: Any, output_index: int, named_inputs: bool
 ) -> None:
-    """Name the wire into *entry*'s input where an index alone is ambiguous.
-
-    output_index / output_name when the source has more than one output;
-    input_name where inputs are named by design (VOP, Copernicus).
-    """
+    """Name the wire into *entry*'s input where an index alone is ambiguous."""
 
     with contextlib.suppress(Exception):
         names = list(source.outputNames())
@@ -514,15 +421,9 @@ def _name_input(
                 entry['input_name'] = names[entry['index']]
 
 
+@register_command(PluginCommand.NODES_GET_NODE_INFO)
 def get_node_info(node_path: str) -> dict:
-    """Return comprehensive information about a node.
-
-    Includes type, parameters summary, inputs, outputs, flags,
-    errors, warnings, and cook time.
-
-    Args:
-        node_path: Absolute path to the node.
-    """
+    """Return comprehensive information about a node."""
 
     node = _get_node(node_path)
 
@@ -639,27 +540,14 @@ def get_node_info(node_path: str) -> dict:
     return info
 
 
-###### nodes.list_children
-
-
+@register_command(PluginCommand.NODES_LIST_CHILDREN)
 def list_children(
     parent_path: str,
     recursive: bool = False,
     filter_type: str | None = None,
     include_locked_assets: bool = False,
 ) -> dict:
-    """List children of a network node.
-
-    Args:
-        parent_path: Path to the parent network.
-        recursive: If True, list all descendants, not just direct children.
-        filter_type: Optional node type name to filter by (e.g. "box", "merge").
-        include_locked_assets: With *recursive*, also descend into locked
-            assets. Off by default: a POP network's solver assets filled the
-            500-node cap with their own insides, and the user's nodes were
-            lost among them. A locked asset is still listed, flagged
-            ``locked_asset``.
-    """
+    """List children of a network node."""
 
     parent = _get_node(parent_path)
     # Listing a locked asset's insides is asking for them: there, every
@@ -703,23 +591,14 @@ def list_children(
     }
 
 
-###### nodes.find_nodes
-
-
+@register_command(PluginCommand.NODES_FIND_NODES)
 def find_nodes(
     pattern: str | None = None,
     node_type: str | None = None,
     context: str | None = None,
     inside: str = '/',
 ) -> dict:
-    """Search for nodes by name pattern and/or type.
-
-    Args:
-        pattern: Glob pattern for node names (e.g. "box*", "*merge*").
-        node_type: Filter by node type name (e.g. "box", "null").
-        context: Filter by node category name (e.g. "Sop", "Object").
-        inside: Root path to search within.
-    """
+    """Search for nodes by name pattern and/or type."""
 
     root = _get_node(inside)
     all_nodes = root.allSubChildren()
@@ -753,31 +632,22 @@ def find_nodes(
     }
 
 
-###### nodes.list_node_types
-
-
+@register_command(PluginCommand.NODES_LIST_NODE_TYPES)
 def list_node_types(
     context: str,
     filter: str | None = None,
     limit: int = 200,
     **_: Any,
 ) -> dict:
-    """List available node types in a given context category.
-
-    Args:
-        context: Category name, e.g. "Sop", "Lop", "Dop", "Top",
-                 "Cop2", "Object", "Driver".
-        filter: Optional substring to filter by type name or label
-                (case-insensitive). Use this to avoid dumping all types.
-        limit: Maximum number of types to return (default 200).
-    """
+    """List available node types in a given context category."""
 
     categories = hou.nodeTypeCategories()
     category = categories.get(context)
     if category is None:
         available = sorted(categories.keys())
         raise ValueError(
-            f"Unknown node type category: '{context}'. Available categories: {available}"
+            f"Unknown node type category: '{context}'. Available categories: "
+            f'{available}'
         )
 
     types_dict = category.nodeTypes()
@@ -813,15 +683,8 @@ def list_node_types(
     }
 
 
-###### nodes.connect_nodes
-
-
 def _input_table(node: hou.Node) -> list[dict[str, Any]]:
-    """A node's input connectors in order: index, name, label, data type.
-
-    Each read is guarded on its own, so a type whose labels or data types
-    cannot be read still lists its names.
-    """
+    """A node's input connectors in order: index, name, label, data type."""
 
     names: list[str] = []
     labels: list[str] = []
@@ -849,12 +712,7 @@ _NUMBERED = re.compile(r'(.*?)(\d+)')
 def _variadic_index(
     inputs: list[dict[str, Any]], name: str, max_inputs: int
 ) -> int | None:
-    """Index of `input3` on a node that grows inputs as they are wired.
-
-    A merge or switch lists only the connectors it has now (a fresh merge
-    shows `input1` though it takes 9999), so a name further along the same
-    numbered series is still a real connector.
-    """
+    """Index of `input3` on a node that grows inputs as they are wired."""
 
     if not inputs or max_inputs <= len(inputs):
         return None
@@ -872,10 +730,7 @@ def _variadic_index(
 def _find_input(
     inputs: list[dict[str, Any]], input_name: str, max_inputs: int = 0
 ) -> int:
-    """Index of the input called *input_name*: names first, then labels, then
-    the rest of a numbered variadic series. The one rule build_network's dry
-    run and every wiring verb use, so validation and wiring cannot disagree.
-    """
+    """Index of the input called *input_name*: names first, then labels, then the..."""
 
     for entry in inputs:
         if entry.get('name') == input_name:
@@ -900,11 +755,7 @@ def _find_input(
 
 
 def _find_output(outputs: list[dict[str, Any]], output_name: str) -> int:
-    """Index of the output called *output_name*: names first, then labels.
-
-    The output-side twin of _find_input, used by build_network's dry run and
-    by its wiring, so the two cannot disagree about what a name means.
-    """
+    """Index of the output called *output_name*: names first, then labels."""
 
     for key in ('name', 'label'):
         for entry in outputs:
@@ -945,11 +796,7 @@ def _output_index(source: hou.Node, source_output: int | str) -> int:
 def _resolve_input_index(
     dest: hou.Node, input_index: int, input_name: str | None
 ) -> int:
-    """Turn an input name (VOP connector such as "base_color") into its index.
-
-    VOP shaders have dozens of inputs and their order is not stable across
-    versions; the name is what the node card shows. Indices still work.
-    """
+    """Turn an input name (VOP connector such as "base_color") into its index."""
 
     if not input_name:
         return int(input_index)
@@ -965,12 +812,7 @@ def _resolve_input_index(
 def _indirect_input_item(
     subnet: hou.Node, indirect: Any, connectors: list | None = None
 ) -> Any:
-    """Input connector *indirect* of *subnet*, or ValueError saying why not.
-
-    The one rule for connect_nodes, connect_nodes_batch and build_network.
-    *connectors* is the subnet's indirectInputs() when the caller already
-    listed them.
-    """
+    """Input connector *indirect* of *subnet*, or ValueError saying why not."""
 
     if isinstance(indirect, float) and indirect.is_integer():
         indirect = int(indirect)
@@ -981,7 +823,8 @@ def _indirect_input_item(
             connectors = list(subnet.indirectInputs())
         except Exception as exc:
             raise ValueError(
-                f'{subnet.path()} has no input connectors to wire from: {readable_message(exc)}'
+                f'{subnet.path()} has no input connectors to wire from: '
+                f'{readable_message(exc)}'
             ) from exc
     if not connectors:
         # Not a subnet (a Box answers an empty tuple on 22.0 rather than the
@@ -992,7 +835,8 @@ def _indirect_input_item(
         )
     if not 0 <= indirect < len(connectors):
         raise ValueError(
-            f'{subnet.path()} has {len(connectors)} input connector(s); asked for #{indirect}.'
+            f'{subnet.path()} has {len(connectors)} input connector(s); asked for '
+            f'#{indirect}.'
         )
     return connectors[indirect]
 
@@ -1000,13 +844,7 @@ def _indirect_input_item(
 def _resolve_source(
     source_path: str, indirect_input: Any, dest: hou.Node, output_index: int
 ) -> Any:
-    """The item to wire from: a node, or one of a subnet's indirect inputs.
-
-    A subnet's input connectors are not nodes inside it — they are
-    `SubnetIndirectInput` items with no path of their own, so the first node
-    of a chain built inside a subnet could not be fed from the outside by any
-    verb. `indirect_input=n` names connector n of the subnet at `source_path`.
-    """
+    """The item to wire from: a node, or one of a subnet's indirect inputs."""
 
     node = _get_node(source_path)
     if indirect_input is None:
@@ -1019,11 +857,13 @@ def _resolve_source(
         )
     if int(output_index) != 0:
         raise ValueError(
-            f'a subnet input connector has one output; output_index must be 0, got {output_index}.'
+            f'a subnet input connector has one output; output_index must be 0, got '
+            f'{output_index}.'
         )
     return item
 
 
+@register_command(PluginCommand.NODES_CONNECT_NODES)
 def connect_nodes(
     source_path: str,
     dest_path: str,
@@ -1032,18 +872,7 @@ def connect_nodes(
     input_name: str | None = None,
     indirect_input: int | None = None,
 ) -> dict:
-    """Wire two nodes together.
-
-    Args:
-        source_path: Path to the source (upstream) node — or, with
-            `indirect_input`, the subnet whose input connector is the source.
-        dest_path: Path to the destination (downstream) node.
-        output_index: Output connector index on the source node.
-        input_index: Input connector index on the destination node.
-        input_name: Input connector name or label; wins over input_index.
-        indirect_input: Index of the subnet input connector at `source_path`
-            to wire from (the node at dest_path must live inside that subnet).
-    """
+    """Wire two nodes together."""
 
     dest = _get_node(dest_path)
     source = _resolve_source(source_path, indirect_input, dest, output_index)
@@ -1068,9 +897,6 @@ def connect_nodes(
     return result
 
 
-###### nodes.change_node_type
-
-
 def _non_default_parm_names(node: hou.Node) -> set[str]:
     names = set()
     for parm in node.parms():
@@ -1080,6 +906,7 @@ def _non_default_parm_names(node: hou.Node) -> set[str]:
     return names
 
 
+@register_command(PluginCommand.NODES_CHANGE_NODE_TYPE)
 def change_node_type(
     node_path: str,
     new_type: str,
@@ -1087,26 +914,7 @@ def change_node_type(
     keep_parms: bool = True,
     keep_network_contents: bool = True,
 ) -> dict:
-    """Swap a node for another type in place — wires, name, position, flags
-    and (by default) parameter values and network contents kept.
-
-    This is the Type Properties "change type" / asset "upgrade to version"
-    gesture: an HDA instance moved to an installed newer version keeps its
-    edits. Every value that was set before the swap and is not set after it
-    is named in `parms_dropped` (no home on the new type) or `parms_reset`
-    (back at its default), measured on the node rather than inferred from
-    the flags.
-
-    Args:
-        node_path: Node to change.
-        new_type: Type name in the node's own category (unversioned names
-            map to the preferred version, as create_node does).
-        keep_name: Keep the node's name (default True).
-        keep_parms: Carry parameter values over by name (default True).
-        keep_network_contents: Keep the children of a subnet/asset (default
-            True). False resets an asset to its definition's contents, also
-            when the node already is of the requested type.
-    """
+    """Swap a node for another type in place — wires, name, position, flags and..."""
 
     from houdini_mcp_plugin.commands._helpers import _resolve_node_type
 
@@ -1176,12 +984,11 @@ def change_node_type(
     return result
 
 
-###### nodes.press_button
-
 # The value types HOM's pressButton accepts in its arguments dict.
 _BUTTON_ARGUMENT_TYPES = (bool, int, float, str)
 
 
+@register_command(PluginCommand.NODES_PRESS_BUTTON)
 def press_button(
     node_path: str,
     parm_name: str,
@@ -1189,36 +996,7 @@ def press_button(
     cook: bool = False,
     action: bool = False,
 ) -> dict:
-    """Press a button parameter and report what the node says afterwards.
-
-    Runs the button's callback exactly as a click would ("Stash Input",
-    "Reload Geometry", an asset's own Build button). The call holds until
-    the callback returns, with no deadline; a callback that opens a dialog
-    of its own holds Houdini's main thread, and with it this bridge, until
-    the dialog is closed. A Python callback that RAISES does not: it runs
-    here rather than through pressButton(), whose modal "Error running
-    callback" window would hold the bridge, and its error is the reply.
-    `callback_route` says which way the press went.
-
-    A press usually only dirties the node: `errors` and `warnings` are from
-    its last cook, which may predate the press. `cook=True` cooks the node
-    after the press so they describe the result; without it `needs_cook`
-    says whether they are stale (a cook that failed leaves it True too).
-
-    A parameter that is not a button and has no callback is refused:
-    pressButton() on it does nothing. The small action button beside a
-    field ("Create spare parameters" on a VEXpression) is the parm's
-    ``script_action`` tag, not its callback; ``action=True`` runs it.
-
-    Args:
-        node_path: Node that owns the button.
-        parm_name: The button parameter's name.
-        arguments: Optional kwargs handed to the callback script; values
-            must be int, bool, float or str.
-        cook: Cook the node after the press (default False).
-        action: Run the parm's action button (``script_action``) instead of
-            its callback (default False).
-    """
+    """Press a button parameter and report what the node says afterwards."""
 
     node = _get_node(node_path)
     parm = node.parm(parm_name)
@@ -1230,7 +1008,9 @@ def press_button(
         ]
         hint = f' Did you mean: {close}?' if close else ''
         raise ValueError(
-            f"{node.path()} has no parameter '{parm_name}'.{hint} Buttons on this node: {buttons}"
+            f"{node.path()} has no parameter '{parm_name}'.{hint} Buttons on this "
+            f'node: '
+            f'{buttons}'
         )
     for key, value in (arguments or {}).items():
         if not isinstance(value, _BUTTON_ARGUMENT_TYPES):
@@ -1275,7 +1055,7 @@ def press_button(
             # opens Houdini's modal error window and holds the main thread.
             route = press(parm, dict(arguments) if arguments else None)
     except CallbackError as exc:
-        raise ValueError(str(exc)) from exc
+        raise ValueError(f'Button callback failed: {exc}') from exc
     except Exception as exc:
         raise ValueError(
             f'Callback of {node.path()}/{parm_name} failed: {readable_message(exc)}'
@@ -1319,21 +1099,11 @@ def press_button(
     return result
 
 
-###### nodes.connect_nodes_batch
-
-
+@register_command(PluginCommand.NODES_CONNECT_NODES_BATCH)
 def connect_nodes_batch(
     connections: list,
 ) -> dict:
-    """Wire multiple node pairs in a single call.
-
-    Args:
-        connections: List of dicts, each with keys:
-            source_path, dest_path, output_index (default 0), input_index (default 0),
-            input_name (optional; a connector name or label, wins over input_index),
-            indirect_input (optional; source_path is then a subnet and this is the
-            index of its input connector to wire from).
-    """
+    """Wire multiple node pairs in a single call."""
 
     results = []
     errors = []
@@ -1385,21 +1155,13 @@ def connect_nodes_batch(
     return reply
 
 
-###### nodes.disconnect_node
-
-
+@register_command(PluginCommand.NODES_DISCONNECT_NODE)
 def disconnect_node(
     node_path: str,
     input_index: int | None = None,
     disconnect_all: bool = False,
 ) -> dict:
-    """Disconnect one or all inputs of a node.
-
-    Args:
-        node_path: Path to the node whose inputs to disconnect.
-        input_index: Specific input index to disconnect. Ignored if disconnect_all is True.
-        disconnect_all: If True, disconnect all inputs.
-    """
+    """Disconnect one or all inputs of a node."""
 
     node = _get_node(node_path)
     disconnected = []
@@ -1434,17 +1196,9 @@ def disconnect_node(
     return reply
 
 
-###### nodes.reorder_inputs
-
-
+@register_command(PluginCommand.NODES_REORDER_INPUTS)
 def reorder_inputs(node_path: str, new_order: list) -> dict:
-    """Reorder the input connections of a node.
-
-    Args:
-        node_path: Path to the node.
-        new_order: List of integers representing the new input ordering.
-                   For example, [1, 0] swaps the first two inputs.
-    """
+    """Reorder the input connections of a node."""
 
     node = _get_node(node_path)
     # Every wire with the item it comes from and that item's output: a
@@ -1488,9 +1242,7 @@ def reorder_inputs(node_path: str, new_order: list) -> dict:
     return reply
 
 
-###### nodes.set_node_flags
-
-
+@register_command(PluginCommand.NODES_SET_NODE_FLAGS)
 def set_node_flags(
     node_path: str,
     display: bool | None = None,
@@ -1499,16 +1251,7 @@ def set_node_flags(
     template: bool | None = None,
     lock: bool | None = None,
 ) -> dict:
-    """Set one or more flags on a node.
-
-    Args:
-        node_path: Path to the node.
-        display: Set the display flag.
-        render: Set the render flag.
-        bypass: Set the bypass flag.
-        template: Set the template flag.
-        lock: Set the hard-lock flag.
-    """
+    """Set one or more flags on a node."""
 
     node = _get_node(node_path)
     requested = {
@@ -1566,16 +1309,9 @@ _FLAG_ACCESSORS = {
 }
 
 
-###### nodes.layout_children
-
-
+@register_command(PluginCommand.NODES_LAYOUT_CHILDREN)
 def layout_children(parent_path: str, spacing: float | None = None) -> dict:
-    """Auto-layout the children of a network node.
-
-    Args:
-        parent_path: Path to the parent network.
-        spacing: Optional spacing multiplier between nodes.
-    """
+    """Auto-layout the children of a network node."""
 
     # Resolve first, so a bad path is named even when layout is disabled.
     parent = _get_node(parent_path)
@@ -1601,17 +1337,9 @@ def layout_children(parent_path: str, spacing: float | None = None) -> dict:
     }
 
 
-###### nodes.set_node_position
-
-
+@register_command(PluginCommand.NODES_SET_NODE_POSITION)
 def set_node_position(node_path: str, x: float, y: float) -> dict:
-    """Set the position of a node in the network editor.
-
-    Args:
-        node_path: Path to the node.
-        x: Horizontal position.
-        y: Vertical position.
-    """
+    """Set the position of a node in the network editor."""
 
     node = _get_node(node_path)
     node.setPosition(hou.Vector2(x, y))
@@ -1623,18 +1351,9 @@ def set_node_position(node_path: str, x: float, y: float) -> dict:
     }
 
 
-###### nodes.set_node_color
-
-
+@register_command(PluginCommand.NODES_SET_NODE_COLOR)
 def set_node_color(node_path: str, r: float, g: float, b: float) -> dict:
-    """Set the color of a node in the network editor.
-
-    Args:
-        node_path: Path to the node.
-        r: Red component (0.0 to 1.0).
-        g: Green component (0.0 to 1.0).
-        b: Blue component (0.0 to 1.0).
-    """
+    """Set the color of a node in the network editor."""
 
     node = _get_node(node_path)
     color = hou.Color((r, g, b))
@@ -1647,23 +1366,14 @@ def set_node_color(node_path: str, r: float, g: float, b: float) -> dict:
     }
 
 
-###### nodes.create_network_box
-
-
+@register_command(PluginCommand.NODES_CREATE_NETWORK_BOX)
 def create_network_box(
     parent_path: str,
     node_paths: list[str] | None = None,
     comment: str | None = None,
     color: list[float] | None = None,
 ) -> dict:
-    """Draw a network box around nodes, so a built graph explains itself.
-
-    Args:
-        parent_path: Network the box lives in.
-        node_paths: Nodes to put inside; the box shrinks to fit them.
-        comment: Title shown on the box.
-        color: RGB in 0..1.
-    """
+    """Draw a network box around nodes, so a built graph explains itself."""
 
     parent = _get_node(parent_path)
     box = parent.createNetworkBox()
@@ -1688,9 +1398,7 @@ def create_network_box(
     }
 
 
-###### nodes.create_sticky_note
-
-
+@register_command(PluginCommand.NODES_CREATE_STICKY_NOTE)
 def create_sticky_note(
     parent_path: str,
     text: str,
@@ -1698,15 +1406,7 @@ def create_sticky_note(
     size: list[float] | None = None,
     color: list[float] | None = None,
 ) -> dict:
-    """Leave a note in a network.
-
-    Args:
-        parent_path: Network the note lives in.
-        text: Note text.
-        position: [x, y] in network editor units.
-        size: [w, h] in network editor units.
-        color: RGB in 0..1.
-    """
+    """Leave a note in a network."""
 
     parent = _get_node(parent_path)
     note = parent.createStickyNote()
@@ -1725,11 +1425,10 @@ def create_sticky_note(
     }
 
 
-###### nodes.set_object_transform
-
 _XFORM_PARMS = {'translate': 't', 'rotate': 'r', 'scale': 's'}
 
 
+@register_command(PluginCommand.NODES_SET_OBJECT_TRANSFORM)
 def set_object_transform(
     node_path: str,
     translate: list[float] | None = None,
@@ -1737,20 +1436,13 @@ def set_object_transform(
     scale: list[float] | None = None,
     parent: str | None = None,
 ) -> dict:
-    """Set an object's transform parameters and/or parent in one call.
-
-    Args:
-        node_path: Object-level node (/obj/...).
-        translate: [tx, ty, tz].
-        rotate: [rx, ry, rz] in degrees.
-        scale: [sx, sy, sz].
-        parent: Path of the object to parent under, or "" to unparent.
-    """
+    """Set an object's transform parameters and/or parent in one call."""
 
     node = _get_node(node_path)
     if node.type().category().name() != 'Object':
         raise ValueError(
-            f'{node_path} is a {node.type().category().name()} node; transforms live on '
+            f'{node_path} is a {node.type().category().name()} node; transforms live '
+            f'on '
             f'object-level nodes under /obj.'
         )
     applied: dict = {}
@@ -1776,29 +1468,3 @@ def set_object_transform(
     if not applied:
         raise ValueError('Nothing to set: give translate, rotate, scale or parent.')
     return {'success': True, 'node_path': node.path(), **applied}
-
-
-###### Registration
-
-register_command(PluginCommand.NODES_CREATE_NETWORK_BOX)(create_network_box)
-register_command(PluginCommand.NODES_CREATE_STICKY_NOTE)(create_sticky_note)
-register_command(PluginCommand.NODES_SET_OBJECT_TRANSFORM)(set_object_transform)
-register_command(PluginCommand.NODES_CREATE_NODE)(create_node)
-register_command(PluginCommand.NODES_DELETE_NODE)(delete_node)
-register_command(PluginCommand.NODES_RENAME_NODE)(rename_node)
-register_command(PluginCommand.NODES_COPY_NODE)(copy_node)
-register_command(PluginCommand.NODES_MOVE_NODE)(move_node)
-register_command(PluginCommand.NODES_GET_NODE_INFO)(get_node_info)
-register_command(PluginCommand.NODES_LIST_CHILDREN)(list_children)
-register_command(PluginCommand.NODES_FIND_NODES)(find_nodes)
-register_command(PluginCommand.NODES_LIST_NODE_TYPES)(list_node_types)
-register_command(PluginCommand.NODES_CONNECT_NODES)(connect_nodes)
-register_command(PluginCommand.NODES_CHANGE_NODE_TYPE)(change_node_type)
-register_command(PluginCommand.NODES_PRESS_BUTTON)(press_button)
-register_command(PluginCommand.NODES_CONNECT_NODES_BATCH)(connect_nodes_batch)
-register_command(PluginCommand.NODES_DISCONNECT_NODE)(disconnect_node)
-register_command(PluginCommand.NODES_REORDER_INPUTS)(reorder_inputs)
-register_command(PluginCommand.NODES_SET_NODE_FLAGS)(set_node_flags)
-register_command(PluginCommand.NODES_LAYOUT_CHILDREN)(layout_children)
-register_command(PluginCommand.NODES_SET_NODE_POSITION)(set_node_position)
-register_command(PluginCommand.NODES_SET_NODE_COLOR)(set_node_color)

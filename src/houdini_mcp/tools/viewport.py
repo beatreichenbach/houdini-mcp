@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-# Built-in
 import asyncio
 import os
 import tempfile
 import time
 from typing import Any
 
-# Third-party
-# Internal
 from .context import BridgeContext, run_command
 from .registry import tool
 

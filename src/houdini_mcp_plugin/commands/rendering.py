@@ -1,14 +1,8 @@
-"""Rendering handlers for FXHoudini-MCP.
-
-Provides tools for viewport capture, render node management, and rendering
-operations including Karma, OpenGL, and other Houdini renderers.
-"""
+"""Rendering handlers for Houdini MCP."""
 
 from __future__ import annotations
 
 import contextlib
-
-# Built-in
 import logging
 import os
 import subprocess
@@ -16,10 +10,8 @@ import tempfile
 import time
 from typing import Any
 
-# Third-party
 import hou
 
-# Internal
 from houdini_mcp_plugin.callbacks import CallbackError, press
 from houdini_mcp_plugin.commands.viewport import _no_mplay
 from houdini_mcp_plugin.config import place_new_node
@@ -44,16 +36,8 @@ from houdini_mcp_protocol import PluginCommand
 logger = logging.getLogger(__name__)
 
 
-###### rendering.render_viewport
-
-
 def _find_flipbook_output(output_path: str, frame: float) -> str:
-    """Find the actual output file after flipbook, handling frame number insertion.
-
-    Houdini's flipbook may insert a frame number into the filename
-    (e.g. "output.0001.png" instead of "output.png") even for single-frame
-    captures. This helper locates the actual file and optionally renames it.
-    """
+    """Find the actual output file after flipbook, handling frame number insertion."""
 
     if os.path.isfile(output_path):
         return output_path
@@ -80,16 +64,7 @@ def _find_flipbook_output(output_path: str, frame: float) -> str:
 
 
 def _size_flipbook(settings: Any, resolution: list | None) -> None:
-    """Write *resolution* if one is asked for, else the viewport as it is.
-
-    A stash copies the viewer's Flipbook dialog settings, 1280x720 with Use
-    Resolution on until an artist changes them (22.0.466), whatever the
-    viewport's shape: an 897x853 view came out cropped top and bottom (a top
-    view framed to a 2020x2360 box showed 1550 of its 2360), and through an
-    800x400 camera the whole view was squeezed into 16:9. Off, the frame is
-    the viewport's own size. The dialog's Output Zoom (25-100%) scales either,
-    so it is put back to 100.
-    """
+    """Write *resolution* if one is asked for, else the viewport as it is."""
 
     if resolution is not None:
         settings.useResolution(True)
@@ -99,22 +74,19 @@ def _size_flipbook(settings: Any, resolution: list | None) -> None:
     settings.outputZoom(100)
 
 
+@register_command(PluginCommand.RENDERING_RENDER_VIEWPORT)
 def render_viewport(
     output_path: str,
     resolution: list | None = None,
     camera: str | None = None,
 ) -> dict:
-    """Capture the current viewport to an image file.
-
-    Args:
-        output_path: Destination image path (e.g. .png, .jpg, .exr).
-        resolution: Optional [width, height] override.
-        camera: Optional camera node path to look through before capture.
-    """
+    """Capture the current viewport to an image file."""
 
     require_ui(
         'capture a viewport screenshot',
-        alternative='For a rendered image without a UI, build a ROP and use start_render.',
+        alternative=(
+            'For a rendered image without a UI, build a ROP and use start_render.'
+        ),
     )
     # Ensure the output directory exists
     out_dir = os.path.dirname(output_path)
@@ -174,23 +146,18 @@ def render_viewport(
     }
 
 
-###### rendering.render_quad_view
-
-
+@register_command(PluginCommand.RENDERING_RENDER_QUAD_VIEW)
 def render_quad_view(
     output_path: str,
     resolution: list | None = None,
 ) -> dict:
-    """Capture all four viewport panes (quad view) to an image file.
-
-    Args:
-        output_path: Destination image path.
-        resolution: Optional [width, height] override.
-    """
+    """Capture all four viewport panes (quad view) to an image file."""
 
     require_ui(
         'capture a quad view',
-        alternative='For a rendered image without a UI, build a ROP and use start_render.',
+        alternative=(
+            'For a rendered image without a UI, build a ROP and use start_render.'
+        ),
     )
     out_dir = os.path.dirname(output_path)
     if out_dir and not os.path.isdir(out_dir):
@@ -254,14 +221,9 @@ def render_quad_view(
     }
 
 
-###### rendering.list_render_nodes
-
-
+@register_command(PluginCommand.RENDERING_LIST_RENDER_NODES)
 def list_render_nodes() -> dict:
-    """List all ROP (render) nodes in /out and embedded in other networks.
-
-    Searches for all nodes whose type category is 'Driver'.
-    """
+    """List all ROP (render) nodes in /out and embedded in other networks."""
 
     render_nodes = []
 
@@ -321,15 +283,9 @@ def list_render_nodes() -> dict:
     }
 
 
-###### rendering.get_render_settings
-
-
+@register_command(PluginCommand.RENDERING_GET_RENDER_SETTINGS)
 def get_render_settings(node_path: str) -> dict:
-    """Get key render settings from a ROP node.
-
-    Args:
-        node_path: Path to the ROP/Driver node.
-    """
+    """Get key render settings from a ROP node."""
 
     node, _, _ = _renderable(node_path)
 
@@ -388,16 +344,9 @@ def get_render_settings(node_path: str) -> dict:
     return settings
 
 
-###### rendering.set_render_settings
-
-
+@register_command(PluginCommand.RENDERING_SET_RENDER_SETTINGS)
 def set_render_settings(node_path: str, settings: dict) -> dict:
-    """Set render parameters on a ROP node.
-
-    Args:
-        node_path: Path to the ROP/Driver node.
-        settings: Dict of parameter_name -> value pairs to set.
-    """
+    """Set render parameters on a ROP node."""
 
     node, _, _ = _renderable(node_path)
     from houdini_mcp_plugin.commands.parameters import _set_parameters
@@ -425,25 +374,14 @@ def set_render_settings(node_path: str, settings: dict) -> dict:
     return result
 
 
-###### rendering.create_render_node
-
-
+@register_command(PluginCommand.RENDERING_CREATE_RENDER_NODE)
 def create_render_node(
     renderer: str,
     name: str | None = None,
     camera: str | None = None,
     output_path: str | None = None,
 ) -> dict:
-    """Create a new render (ROP) node in /out.
-
-    Args:
-        renderer: Renderer type. Supported values include:
-            'karma' (USD Karma), 'opengl' (OpenGL), 'ifd' (Mantra),
-            'rop_geometry' (Geometry ROP), 'fetch', 'merge', etc.
-        name: Optional node name. Auto-generated if not provided.
-        camera: Optional camera path to assign.
-        output_path: Optional output image/file path.
-    """
+    """Create a new render (ROP) node in /out."""
 
     out_context = hou.node('/out')
     if out_context is None:
@@ -481,9 +419,13 @@ def create_render_node(
     candidates = renderer_map.get(renderer.lower(), (renderer,))
     node_type = next((c for c in candidates if c in available), None)
     if node_type is None:
+        renderers = ', '.join(
+            sorted(k for k, v in renderer_map.items() if any(c in available for c in v))
+        )
         raise ValueError(
-            f"No ROP type '{renderer}' in this Houdini (looked for: {', '.join(candidates)}). "
-            f'Renderer names that work here: {", ".join(sorted(k for k, v in renderer_map.items() if any(c in available for c in v)))}. '
+            f"No ROP type '{renderer}' in this Houdini (looked for: "
+            f'{", ".join(candidates)}). '
+            f'Renderer names that work here: {renderers}. '
             'Other types in /out can be passed by their exact name.'
         )
 
@@ -519,8 +461,6 @@ def create_render_node(
     }
 
 
-###### rendering.start_render
-
 # Where ROP-style nodes keep their frame range.
 _RANGE_PARMS = ('f1', 'f2', 'f3')
 
@@ -546,15 +486,7 @@ def _apply_frame_range_parms(node: hou.Node, frame_range: list) -> None:
 
 
 def _renderable(node_path: str) -> tuple[hou.Node, str, bool]:
-    """The node, its category, and whether it has render() (else an execute button).
-
-    Category is the wrong test. It rejected the LOP usdrender_rop, which is how
-    Solaris renders, along with SOP ROPs and a File Cache's Save to Disk -- so a
-    recorded session pressed all of those by hand through execute_python ten
-    times. What matters is whether the node can be executed at all. Used by
-    start_render and get_render_progress alike, so the two agree: a session
-    started a Karma LOP with one and was refused progress on it by the other.
-    """
+    """The node, its category, and whether it has render() (else an execute button)."""
 
     node = hou.node(node_path)
     if node is None:
@@ -588,7 +520,11 @@ if node is None:
     raise SystemExit("node not found after load: " + path)
 if hasattr(node, "render"):
     if has_range == "1":
-        node.render(frame_range=(float(start), float(end), float(inc)), verbose=True, output_progress=True)
+        node.render(
+            frame_range=(float(start), float(end), float(inc)),
+            verbose=True,
+            output_progress=True,
+        )
     else:
         node.render(verbose=True, output_progress=True)
 else:
@@ -614,8 +550,7 @@ if errors:
 def _launch_background_render(
     node: hou.Node, frame_range: list | None
 ) -> dict[str, Any]:
-    """Render from a fresh hython on the saved hip, like Houdini's own
-    "Render in Background", and return at once with how to follow it."""
+    """Render from a fresh hython on the saved hip, like Houdini's own "Render in..."""
 
     if hou.hipFile.isNewFile():
         raise ValueError(
@@ -628,7 +563,7 @@ def _launch_background_render(
         raise ValueError(
             f'hython not found at {hython}; cannot render in the background'
         )
-    fd, log_path = tempfile.mkstemp(prefix='fxhoudinimcp_render_', suffix='.log')
+    fd, log_path = tempfile.mkstemp(prefix='houdini_mcp_render_', suffix='.log')
     log = os.fdopen(fd, 'w')
     args = [hython, '-c', _BACKGROUND_SCRIPT, hou.hipFile.path(), node.path()]
     if frame_range is not None:
@@ -683,11 +618,7 @@ _FOREGROUND_PARM = 'soho_foreground'
 def _override_targets(
     node: hou.Node, overrides: dict
 ) -> list[tuple[str, hou.Parm, Any]]:
-    """(name, parm, value) for every override, all resolved before anything is set.
-
-    A parm tuple ("t", "res") takes a list and expands to its components, the
-    way set_parameters takes it.
-    """
+    """(name, parm, value) for every override, all resolved before anything is set."""
 
     if not isinstance(overrides, dict) or not overrides:
         raise ValueError('overrides must be a non-empty {parm_name: value} dict.')
@@ -720,13 +651,14 @@ def _override_targets(
         }
         hint = f' Did you mean: {hints}?' if hints else ''
         raise ValueError(
-            f'No parameter(s) {missing} on {node.path()} to override; nothing was set.{hint}'
+            f'No parameter(s) {missing} on {node.path()} to override; nothing was '
+            f'set.{hint}'
         )
     return targets
 
 
 def _snapshot(parm: hou.Parm) -> dict[str, Any]:
-    """What putting *parm* back needs: its keyframes (an expression is one), else its value."""
+    """What putting *parm* back needs: its keyframes (an expression is one), else..."""
 
     keys = tuple(parm.keyframes())
     if keys:
@@ -763,13 +695,7 @@ def _apply_overrides(
     targets: list[tuple[str, hou.Parm, Any]],
     applied: list[tuple[str, hou.Parm, dict[str, Any]]],
 ) -> None:
-    """Set each override, adding it to *applied* with what puts it back.
-
-    set() over an expression keeps the expression, so the keys go first. A
-    write Houdini refuses (a locked parm, a value of the wrong type) puts back
-    what was already set and names the parm: the render never runs on half of
-    the overrides.
-    """
+    """Set each override, adding it to *applied* with what puts it back."""
 
     for name, parm, value in targets:
         state = _snapshot(parm)
@@ -795,27 +721,14 @@ def _apply_overrides(
         applied.append((name, parm, state))
 
 
+@register_command(PluginCommand.RENDERING_START_RENDER)
 def start_render(
     node_path: str,
     frame_range: list | None = None,
     background: bool = False,
     overrides: dict | None = None,
 ) -> dict:
-    """Begin rendering a ROP node.
-
-    Args:
-        node_path: Path to any node that renders or writes: a /out ROP, a
-            LOP usdrender_rop, a SOP ROP Geometry or File Cache, and so on.
-        frame_range: Optional [start, end] or [start, end, increment]. If not
-            provided, the node's own frame range settings are used.
-        background: Render from a separate hython on the saved hip and return
-            at once; get_render_progress follows the process. Off by default:
-            a foreground render shows the user Houdini's own progress dialog,
-            and the dispatcher puts no deadline on it.
-        overrides: {parm_name: value} set for this render only and put back
-            afterwards, expressions and keyframes included, even when the
-            render fails. A parm tuple takes a list. Foreground only.
-    """
+    """Begin rendering a ROP node."""
 
     node, category, can_render = _renderable(node_path)
 
@@ -950,23 +863,18 @@ def _render_in_foreground(
     }
 
 
-###### rendering.render_node_network
-
-
+@register_command(PluginCommand.RENDERING_RENDER_NODE_NETWORK)
 def render_node_network(
     node_path: str,
     output_path: str,
 ) -> dict:
-    """Take a screenshot of the network editor showing a specific node's network.
-
-    Args:
-        node_path: Path to the node whose network to capture.
-        output_path: Destination image path.
-    """
+    """Take a screenshot of the network editor showing a specific node's network."""
 
     require_ui(
         'screenshot the network editor',
-        alternative='get_network_overview and list_children describe a network without a UI.',
+        alternative=(
+            'get_network_overview and list_children describe a network without a UI.'
+        ),
     )
     node = hou.node(node_path)
     if node is None:
@@ -1011,15 +919,9 @@ def render_node_network(
     }
 
 
-###### rendering.get_render_progress
-
-
+@register_command(PluginCommand.RENDERING_GET_RENDER_PROGRESS)
 def get_render_progress(node_path: str) -> dict:
-    """Check the render status / progress of a ROP node.
-
-    Args:
-        node_path: Path to the ROP/Driver node.
-    """
+    """Check the render status / progress of a ROP node."""
 
     node, category, _ = _renderable(node_path)
 
@@ -1086,16 +988,3 @@ def get_render_progress(node_path: str) -> dict:
         'done': (background is not None and not background['running'])
         or (background is None and not is_cooking),
     }
-
-
-###### Registration
-
-register_command(PluginCommand.RENDERING_RENDER_VIEWPORT)(render_viewport)
-register_command(PluginCommand.RENDERING_RENDER_QUAD_VIEW)(render_quad_view)
-register_command(PluginCommand.RENDERING_LIST_RENDER_NODES)(list_render_nodes)
-register_command(PluginCommand.RENDERING_GET_RENDER_SETTINGS)(get_render_settings)
-register_command(PluginCommand.RENDERING_SET_RENDER_SETTINGS)(set_render_settings)
-register_command(PluginCommand.RENDERING_CREATE_RENDER_NODE)(create_render_node)
-register_command(PluginCommand.RENDERING_START_RENDER)(start_render)
-register_command(PluginCommand.RENDERING_RENDER_NODE_NETWORK)(render_node_network)
-register_command(PluginCommand.RENDERING_GET_RENDER_PROGRESS)(get_render_progress)

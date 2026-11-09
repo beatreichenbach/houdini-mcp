@@ -1,32 +1,20 @@
-"""Houdini-side handlers for code execution operations.
-
-Provides 4 command handlers for executing Python code, HScript commands,
-evaluating expressions, and reading environment variables within Houdini.
-"""
+"""Houdini-side handlers for code execution operations."""
 
 from __future__ import annotations
 
-# Built-in
 import io
 import os
 import sys
 import traceback
 from typing import Any
 
-# Third-party
 import hou
 
-# Internal
 from houdini_mcp_plugin.dispatcher import register_command
 from houdini_mcp_plugin.errors import as_text
 from houdini_mcp_protocol import PluginCommand
 
-###### Constants
-
 _MAX_CAPTURE_BYTES = 100 * 1024  # 100 KB
-
-
-###### Helpers
 
 
 def _truncate_output(text: str) -> str:
@@ -54,22 +42,11 @@ def _serialize_result(value: Any) -> Any:
     return str(value)
 
 
-###### Handler: code.execute_python
-
-
+@register_command(PluginCommand.CODE_EXECUTE_PYTHON)
 def _execute_python(
     code: str, return_expression: str | None = None, **_: Any
 ) -> dict[str, Any]:
-    """Execute arbitrary Python code inside Houdini's interpreter.
-
-    The code is executed via `exec()` in a namespace that has `hou`
-    pre-imported.  If *return_expression* is given it is evaluated with
-    `eval()` in the same namespace after execution, and its result is
-    returned.
-
-    stdout and stderr are captured and included in the response so the
-    caller can see print() output and any warnings.
-    """
+    """Execute arbitrary Python code inside Houdini's interpreter."""
 
     namespace: dict[str, Any] = {'hou': hou}
 
@@ -139,12 +116,7 @@ def _execute_python(
     return response
 
 
-register_command(PluginCommand.CODE_EXECUTE_PYTHON)(_execute_python)
-
-
-###### Handler: code.execute_hscript
-
-
+@register_command(PluginCommand.CODE_EXECUTE_HSCRIPT)
 def _execute_hscript(command: str, **_: Any) -> dict[str, Any]:
     """Execute an HScript command and return its output."""
 
@@ -158,20 +130,11 @@ def _execute_hscript(command: str, **_: Any) -> dict[str, Any]:
     }
 
 
-register_command(PluginCommand.CODE_EXECUTE_HSCRIPT)(_execute_hscript)
-
-
-###### Handler: code.evaluate_expression
-
-
+@register_command(PluginCommand.CODE_EVALUATE_EXPRESSION)
 def _evaluate_expression(
     expression: str, language: str = 'hscript', **_: Any
 ) -> dict[str, Any]:
-    """Evaluate an expression and return its result.
-
-    Supports both HScript expressions (via `hou.hscriptExpression()`)
-    and Python expressions (via `eval()`).
-    """
+    """Evaluate an expression and return its result."""
 
     if language.lower() == 'python':
         namespace: dict[str, Any] = {'hou': hou}
@@ -186,12 +149,7 @@ def _evaluate_expression(
     }
 
 
-register_command(PluginCommand.CODE_EVALUATE_EXPRESSION)(_evaluate_expression)
-
-
-###### Handler: code.get_env_variable
-
-
+@register_command(PluginCommand.CODE_GET_ENV_VARIABLE)
 def _get_env_variable(var_name: str, **_: Any) -> dict[str, Any]:
     """Get a Houdini environment variable."""
 
@@ -204,20 +162,11 @@ def _get_env_variable(var_name: str, **_: Any) -> dict[str, Any]:
     }
 
 
-register_command(PluginCommand.CODE_GET_ENV_VARIABLE)(_get_env_variable)
-
-
-###### code.get_file_references
-
-
+@register_command(PluginCommand.CODE_GET_FILE_REFERENCES)
 def _get_file_references(
     include_missing_only: bool = False, **_: Any
 ) -> dict[str, Any]:
-    """Every file path the scene references, with the parameter that holds it.
-
-    Args:
-        include_missing_only: Only report paths that do not exist on disk.
-    """
+    """Every file path the scene references, with the parameter that holds it."""
 
     references = []
     for parm, path in hou.fileReferences():
@@ -238,11 +187,6 @@ def _get_file_references(
     return {'count': len(references), 'references': references}
 
 
-register_command(PluginCommand.CODE_GET_FILE_REFERENCES)(_get_file_references)
-
-
-###### code.set_update_mode
-
 _UPDATE_MODES = {
     'auto': hou.updateMode.AutoUpdate,
     'on_mouse_up': hou.updateMode.OnMouseUp,
@@ -250,15 +194,9 @@ _UPDATE_MODES = {
 }
 
 
+@register_command(PluginCommand.CODE_SET_UPDATE_MODE)
 def _set_update_mode(mode: str | None = None, **_: Any) -> dict[str, Any]:
-    """Set (or, with no mode, read) Houdini's cook update mode.
-
-    Switching to ``manual`` before a long build stops every parameter change
-    from re-cooking the network; switch back to ``auto`` afterwards.
-
-    Args:
-        mode: "auto", "on_mouse_up" or "manual". Omit to read the current mode.
-    """
+    """Set (or, with no mode, read) Houdini's cook update mode."""
 
     if mode is not None:
         key = as_text(mode, 'mode').strip().lower()
@@ -270,6 +208,3 @@ def _set_update_mode(mode: str | None = None, **_: Any) -> dict[str, Any]:
     current = hou.updateModeSetting()
     name = next((k for k, v in _UPDATE_MODES.items() if v == current), str(current))
     return {'success': True, 'mode': name}
-
-
-register_command(PluginCommand.CODE_SET_UPDATE_MODE)(_set_update_mode)

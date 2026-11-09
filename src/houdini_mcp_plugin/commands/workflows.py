@@ -1,28 +1,20 @@
-"""Higher-level composite workflow handlers for FXHoudini-MCP.
-
-Provides tools that build entire node graphs in a single call --
-complete simulation setups, material creation/assignment, SOP chain
-building, and render configuration.
-"""
+"""Higher-level composite workflow handlers for Houdini MCP."""
 
 from __future__ import annotations
 
-# Built-in
+import logging
 from typing import Any
 
-# Third-party
 import hou
 
 from houdini_mcp_plugin.commands.nodes import _refuse_taken_name
-
-# Internal
 from houdini_mcp_plugin.config import layout_if_enabled, place_new_node
 from houdini_mcp_plugin.dispatcher import register_command
 from houdini_mcp_plugin.errors import readable_message
 from houdini_mcp_plugin.ui import focus_network_editor
 from houdini_mcp_protocol import PluginCommand
 
-###### Helpers
+logger = logging.getLogger(__name__)
 
 
 def _get_node(node_path: str) -> hou.Node:
@@ -35,11 +27,7 @@ def _get_node(node_path: str) -> hou.Node:
 
 
 def _focus_network_editor(node: hou.Node, place_unpositioned: bool = True) -> None:
-    """Best-effort: lay out, pan the editor to *node*, hide the other objects.
-
-    The viewer follows into the new object; the source object and the rest of
-    the scene would otherwise draw over the sim.
-    """
+    """Best-effort: lay out, pan the editor to *node*, hide the other objects."""
 
     focus_network_editor(node, place_unpositioned, other_objects='hide')
 
@@ -59,7 +47,7 @@ def _ensure_mat_context() -> hou.Node:
     mat = hou.node('/mat')
     if mat is None:
         mat = hou.node('/').createNode('matnet', 'mat')
-        print('[workflow] Created /mat context')
+        logger.info('[workflow] Created /mat context')
     return mat
 
 
@@ -73,7 +61,7 @@ def _ensure_out_context() -> hou.Node:
 
 
 def _set_parm_safe(node: hou.Node, parm_name: str, value: Any) -> bool:
-    """Set a parameter value if the parameter exists. Returns True on success."""
+    """Set a parameter value if the parameter exists."""
 
     parm = node.parm(parm_name)
     if parm is not None:
@@ -81,8 +69,10 @@ def _set_parm_safe(node: hou.Node, parm_name: str, value: Any) -> bool:
             parm.set(value)
             return True
         except Exception as e:
-            print(
-                f'[workflow] Warning: could not set {parm_name}={value} on {node.path()}: {readable_message(e)}'
+            logger.info(
+                f'[workflow] Warning: could not set {parm_name}={value} on '
+                f'{node.path()}: '
+                f'{readable_message(e)}'
             )
             return False
     return False
@@ -106,12 +96,7 @@ def _set_values(node: hou.Node, values: dict) -> list[str]:
 def _create_first_available(
     parent: hou.Node, type_names: tuple[str, ...], node_name: str
 ) -> hou.Node:
-    """Create the first of *type_names* that exists under *parent*.
-
-    Lets a chain be written preferred-type-first without nesting try/except per
-    candidate. Raises hou.OperationFailed naming the whole chain if none exist,
-    which is more useful than the last candidate's own error.
-    """
+    """Create the first of *type_names* that exists under *parent*."""
 
     for type_name in type_names:
         try:
@@ -126,13 +111,7 @@ def _create_first_available(
 def _stream_cache(
     geo: hou.Node, type_name: str, node_name: str, solver: hou.Node, streams: int
 ) -> hou.Node:
-    """A solver's own I/O node, wired output-for-input, displayed and rendered.
-
-    rbdio and vellumio carry every stream of the sim (geometry, constraints,
-    proxy or collision geometry). A filecache on the first output silently
-    drops the rest, which is what every setup_* used to put down. write_cache
-    drives them like a filecache: they share its Save to Disk button.
-    """
+    """A solver's own I/O node, wired output-for-input, displayed and rendered."""
 
     cache = geo.createNode(type_name, node_name)
     for index in range(streams):
@@ -144,20 +123,7 @@ def _stream_cache(
 
 
 def _source_status(objmerge: hou.Node, source_geo: str, what: str) -> dict[str, Any]:
-    """Whether the source geometry a sim was pointed at actually exists.
-
-    Building the network with a placeholder source is legitimate -- the path is a
-    parameter, fixable later -- but reporting success: True and nothing else means a
-    caller walks away with a sim that will never produce anything, and no reason to
-    look. setup_pyro_sim said so; setup_flip_sim, setup_rbd_sim and
-    setup_vellum_sim did not, which is the kind of inconsistency that makes a
-    server's answers untrustworthy in aggregate.
-
-    Args:
-        objmerge: The Object Merge SOP holding the reference.
-        source_geo: The path it was pointed at.
-        what: Sim name for the description ("FLIP", "RBD", "Vellum").
-    """
+    """Whether the source geometry a sim was pointed at actually exists."""
 
     found = hou.node(source_geo) is not None
     return {
@@ -179,9 +145,6 @@ def _source_status(objmerge: hou.Node, source_geo: str, what: str) -> dict[str, 
     }
 
 
-###### workflow.setup_pyro_sim
-
-
 def _setup_pyro_sim_sop(
     geo: hou.Node,
     objmerge: hou.Node,
@@ -189,19 +152,10 @@ def _setup_pyro_sim_sop(
     all_nodes: list[str],
     res_scale: float = 1.0,
 ) -> dict:
-    """Build a SOP-level Pyro simulation (Houdini 20+).
-
-    Uses the modern pyrosource + pyrosolver SOP workflow.
-
-    Args:
-        geo: Parent geometry node.
-        objmerge: Object Merge SOP referencing the source geometry.
-        substeps: Number of solver substeps.
-        all_nodes: Accumulator list for created node paths.
-    """
+    """Build a SOP-level Pyro simulation (Houdini 20+)."""
 
     # -- Pyro Source: converts geometry to source volumes
-    print('[workflow] Creating Pyro Source SOP')
+    logger.info('[workflow] Creating Pyro Source SOP')
     pyrosource = geo.createNode('pyrosource', 'pyro_source1')
     pyrosource.setInput(0, objmerge, 0)
     all_nodes.append(pyrosource.path())
@@ -220,14 +174,14 @@ def _setup_pyro_sim_sop(
     ]
 
     # -- The solver sources named volumes, not points (nodes/sop/pyrosolver).
-    print('[workflow] Creating Volume Rasterize Attributes SOP')
+    logger.info('[workflow] Creating Volume Rasterize Attributes SOP')
     rasterize = geo.createNode('volumerasterizeattributes', 'rasterize_source1')
     rasterize.setInput(0, pyrosource, 0)
     rasterize.parm('attributes').set(' '.join(dict.fromkeys(names)))
     all_nodes.append(rasterize.path())
 
     # -- Pyro Solver SOP (SOP-level, Houdini 20+)
-    print('[workflow] Creating Pyro Solver SOP')
+    logger.info('[workflow] Creating Pyro Solver SOP')
     try:
         pyrosolver = geo.createNode('pyrosolver::3.0', 'pyro_solver1')
     except hou.OperationFailed:
@@ -246,7 +200,7 @@ def _setup_pyro_sim_sop(
         divsize.set(divsize.eval() / res_scale)
 
     # -- File Cache
-    print('[workflow] Creating File Cache SOP')
+    logger.info('[workflow] Creating File Cache SOP')
     try:
         filecache = geo.createNode('filecache::2.0', 'file_cache1')
     except hou.OperationFailed:
@@ -262,7 +216,7 @@ def _setup_pyro_sim_sop(
 
     layout_if_enabled(geo)
     _focus_network_editor(filecache)
-    print('[workflow] SOP-level Pyro setup complete')
+    logger.info('[workflow] SOP-level Pyro setup complete')
 
     return {
         'success': True,
@@ -281,20 +235,10 @@ def _setup_pyro_sim_dop(
     substeps: int,
     all_nodes: list[str],
 ) -> dict:
-    """Build a DOP-level Pyro simulation (fallback for older Houdini).
-
-    Uses a DOP Network with smokeobject_sparse, volumesource and
-    pyrosolver_sparse, merged into the solver's first input.
-
-    Args:
-        geo: Parent geometry node.
-        objmerge: Object Merge SOP referencing the source geometry.
-        substeps: Number of DOP substeps.
-        all_nodes: Accumulator list for created node paths.
-    """
+    """Build a DOP-level Pyro simulation (fallback for older Houdini)."""
 
     # -- DOP Network
-    print('[workflow] Creating DOP Network inside geo')
+    logger.info('[workflow] Creating DOP Network inside geo')
     dopnet = geo.createNode('dopnet', 'dopnet1')
     all_nodes.append(dopnet.path())
     _set_parm_safe(dopnet, 'substep', substeps)
@@ -307,7 +251,7 @@ def _setup_pyro_sim_dop(
     # revision", naming Smoke Object (Sparse) as the replacement. The sparse node
     # exists in every build we sample, back to 20.5.278, so preferring it costs
     # nothing on older Houdini and keeps this path alive once the old nodes go.
-    print('[workflow] Creating smoke object DOP')
+    logger.info('[workflow] Creating smoke object DOP')
     smokeobj = _create_first_available(
         dopnet,
         ('smokeobject_sparse', 'smokeobject', 'smokeconfigureobject'),
@@ -321,7 +265,7 @@ def _setup_pyro_sim_dop(
     # ships no help page for it, while volumesource is documented as the node
     # that "imports SOP source geometry into smoke, pyro, and FLIP simulations"
     # and is present in every build we sample.
-    print('[workflow] Creating volume source DOP')
+    logger.info('[workflow] Creating volume source DOP')
     source_vol = None
     try:
         source_vol = _create_first_available(
@@ -331,10 +275,12 @@ def _setup_pyro_sim_dop(
         # Point the volume source at the Object Merge SOP
         for parm_name in ('sop_path', 'soppath', 'geometry'):
             if _set_parm_safe(source_vol, parm_name, objmerge.path()):
-                print(f'[workflow] Set volume source {parm_name} = {objmerge.path()}')
+                logger.info(
+                    f'[workflow] Set volume source {parm_name} = {objmerge.path()}'
+                )
                 break
     except hou.OperationFailed:
-        print('[workflow] Warning: no volume source node available, skipping')
+        logger.warning('[workflow] Warning: no volume source node available, skipping')
 
     # -- Pyro Solver
     #
@@ -342,7 +288,7 @@ def _setup_pyro_sim_dop(
     # among the deprecated DOP pyro nodes and point at Pyro Solver (Sparse).
     # Houdini's own deprecated flag is still False on pyrosolver, so the old
     # versioned types stay as fallbacks rather than being dropped.
-    print('[workflow] Creating pyro solver DOP')
+    logger.info('[workflow] Creating pyro solver DOP')
     pyrosolver = _create_first_available(
         dopnet,
         ('pyrosolver_sparse', 'pyrosolver::2.0', 'pyrosolver'),
@@ -359,7 +305,7 @@ def _setup_pyro_sim_dop(
     # starting empty and resizing at initial sourcing).
 
     # -- Merge DOP to combine smoke object and volume source
-    print('[workflow] Creating merge DOP and wiring solver chain')
+    logger.info('[workflow] Creating merge DOP and wiring solver chain')
     try:
         merge_dop = dopnet.createNode('merge', 'merge1')
         merge_dop.setInput(0, smokeobj, 0)
@@ -368,19 +314,20 @@ def _setup_pyro_sim_dop(
         pyrosolver.setInput(0, merge_dop, 0)
         all_nodes.append(merge_dop.path())
     except Exception as e:
-        print(
-            f'[workflow] Warning: merge DOP failed, wiring directly: {readable_message(e)}'
+        logger.info(
+            f'[workflow] Warning: merge DOP failed, wiring directly: '
+            f'{readable_message(e)}'
         )
         pyrosolver.setInput(0, smokeobj, 0)
 
     # -- DOP Import SOP
-    print('[workflow] Creating DOP Import SOP')
+    logger.info('[workflow] Creating DOP Import SOP')
     dopimport = geo.createNode('dopimport', 'dop_import1')
     _set_parm_safe(dopimport, 'doppath', dopnet.path())
     all_nodes.append(dopimport.path())
 
     # -- File Cache
-    print('[workflow] Creating File Cache SOP')
+    logger.info('[workflow] Creating File Cache SOP')
     try:
         filecache = geo.createNode('filecache::2.0', 'file_cache1')
     except hou.OperationFailed:
@@ -397,7 +344,7 @@ def _setup_pyro_sim_dop(
     layout_if_enabled(geo)
     layout_if_enabled(dopnet)
     _focus_network_editor(filecache)
-    print('[workflow] DOP-level Pyro setup complete')
+    logger.info('[workflow] DOP-level Pyro setup complete')
 
     return {
         'success': True,
@@ -409,6 +356,7 @@ def _setup_pyro_sim_dop(
     }
 
 
+@register_command(PluginCommand.WORKFLOW_SETUP_PYRO_SIM)
 def _setup_pyro_sim(
     source_geo: str = '/obj/geo1/sphere1',
     container: str = 'box',
@@ -417,21 +365,7 @@ def _setup_pyro_sim(
     name: str = 'pyro_sim',
     **_: Any,
 ) -> dict:
-    """Build a complete Pyro smoke/fire simulation network.
-
-    Tries the modern SOP-level approach first (Houdini 20+, using
-    pyrosource + pyrosolver SOPs).  Falls back to the classic DOP
-    approach (smokeobject_sparse + volumesource + pyrosolver_sparse DOPs) for
-    older Houdini versions.
-
-    Args:
-        source_geo: Path to the source geometry SOP to drive the simulation.
-        container: Container shape. Only "box" is implemented; anything else is
-            rejected rather than silently ignored.
-        res_scale: Resolution scale multiplier for the simulation.
-        substeps: Number of DOP substeps or solver substeps.
-        name: Name for the top-level geometry node.
-    """
+    """Build a complete Pyro smoke/fire simulation network."""
 
     obj = _ensure_obj_context()
     # A parameter that is accepted and ignored is worse than one that is missing:
@@ -446,32 +380,38 @@ def _setup_pyro_sim(
     all_nodes: list[str] = []
 
     # -- Create top-level geo container
-    print(f"[workflow] Creating geo node '{name}' under /obj")
+    logger.info(f"[workflow] Creating geo node '{name}' under /obj")
     geo = obj.createNode('geo', name)
     for child in geo.children():
         child.destroy()
     all_nodes.append(geo.path())
 
     # -- Object Merge for source geometry
-    print(f'[workflow] Creating Object Merge for source: {source_geo}')
+    logger.info(f'[workflow] Creating Object Merge for source: {source_geo}')
     objmerge = geo.createNode('object_merge', 'source_geo')
     _set_parm_safe(objmerge, 'objpath1', source_geo)
     all_nodes.append(objmerge.path())
 
     if hou.node(source_geo) is not None:
-        print(f'[workflow] Source geometry found at {source_geo}')
+        logger.info(f'[workflow] Source geometry found at {source_geo}')
     else:
-        print(
-            f"[workflow] Warning: source geometry '{source_geo}' not found, Object Merge created but path may need updating"
+        logger.info(
+            f"[workflow] Warning: source geometry '{source_geo}' not found, Object "
+            f'Merge '
+            f'created but path may need updating'
         )
 
     # -- Try modern SOP-level Pyro first, fall back to DOP approach
     try:
-        print('[workflow] Attempting SOP-level Pyro workflow (Houdini 20+)')
+        logger.info('[workflow] Attempting SOP-level Pyro workflow (Houdini 20+)')
         result = _setup_pyro_sim_sop(geo, objmerge, substeps, all_nodes, res_scale)
-        print(f"[workflow] Pyro simulation '{name}' setup complete (SOP approach)")
+        logger.info(
+            f"[workflow] Pyro simulation '{name}' setup complete (SOP approach)"
+        )
     except hou.OperationFailed:
-        print('[workflow] SOP-level Pyro not available, falling back to DOP approach')
+        logger.info(
+            '[workflow] SOP-level Pyro not available, falling back to DOP approach'
+        )
         # Clean up any partially-created SOP nodes (keep geo and objmerge)
         for child in geo.children():
             if child != objmerge:
@@ -484,9 +424,13 @@ def _setup_pyro_sim(
         result = _setup_pyro_sim_dop(geo, objmerge, substeps, all_nodes)
         if res_scale != 1.0:
             result['warning'] = (
-                'res_scale is applied only by the SOP-level Pyro Solver; the DOP fallback ignored it.'
+                'res_scale is applied only by the SOP-level Pyro Solver; the DOP '
+                'fallback '
+                'ignored it.'
             )
-        print(f"[workflow] Pyro simulation '{name}' setup complete (DOP approach)")
+        logger.info(
+            f"[workflow] Pyro simulation '{name}' setup complete (DOP approach)"
+        )
 
     # Augment the result with source wiring info so the AI client
     # understands the network and does not try to re-wire things.
@@ -510,9 +454,7 @@ def _setup_pyro_sim(
     return result
 
 
-###### workflow.setup_rbd_sim
-
-
+@register_command(PluginCommand.WORKFLOW_SETUP_RBD_SIM)
 def _setup_rbd_sim(
     geo_path: str = '/obj/geo1',
     ground: bool = True,
@@ -520,30 +462,20 @@ def _setup_rbd_sim(
     name: str = 'rbd_sim',
     **_: Any,
 ) -> dict:
-    """Build a complete RBD (rigid body dynamics) simulation network.
-
-    Creates a geometry node with a DOP Network, RBD solver, optional
-    RBD Material Fracture, optional ground plane, and an RBD I/O cache.
-
-    Args:
-        geo_path: Path to the source geometry object.
-        ground: If True, add a ground plane to the simulation.
-        pieces_type: Fracture method -- "voronoi" adds a Voronoi Fracture SOP.
-        name: Name for the top-level geometry node.
-    """
+    """Build a complete RBD (rigid body dynamics) simulation network."""
 
     obj = _ensure_obj_context()
     all_nodes: list[str] = []
 
     # -- Step 1: Create geo container
-    print(f"[workflow] Creating geo node '{name}' under /obj")
+    logger.info(f"[workflow] Creating geo node '{name}' under /obj")
     geo = obj.createNode('geo', name)
     for child in geo.children():
         child.destroy()
     all_nodes.append(geo.path())
 
     # -- Step 2: Object Merge source
-    print(f'[workflow] Creating Object Merge for source: {geo_path}')
+    logger.info(f'[workflow] Creating Object Merge for source: {geo_path}')
     objmerge = geo.createNode('object_merge', 'source_geo')
     _set_parm_safe(objmerge, 'objpath1', geo_path)
     all_nodes.append(objmerge.path())
@@ -567,14 +499,15 @@ def _setup_rbd_sim(
     fracture = None
     if pieces_type == 'voronoi':
         try:
-            print('[workflow] Creating RBD Material Fracture SOP')
+            logger.info('[workflow] Creating RBD Material Fracture SOP')
             fracture = geo.createNode('rbdmaterialfracture', 'fracture1')
             fracture.setInput(0, last_sop, 0)
             all_nodes.append(fracture.path())
             last_sop = fracture
         except hou.OperationFailed:
-            print(
-                '[workflow] rbdmaterialfracture unavailable, using scatter + voronoifracture'
+            logger.info(
+                '[workflow] rbdmaterialfracture unavailable, using scatter + '
+                'voronoifracture'
             )
             scatter = geo.createNode('scatter', 'cell_points')
             scatter.setInput(0, last_sop, 0)
@@ -595,7 +528,7 @@ def _setup_rbd_sim(
         solver = None
 
     if solver is not None:
-        print('[workflow] Creating SOP-level RBD Bullet Solver')
+        logger.info('[workflow] Creating SOP-level RBD Bullet Solver')
         solver.setInput(0, last_sop, 0)
         if fracture is not None and fracture.type().name().startswith(
             'rbdmaterialfracture'
@@ -610,7 +543,7 @@ def _setup_rbd_sim(
     else:
         # Legacy DOP fallback: the packed object must point at the SOP
         # geometry, and object + ground must merge into the solver chain.
-        print('[workflow] Creating DOP Network (SOP solver unavailable)')
+        logger.info('[workflow] Creating DOP Network (SOP solver unavailable)')
         dopnet = geo.createNode('dopnet', 'dopnet1')
         all_nodes.append(dopnet.path())
         solver_path = dopnet.path()
@@ -654,10 +587,10 @@ def _setup_rbd_sim(
     # proxy geometry are cached with the pieces; the DOP fallback has one
     # stream and keeps a File Cache.
     if solver is not None:
-        print('[workflow] Creating RBD I/O')
+        logger.info('[workflow] Creating RBD I/O')
         filecache = _stream_cache(geo, 'rbdio', 'rbd_io1', solver, 4)
     else:
-        print('[workflow] Creating File Cache SOP')
+        logger.info('[workflow] Creating File Cache SOP')
         filecache = _create_first_available(
             geo, ('filecache', 'filecache::2.0'), 'file_cache1'
         )
@@ -667,11 +600,11 @@ def _setup_rbd_sim(
     all_nodes.append(filecache.path())
 
     # -- Step 6: Layout
-    print('[workflow] Laying out nodes')
+    logger.info('[workflow] Laying out nodes')
     layout_if_enabled(geo)
     _focus_network_editor(filecache)
 
-    print(f"[workflow] RBD simulation '{name}' setup complete")
+    logger.info(f"[workflow] RBD simulation '{name}' setup complete")
 
     return {
         'success': True,
@@ -683,9 +616,7 @@ def _setup_rbd_sim(
     }
 
 
-###### workflow.setup_flip_sim
-
-
+@register_command(PluginCommand.WORKFLOW_SETUP_FLIP_SIM)
 def _setup_flip_sim(
     source_geo: str = '/obj/geo1/sphere1',
     domain: str = 'box',
@@ -693,19 +624,7 @@ def _setup_flip_sim(
     name: str = 'flip_sim',
     **_: Any,
 ) -> dict:
-    """Build a complete FLIP fluid simulation network.
-
-    Creates a geometry node with the SOP FLIP chain (FLIP Container, FLIP
-    Boundary sourcing from the Object Merge, FLIP Solver on a ground plane)
-    and a File Cache.
-
-    Args:
-        source_geo: Path to the source geometry SOP.
-        domain: Domain shape. Only "box" is implemented; anything else is
-            rejected rather than silently ignored.
-        particle_sep: Particle separation distance for the FLIP sim.
-        name: Name for the top-level geometry node.
-    """
+    """Build a complete FLIP fluid simulation network."""
 
     obj = _ensure_obj_context()
     # A parameter that is accepted and ignored is worse than one that is missing:
@@ -720,23 +639,25 @@ def _setup_flip_sim(
     all_nodes: list[str] = []
 
     # -- Step 1: Create geo container
-    print(f"[workflow] Creating geo node '{name}' under /obj")
+    logger.info(f"[workflow] Creating geo node '{name}' under /obj")
     geo = obj.createNode('geo', name)
     for child in geo.children():
         child.destroy()
     all_nodes.append(geo.path())
 
     # -- Step 2: Object Merge for source
-    print(f'[workflow] Creating Object Merge for source: {source_geo}')
+    logger.info(f'[workflow] Creating Object Merge for source: {source_geo}')
     objmerge = geo.createNode('object_merge', 'source_geo')
     _set_parm_safe(objmerge, 'objpath1', source_geo)
     all_nodes.append(objmerge.path())
 
     if hou.node(source_geo) is not None:
-        print(f'[workflow] Source geometry found at {source_geo}')
+        logger.info(f'[workflow] Source geometry found at {source_geo}')
     else:
-        print(
-            f"[workflow] Warning: source geometry '{source_geo}' not found -- Object Merge created but path may need updating"
+        logger.info(
+            f"[workflow] Warning: source geometry '{source_geo}' not found -- Object "
+            f'Merge '
+            f'created but path may need updating'
         )
 
     # -- Step 3: SOP FLIP, as fluid/sopminimalsetup builds it: FLIP Container,
@@ -744,7 +665,7 @@ def _setup_flip_sim(
     # each passing its three streams (particles, container, collisions) on.
     # The DOP network this replaced was never wired: its source pointed at no
     # geometry and fed no solver, so every sim it built was empty.
-    print('[workflow] Creating FLIP Container, Boundary and Solver SOPs')
+    logger.info('[workflow] Creating FLIP Container, Boundary and Solver SOPs')
     container = geo.createNode('flipcontainer', 'flip_container1')
     _set_parm_safe(container, 'particlesep', particle_sep)
     # The container deletes particles that reach its walls, so it is sized
@@ -773,7 +694,7 @@ def _setup_flip_sim(
     all_nodes.append(solver.path())
 
     # -- Step 4: File Cache on the particles, the stream surfacing reads.
-    print('[workflow] Creating File Cache SOP')
+    logger.info('[workflow] Creating File Cache SOP')
     filecache = _create_first_available(
         geo, ('filecache::2.0', 'filecache'), 'file_cache1'
     )
@@ -784,7 +705,7 @@ def _setup_flip_sim(
 
     layout_if_enabled(geo)
     _focus_network_editor(filecache)
-    print(f"[workflow] FLIP simulation '{name}' setup complete")
+    logger.info(f"[workflow] FLIP simulation '{name}' setup complete")
 
     return {
         'success': True,
@@ -798,9 +719,7 @@ def _setup_flip_sim(
     }
 
 
-###### workflow.setup_vellum_sim
-
-
+@register_command(PluginCommand.WORKFLOW_SETUP_VELLUM_SIM)
 def _setup_vellum_sim(
     geo_path: str = '/obj/geo1',
     sim_type: str = 'cloth',
@@ -809,19 +728,7 @@ def _setup_vellum_sim(
     ground: bool = True,
     **_: Any,
 ) -> dict:
-    """Build a complete Vellum simulation network.
-
-    Creates a geometry node with Vellum Configure (cloth/hair/grain/softbody),
-    Vellum Solver, Object Merge source, and a Vellum I/O cache.
-
-    Args:
-        geo_path: Path to the source geometry object.
-        sim_type: Simulation type -- "cloth", "hair", "grain", or "softbody".
-        substeps: Number of solver substeps.
-        name: Name for the top-level geometry node.
-        ground: Turn on the solver's ground plane. Without one a draped cloth
-            falls through y=0 forever, as setup_rbd_sim's pieces used not to.
-    """
+    """Build a complete Vellum simulation network."""
 
     obj = _ensure_obj_context()
     all_nodes: list[str] = []
@@ -845,28 +752,30 @@ def _setup_vellum_sim(
     }
 
     # -- Step 1: Create geo container
-    print(f"[workflow] Creating geo node '{name}' under /obj")
+    logger.info(f"[workflow] Creating geo node '{name}' under /obj")
     geo = obj.createNode('geo', name)
     for child in geo.children():
         child.destroy()
     all_nodes.append(geo.path())
 
     # -- Step 2: Object Merge source
-    print(f'[workflow] Creating Object Merge for source: {geo_path}')
+    logger.info(f'[workflow] Creating Object Merge for source: {geo_path}')
     objmerge = geo.createNode('object_merge', 'source_geo')
     _set_parm_safe(objmerge, 'objpath1', geo_path)
     all_nodes.append(objmerge.path())
 
     if hou.node(geo_path) is not None:
-        print(f'[workflow] Source geometry found at {geo_path}')
+        logger.info(f'[workflow] Source geometry found at {geo_path}')
     else:
-        print(
-            f"[workflow] Warning: source geometry '{geo_path}' not found -- Object Merge created but path may need updating"
+        logger.info(
+            f"[workflow] Warning: source geometry '{geo_path}' not found -- Object "
+            f'Merge '
+            f'created but path may need updating'
         )
 
     # -- Step 3: Vellum Configure, chained geometry-to-geometry and
     # constraints-to-constraints the way the shelf chains them.
-    print(f'[workflow] Creating Vellum Configure ({sim_type})')
+    logger.info(f'[workflow] Creating Vellum Configure ({sim_type})')
     vellum_configure = None
     for index, (type_name, constraint) in enumerate(configure_chain[sim_type], start=1):
         node = geo.createNode(type_name, f'vellum_{sim_type}{index}')
@@ -879,7 +788,7 @@ def _setup_vellum_sim(
         vellum_configure = node
 
     # -- Step 4: Vellum Solver
-    print('[workflow] Creating Vellum Solver SOP')
+    logger.info('[workflow] Creating Vellum Solver SOP')
     try:
         vellum_solver = geo.createNode('vellumsolver', 'vellum_solver1')
     except hou.OperationFailed:
@@ -889,7 +798,7 @@ def _setup_vellum_sim(
     try:
         vellum_solver.setInput(1, vellum_configure, 1)
     except Exception:
-        print(
+        logger.info(
             '[workflow] Warning: could not connect constraints output to solver input 1'
         )
     all_nodes.append(vellum_solver.path())
@@ -901,16 +810,16 @@ def _setup_vellum_sim(
     # -- Step 5: Vellum I/O, not a File Cache: a filecache on the first output
     # drops the constraints and collisions, and vellumpostprocess downstream
     # of the cache needs them.
-    print('[workflow] Creating Vellum I/O')
+    logger.info('[workflow] Creating Vellum I/O')
     filecache = _stream_cache(geo, 'vellumio', 'vellum_io1', vellum_solver, 3)
     all_nodes.append(filecache.path())
 
     # -- Step 6: Layout
-    print('[workflow] Laying out nodes')
+    logger.info('[workflow] Laying out nodes')
     layout_if_enabled(geo)
     _focus_network_editor(filecache)
 
-    print(f"[workflow] Vellum simulation '{name}' ({sim_type}) setup complete")
+    logger.info(f"[workflow] Vellum simulation '{name}' ({sim_type}) setup complete")
 
     return {
         'success': True,
@@ -924,9 +833,7 @@ def _setup_vellum_sim(
     }
 
 
-###### workflow.create_material
-
-
+@register_command(PluginCommand.WORKFLOW_CREATE_MATERIAL)
 def _create_material(
     name: str | None = None,
     mat_type: str = 'principled',
@@ -936,18 +843,7 @@ def _create_material(
     opacity: float = 1.0,
     **_: Any,
 ) -> dict:
-    """Create a material/shader in the /mat context.
-
-    Supports principled shader and MaterialX standard surface.
-
-    Args:
-        name: Name for the material subnet/node.
-        mat_type: Material type -- "principled" or "materialx".
-        base_color: Optional [R, G, B] base color (0.0-1.0 each).
-        roughness: Surface roughness (0.0 = mirror, 1.0 = diffuse).
-        metallic: Metallic factor (0.0 = dielectric, 1.0 = metal).
-        opacity: Opacity (0.0 = transparent, 1.0 = opaque).
-    """
+    """Create a material/shader in the /mat context."""
 
     mat = _ensure_mat_context()
     # A name the caller chose is theirs or an error; only the default numbers up.
@@ -994,7 +890,7 @@ def _create_material(
     # The shader was just created (through _create_first_available): place it.
     _focus_network_editor(shader, place_unpositioned=True)
 
-    print(f"[workflow] Material '{name}' created at {shader_path}")
+    logger.info(f"[workflow] Material '{name}' created at {shader_path}")
 
     result = {
         'success': not skipped,
@@ -1007,25 +903,15 @@ def _create_material(
     return result
 
 
-###### workflow.assign_material
-
-
+@register_command(PluginCommand.WORKFLOW_ASSIGN_MATERIAL)
 def _assign_material(
     geo_path: str,
     material_path: str,
     **_: Any,
 ) -> dict:
-    """Assign a material to a geometry node.
+    """Assign a material to a geometry node."""
 
-    Creates a Material SOP at the end of the SOP chain inside the
-    geometry node, sets the material path, and enables the display flag.
-
-    Args:
-        geo_path: Path to the geometry Object node (e.g. "/obj/geo1").
-        material_path: Path to the material to assign (e.g. "/mat/material1").
-    """
-
-    print(f"[workflow] Assigning material '{material_path}' to '{geo_path}'")
+    logger.info(f"[workflow] Assigning material '{material_path}' to '{geo_path}'")
 
     geo = _get_node(geo_path)
     # A typo in material_path used to be written into the Material SOP and
@@ -1060,16 +946,16 @@ def _assign_material(
             last_displayed = children[-1]
 
     # -- Create Material SOP
-    print('[workflow] Creating Material SOP')
+    logger.info('[workflow] Creating Material SOP')
     mat_sop = sop_parent.createNode('material', 'material1')
 
     # Wire after last displayed SOP
     if last_displayed is not None:
-        print(f'[workflow] Wiring Material SOP after {last_displayed.path()}')
+        logger.info(f'[workflow] Wiring Material SOP after {last_displayed.path()}')
         mat_sop.setInput(0, last_displayed, 0)
 
     # Set material path
-    print(f'[workflow] Setting shop_materialpath1 to {material_path}')
+    logger.info(f'[workflow] Setting shop_materialpath1 to {material_path}')
     _set_parm_safe(mat_sop, 'shop_materialpath1', material_path)
 
     # Set display and render flags
@@ -1082,7 +968,7 @@ def _assign_material(
     layout_if_enabled(sop_parent)
     _focus_network_editor(mat_sop)
 
-    print(f'[workflow] Material assigned: {mat_sop.path()} -> {material_path}')
+    logger.info(f'[workflow] Material assigned: {mat_sop.path()} -> {material_path}')
 
     return {
         'success': True,
@@ -1091,26 +977,13 @@ def _assign_material(
     }
 
 
-###### workflow.build_sop_chain
-
-
+@register_command(PluginCommand.WORKFLOW_BUILD_SOP_CHAIN)
 def _build_sop_chain(
     parent_path: str = '/obj/geo1',
     steps: list | None = None,
     **_: Any,
 ) -> dict:
-    """Build a sequential chain of SOPs inside a network.
-
-    Each step dict specifies a node type and optional name/params.
-    Nodes are wired sequentially (output 0 -> input 0).
-
-    Args:
-        parent_path: Path to the parent SOP network.
-        steps: List of step dicts, each with keys:
-               - "type" (str): Node type to create (required).
-               - "name" (str): Optional node name.
-               - "params" (dict): Optional parameter values to set.
-    """
+    """Build a sequential chain of SOPs inside a network."""
 
     if steps is None or len(steps) == 0:
         raise ValueError('steps list is required and must not be empty')
@@ -1150,9 +1023,7 @@ def _build_sop_chain(
     }
 
 
-###### workflow.setup_render
-
-
+@register_command(PluginCommand.WORKFLOW_SETUP_RENDER)
 def _setup_render(
     renderer: str = 'karma',
     camera: str | None = None,
@@ -1162,19 +1033,7 @@ def _setup_render(
     name: str = 'render1',
     **_: Any,
 ) -> dict:
-    """Set up a complete render configuration.
-
-    Creates a camera (if none specified), a ROP node in /out, and
-    configures output path, resolution, and sample count.
-
-    Args:
-        renderer: Renderer to use -- "karma" or "mantra".
-        camera: Path to an existing camera. If None, creates one in /obj.
-        output_path: Output image file path (supports Houdini variables).
-        resolution: [width, height] resolution (default: [1920, 1080]).
-        samples: Number of render samples.
-        name: Name for the ROP node.
-    """
+    """Set up a complete render configuration."""
 
     if resolution is None:
         resolution = [1920, 1080]
@@ -1188,7 +1047,7 @@ def _setup_render(
 
     # -- Step 1: Camera
     if camera is None:
-        print('[workflow] Creating camera at /obj')
+        logger.info('[workflow] Creating camera at /obj')
         cam = obj.createNode('cam', 'render_cam')
         # Only /out is laid out below, so the camera is on its own -- without
         # this, back-to-back setup_render calls pile cameras at /obj's origin.
@@ -1199,9 +1058,9 @@ def _setup_render(
         # Set reasonable defaults
         _set_parm_safe(cam, 'resx', resolution[0])
         _set_parm_safe(cam, 'resy', resolution[1])
-        print(f'[workflow] Camera created at {camera}')
+        logger.info(f'[workflow] Camera created at {camera}')
     else:
-        print(f'[workflow] Using existing camera: {camera}')
+        logger.info(f'[workflow] Using existing camera: {camera}')
         if hou.node(camera) is None:
             warnings.append(
                 f"camera '{camera}' does not exist; the ROP references it anyway"
@@ -1209,7 +1068,7 @@ def _setup_render(
 
     # -- Step 2: ROP node
     if renderer == 'karma':
-        print(f"[workflow] Creating Karma ROP '{name}' in /out")
+        logger.info(f"[workflow] Creating Karma ROP '{name}' in /out")
         try:
             rop = out.createNode('karma', name)
         except hou.OperationFailed:
@@ -1217,11 +1076,11 @@ def _setup_render(
                 rop = out.createNode('karma::2.0', name)
             except hou.OperationFailed:
                 rop = out.createNode('usdrender_rop', name)
-                print(
+                logger.info(
                     '[workflow] Warning: karma ROP not available, using usdrender_rop'
                 )
     elif renderer == 'mantra':
-        print(f"[workflow] Creating Mantra ROP '{name}' in /out")
+        logger.info(f"[workflow] Creating Mantra ROP '{name}' in /out")
         try:
             rop = out.createNode('ifd', name)
         except hou.OperationFailed:
@@ -1284,7 +1143,7 @@ def _setup_render(
     layout_if_enabled(out)
     _focus_network_editor(rop)
 
-    print(f"[workflow] Render setup '{name}' complete ({renderer})")
+    logger.info(f"[workflow] Render setup '{name}' complete ({renderer})")
 
     return {
         'success': True,
@@ -1298,15 +1157,3 @@ def _setup_render(
         'all_nodes': all_nodes,
         **({'warnings': warnings} if warnings else {}),
     }
-
-
-###### Registration
-
-register_command(PluginCommand.WORKFLOW_SETUP_PYRO_SIM)(_setup_pyro_sim)
-register_command(PluginCommand.WORKFLOW_SETUP_RBD_SIM)(_setup_rbd_sim)
-register_command(PluginCommand.WORKFLOW_SETUP_FLIP_SIM)(_setup_flip_sim)
-register_command(PluginCommand.WORKFLOW_SETUP_VELLUM_SIM)(_setup_vellum_sim)
-register_command(PluginCommand.WORKFLOW_CREATE_MATERIAL)(_create_material)
-register_command(PluginCommand.WORKFLOW_ASSIGN_MATERIAL)(_assign_material)
-register_command(PluginCommand.WORKFLOW_BUILD_SOP_CHAIN)(_build_sop_chain)
-register_command(PluginCommand.WORKFLOW_SETUP_RENDER)(_setup_render)

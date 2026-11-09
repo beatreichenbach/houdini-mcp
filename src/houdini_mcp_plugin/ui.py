@@ -96,9 +96,11 @@ def set_other_objects(mode: str | None) -> str | None:
         desktop = hou.ui.curDesktop().name()
         for tab in hou.ui.paneTabs():
             if tab.type() == hou.paneTabType.SceneViewer:
-                hou.hscript(
-                    f'vieweroption -a {OTHER_OBJECTS[mode]} {desktop}.{tab.name()}.world'
+                cmd = (
+                    f'vieweroption -a {OTHER_OBJECTS[mode]} '
+                    f'{desktop}.{tab.name()}.world'
                 )
+                hou.hscript(cmd)
                 applied = mode
     except Exception:
         return applied
@@ -174,7 +176,8 @@ def hidden_by_visible_objects(
 
 
 def show_viewed_object(network: Any) -> list[dict]:
-    """Set Visible Objects back to "*" wherever it hides the object *network* belongs to.
+    """
+    Set Visible Objects back to "*" wherever it hides the object *network* belongs to.
 
     Returns what was reset, each entry with the pattern it held. Best effort.
     """
@@ -204,7 +207,8 @@ def _in_lops(viewer: Any) -> bool:
 
 
 def _restore_cameras(cameras: list) -> None:
-    """Bind each recorded (viewer, view name, camera path) again where it changed.
+    """
+    Bind each recorded (viewer, view name, camera path) again where it changed.
 
     Only while the viewer is in the same kind of network as when it was
     recorded. Houdini keeps a camera per context itself; a USD prim path bound
@@ -369,9 +373,10 @@ def viewer_context(scene_viewer: Any) -> dict:
     if hidden:
         entry = hidden[0]
         context['visible_objects_note'] = (
-            f'Viewport {entry["viewport"]} draws only {entry["visible_objects"]!r}, which leaves out '
-            f'{entry["object"]}, the object the viewer is in: the frame shows none of it. The pattern is '
-            "saved with the hip. set_current_network on the object sets it back to '*'."
+            f'Viewport {entry["viewport"]} draws only {entry["visible_objects"]!r}, '
+            f'which leaves out {entry["object"]}, the object the viewer is in: '
+            f'the frame shows none of it. The pattern is saved with the hip. '
+            'set_current_network on the object sets it back to "*".'
         )
     return context
 

@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-# Built-in
 import asyncio
 from typing import Any
 
-# Third-party
-# Internal
 from ..bridge import NO_TIMEOUT
 from .context import BridgeContext, run_command
 from .registry import tool

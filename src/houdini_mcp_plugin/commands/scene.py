@@ -1,20 +1,13 @@
-"""Scene-level handlers for Houdini MCP.
-
-Provides tools for querying and manipulating the Houdini scene (hip file),
-including scene info, save/load, import/export, and context introspection.
-"""
+"""Scene-level handlers for Houdini MCP."""
 
 from __future__ import annotations
 
-# Built-in
 import contextlib
 import os
 from typing import Any
 
-# Third-party
 import hou
 
-# Internal
 from houdini_mcp_plugin.callbacks import press
 from houdini_mcp_plugin.config import (
     require_inside_project_root,
@@ -30,9 +23,6 @@ from houdini_mcp_plugin.outputs import (
 from houdini_mcp_plugin.ui import focus_network_editor as _focus_network_editor
 from houdini_mcp_protocol import PluginCommand
 
-###### Helpers
-
-
 # Extensions that are really two, so the frame number belongs before both.
 # os.path.splitext("cache.bgeo.sc") yields ("cache.bgeo", ".sc"), which produced
 # "cache.bgeo.0001.sc" -- a name Houdini writes but no sequence reader recognises.
@@ -47,11 +37,7 @@ _COMPOUND_EXTENSIONS = (
 
 
 def _split_sequence_extension(file_path: str) -> tuple[str, str]:
-    """Split a path so a frame number can go where Houdini expects it.
-
-    Returns ``(base, extension)`` such that ``f"{base}.0001{extension}"`` is the
-    conventional sequence name: ``cache.0001.bgeo.sc``, not ``cache.bgeo.0001.sc``.
-    """
+    """Split a path so a frame number can go where Houdini expects it."""
 
     lowered = file_path.lower()
     for compound in _COMPOUND_EXTENSIONS:
@@ -60,9 +46,7 @@ def _split_sequence_extension(file_path: str) -> tuple[str, str]:
     return os.path.splitext(file_path)
 
 
-###### scene.get_scene_info
-
-
+@register_command(PluginCommand.SCENE_GET_SCENE_INFO)
 def get_scene_info() -> dict:
     """Return comprehensive information about the current Houdini scene."""
 
@@ -96,15 +80,9 @@ def get_scene_info() -> dict:
     }
 
 
-###### scene.new_scene
-
-
+@register_command(PluginCommand.SCENE_NEW_SCENE)
 def new_scene(save_current: bool = False) -> dict:
-    """Create a new empty Houdini scene.
-
-    Args:
-        save_current: If True, save the current scene before clearing.
-    """
+    """Create a new empty Houdini scene."""
 
     if save_current:
         hou.hipFile.save()
@@ -118,15 +96,9 @@ def new_scene(save_current: bool = False) -> dict:
     }
 
 
-###### scene.save_scene
-
-
+@register_command(PluginCommand.SCENE_SAVE_SCENE)
 def save_scene(file_path: str | None = None) -> dict:
-    """Save the current Houdini scene.
-
-    Args:
-        file_path: Destination path. If None, saves to the current hip path.
-    """
+    """Save the current Houdini scene."""
 
     if file_path is not None:
         require_inside_project_root(file_path, 'hip file')
@@ -140,8 +112,6 @@ def save_scene(file_path: str | None = None) -> dict:
         'hip_file': hou.hipFile.path(),
     }
 
-
-###### scene.load_scene
 
 # Characters that make a node path a pattern. merge's node_pattern would
 # honour them, but the per-path report could not say what each one brought.
@@ -201,15 +171,7 @@ def _hscript_quoted(value: str) -> str:
 
 
 def _restore_globals(before: dict[str, str]) -> tuple[dict[str, dict], dict[str, str]]:
-    """Put back the scene globals a merge changed; name the ones it added.
-
-    hou.hipFile.merge runs the file's `set -g` lines, as File > Merge does.
-    Merging a lesson file saved on Windows set JOB to C:/Users/... and POSE
-    to its poselib; every $JOB path of the scene then pointed at C:, the
-    merge answered warnings: [], and it surfaced as a PermissionError on
-    the next file write. A merge brings nodes; the scene keeps its own
-    variables.
-    """
+    """Put back the scene globals a merge changed; name the ones it added."""
 
     after = _hip_globals()
     restored: dict[str, dict] = {}
@@ -245,7 +207,8 @@ def _merge(
         if pattern_chars:
             raise ValueError(
                 f'node_paths are node paths, not patterns: {path!r} contains '
-                f'{pattern_chars}. List each node, or omit node_paths to merge everything.'
+                f'{pattern_chars}. List each node, or omit node_paths to merge '
+                f'everything.'
             )
     if node_paths is not None and not requested:
         return {
@@ -253,7 +216,9 @@ def _merge(
             'file_path': file_path,
             'merged_nodes': [],
             'merged_count': 0,
-            'message': 'node_paths is empty: nothing was merged. Omit it to merge everything.',
+            'message': (
+                'node_paths is empty: nothing was merged. Omit it to merge everything.'
+            ),
         }
 
     # A container named alone comes without its children, so each path is
@@ -373,30 +338,14 @@ def _merge(
     return result
 
 
+@register_command(PluginCommand.SCENE_LOAD_SCENE)
 def load_scene(
     file_path: str,
     merge: bool = False,
     node_paths: list | None = None,
     overwrite_on_conflict: bool = False,
 ) -> dict:
-    """Open a hip file, or merge it (or named nodes from it) into this scene.
-
-    Load warnings (missing assets and the like) come back in `warnings`
-    instead of failing the call. A merge reports what arrived: node_paths
-    are absolute (`/obj/building`), each brought with its contents; a node
-    that already exists is merged under a new name unless
-    overwrite_on_conflict=True overwrites it in place, and `conflicts` says
-    which. The scene keeps its own `set -g` variables ($JOB, $POSE): a file
-    that changes them is put back and named in `globals_restored`, one that
-    adds new ones in `globals_added`.
-
-    Args:
-        file_path: Path to the .hip/.hipnc/.hiplc file.
-        merge: If True, merge nodes into the current scene instead of replacing it.
-        node_paths: With merge, the absolute node paths to merge; default everything.
-        overwrite_on_conflict: With merge, overwrite same-named nodes instead
-            of renaming the merged copy.
-    """
+    """Open a hip file, or merge it (or named nodes from it) into this scene."""
 
     require_inside_project_root(file_path, 'hip file')
     if not os.path.isfile(hou.text.expandString(file_path)):
@@ -427,24 +376,13 @@ def load_scene(
     }
 
 
-###### scene.import_file
-
-
+@register_command(PluginCommand.SCENE_IMPORT_FILE)
 def import_file(
     file_path: str,
     parent_path: str = '/obj',
     node_name: str | None = None,
 ) -> dict:
-    """Import a geometry, USD, or Alembic file into the scene.
-
-    Supports .bgeo, .obj, .abc, .usd, .usda, .usdc, and similar formats.
-    Creates the appropriate node type under the given parent network.
-
-    Args:
-        file_path: Path to the file to import.
-        parent_path: Network path under which to create the import node.
-        node_name: Optional explicit node name.
-    """
+    """Import a geometry, USD, or Alembic file into the scene."""
 
     require_inside_project_root(file_path, 'import file')
     if not os.path.isfile(file_path):
@@ -515,25 +453,13 @@ def import_file(
     }
 
 
-###### scene.export_file
-
-
+@register_command(PluginCommand.SCENE_EXPORT_FILE)
 def export_file(
     node_path: str,
     file_path: str,
     frame_range: list | None = None,
 ) -> dict:
-    """Export a node's output to a file on disk.
-
-    For SOP nodes, uses the geometry's saveToFile method.
-    For ROP/Driver nodes, executes the render.
-    For LOP nodes, exports the USD stage.
-
-    Args:
-        node_path: Path to the node whose output to export.
-        file_path: Destination file path.
-        frame_range: Optional [start, end] or [start, end, step] frame range.
-    """
+    """Export a node's output to a file on disk."""
 
     node = hou.node(node_path)
     if node is None:
@@ -646,7 +572,10 @@ def export_file(
             'message': (
                 'Exported USD stage.'
                 if wrote
-                else f'Export returned without raising, but no file exists at {file_path}.'
+                else (
+                    'Export returned without raising, but no file exists at '
+                    f'{file_path}.'
+                )
             ),
         }
     else:
@@ -656,15 +585,9 @@ def export_file(
         )
 
 
-###### scene.get_context_info
-
-
+@register_command(PluginCommand.SCENE_GET_CONTEXT_INFO)
 def get_context_info(context: str) -> dict:
-    """Return detailed information about a network context.
-
-    Args:
-        context: Context path (e.g. "/obj", "/stage", "/out", "/shop", "/ch", "/img").
-    """
+    """Return detailed information about a network context."""
 
     ctx_node = hou.node(context)
     if ctx_node is None:
@@ -706,9 +629,6 @@ def get_context_info(context: str) -> dict:
     }
 
 
-###### scene.undo / scene.redo
-
-
 def _undo_available() -> None:
     if not hou.undos.areEnabled():
         raise RuntimeError(
@@ -717,15 +637,9 @@ def _undo_available() -> None:
         )
 
 
+@register_command(PluginCommand.SCENE_UNDO)
 def undo(steps: int = 1) -> dict:
-    """Undo the most recent change(s).
-
-    Every MCP command is one undo step, so one call reverses one tool call
-    however many nodes it touched.
-
-    Args:
-        steps: How many steps to undo (default 1).
-    """
+    """Undo the most recent change(s)."""
 
     _undo_available()
     steps = max(1, int(steps))
@@ -745,12 +659,9 @@ def undo(steps: int = 1) -> dict:
     }
 
 
+@register_command(PluginCommand.SCENE_REDO)
 def redo(steps: int = 1) -> dict:
-    """Redo the most recently undone change(s).
-
-    Args:
-        steps: How many steps to redo (default 1).
-    """
+    """Redo the most recently undone change(s)."""
 
     _undo_available()
     steps = max(1, int(steps))
@@ -770,26 +681,9 @@ def redo(steps: int = 1) -> dict:
     }
 
 
-###### Registration
-
-register_command(PluginCommand.SCENE_UNDO)(undo)
-register_command(PluginCommand.SCENE_REDO)(redo)
-register_command(PluginCommand.SCENE_GET_SCENE_INFO)(get_scene_info)
-register_command(PluginCommand.SCENE_NEW_SCENE)(new_scene)
-register_command(PluginCommand.SCENE_SAVE_SCENE)(save_scene)
-
-
-###### scene.write_snapshot
-
-
+@register_command(PluginCommand.SCENE_WRITE_SNAPSHOT)
 def write_snapshot() -> dict:
-    """Write the session as it is now to a temp hip, leaving the session untouched.
-
-    hou.hipFile.save(path) renames the session to path. HScript mwrite -n
-    writes a copy: the session keeps its name and its unsaved-changes flag
-    (checked on 22.0.368), so Houdini still prompts before closing unsaved
-    work. For a separate hython to render the scene as the user sees it.
-    """
+    """Write the session as it is now to a temp hip, leaving the session untouched."""
 
     import tempfile
     import time
@@ -810,13 +704,6 @@ def write_snapshot() -> dict:
         'hip_dir': os.path.dirname(hou.hipFile.path()),
         'houdini_version': hou.applicationVersionString(),
     }
-
-
-register_command(PluginCommand.SCENE_WRITE_SNAPSHOT)(write_snapshot)
-register_command(PluginCommand.SCENE_LOAD_SCENE)(load_scene)
-register_command(PluginCommand.SCENE_IMPORT_FILE)(import_file)
-register_command(PluginCommand.SCENE_EXPORT_FILE)(export_file)
-register_command(PluginCommand.SCENE_GET_CONTEXT_INFO)(get_context_info)
 
 
 @register_command(PluginCommand.SCENE_GET_SELECTION)

@@ -1,26 +1,16 @@
-"""VEX handlers for FXHoudini-MCP.
-
-Provides tools for creating, reading, and validating VEX code
-in Attribute Wrangle nodes and VEX expressions.
-"""
+"""VEX handlers for Houdini MCP."""
 
 from __future__ import annotations
 
 import contextlib
-
-# Built-in
 import re
 
-# Third-party
 import hou
 
-# Internal
 from houdini_mcp_plugin.dispatcher import register_command
 from houdini_mcp_plugin.errors import readable_message
 from houdini_mcp_plugin.ui import focus_network_editor as _focus_network_editor
 from houdini_mcp_protocol import PluginCommand
-
-###### Helpers
 
 
 def _get_node(node_path: str) -> hou.Node:
@@ -55,11 +45,7 @@ def _validate_vex_quick(node: hou.Node) -> dict:
 
 
 def _resolve_class_value(node: hou.Node, run_over: str) -> int:
-    """Resolve a run_over string to the correct menu index on this node.
-
-    Reads the ``class`` parameter's menu labels dynamically so the mapping
-    is always correct regardless of Houdini version.
-    """
+    """Resolve a run_over string to the correct menu index on this node."""
 
     class_parm = node.parm('class')
     if class_parm is None:
@@ -119,24 +105,14 @@ def _check_channel_paths(vex_code: str) -> list[str]:
     return warnings
 
 
-###### vex.create_wrangle
-
-
+@register_command(PluginCommand.VEX_CREATE_WRANGLE)
 def create_wrangle(
     parent_path: str,
     vex_code: str,
     run_over: str = 'Points',
     name: str | None = None,
 ) -> dict:
-    """Create an Attribute Wrangle node with VEX code.
-
-    Args:
-        parent_path: Path to the parent SOP network.
-        vex_code: The VEX snippet code to set.
-        run_over: What to run the wrangle over:
-                  "Points", "Vertices", "Primitives", "Detail", or "Numbers".
-        name: Optional explicit name for the node.
-    """
+    """Create an Attribute Wrangle node with VEX code."""
 
     parent = hou.node(parent_path)
     if parent is None:
@@ -195,28 +171,26 @@ def create_wrangle(
 
     path_warnings = _check_channel_paths(vex_code)
     if path_warnings:
-        result.setdefault('vex_warnings', []).extend(path_warnings)  # ty: ignore[unresolved-attribute]
+        existing = result.get('vex_warnings')
+        if not isinstance(existing, list):
+            existing = []
+            result['vex_warnings'] = existing
+        existing.extend(path_warnings)
 
     return result
 
 
-###### vex.set_wrangle_code
-
-
+@register_command(PluginCommand.VEX_SET_WRANGLE_CODE)
 def set_wrangle_code(node_path: str, vex_code: str) -> dict:
-    """Set VEX code on an existing Attribute Wrangle node.
-
-    Args:
-        node_path: Path to the wrangle node.
-        vex_code: The VEX snippet code to set.
-    """
+    """Set VEX code on an existing Attribute Wrangle node."""
 
     node = _get_node(node_path)
 
     snippet_parm = node.parm('snippet')
     if snippet_parm is None:
         raise ValueError(
-            f"Node {node_path} does not have a 'snippet' parameter. Is it an Attribute Wrangle?"
+            f"Node {node_path} does not have a 'snippet' parameter. Is it an Attribute "
+            f'Wrangle?'
         )
 
     snippet_parm.set(vex_code)
@@ -231,27 +205,26 @@ def set_wrangle_code(node_path: str, vex_code: str) -> dict:
 
     path_warnings = _check_channel_paths(vex_code)
     if path_warnings:
-        result.setdefault('vex_warnings', []).extend(path_warnings)  # ty: ignore[unresolved-attribute]
+        existing = result.get('vex_warnings')
+        if not isinstance(existing, list):
+            existing = []
+            result['vex_warnings'] = existing
+        existing.extend(path_warnings)
 
     return result
 
 
-###### vex.get_wrangle_code
-
-
+@register_command(PluginCommand.VEX_GET_WRANGLE_CODE)
 def get_wrangle_code(node_path: str) -> dict:
-    """Read the VEX code from an Attribute Wrangle node.
-
-    Args:
-        node_path: Path to the wrangle node.
-    """
+    """Read the VEX code from an Attribute Wrangle node."""
 
     node = _get_node(node_path)
 
     snippet_parm = node.parm('snippet')
     if snippet_parm is None:
         raise ValueError(
-            f"Node {node_path} does not have a 'snippet' parameter. Is it an Attribute Wrangle?"
+            f"Node {node_path} does not have a 'snippet' parameter. Is it an Attribute "
+            f'Wrangle?'
         )
 
     vex_code = snippet_parm.eval()
@@ -266,26 +239,13 @@ def get_wrangle_code(node_path: str) -> dict:
     }
 
 
-###### vex.create_vex_expression
-
-
+@register_command(PluginCommand.VEX_CREATE_VEX_EXPRESSION)
 def create_vex_expression(
     node_path: str,
     parm_name: str,
     vex_code: str,
 ) -> dict:
-    """Set a parameter expression, refusing VEX that cannot run there.
-
-    HOM parameter expressions are HScript or Python; there is no VEX language
-    for them. This used to store the code as HScript regardless, falling back
-    to Python, and said success for `@P.y*2` that then failed at every
-    evaluation. VEX belongs in a wrangle.
-
-    Args:
-        node_path: Path to the node.
-        parm_name: Name of the parameter.
-        vex_code: The expression code (HScript syntax).
-    """
+    """Set a parameter expression, refusing VEX that cannot run there."""
 
     import re
 
@@ -298,7 +258,8 @@ def create_vex_expression(
         raise ValueError(
             "That is VEX (attribute @ syntax or a trailing ';'), which a parameter "
             'expression cannot run: parameters take HScript or Python. Put VEX in a '
-            'wrangle with create_wrangle, or write the HScript equivalent (point(), ch()).'
+            'wrangle with create_wrangle, or write the HScript equivalent (point(), '
+            'ch()).'
         )
     # Validated before it is set. setExpression does not parse, eval() of an
     # unknown function answers 0 without raising, and the node error that a
@@ -333,15 +294,9 @@ def create_vex_expression(
     }
 
 
-###### vex.validate_vex
-
-
+@register_command(PluginCommand.VEX_VALIDATE_VEX)
 def validate_vex(node_path: str) -> dict:
-    """Validate VEX code by cooking the node and checking for errors.
-
-    Args:
-        node_path: Path to the wrangle node to validate.
-    """
+    """Validate VEX code by cooking the node and checking for errors."""
 
     node = _get_node(node_path)
 
@@ -394,12 +349,3 @@ def validate_vex(node_path: str) -> dict:
         result['message'] = f'VEX code has {len(errors)} error(s).'
 
     return result
-
-
-###### Registration
-
-register_command(PluginCommand.VEX_CREATE_WRANGLE)(create_wrangle)
-register_command(PluginCommand.VEX_SET_WRANGLE_CODE)(set_wrangle_code)
-register_command(PluginCommand.VEX_GET_WRANGLE_CODE)(get_wrangle_code)
-register_command(PluginCommand.VEX_CREATE_VEX_EXPRESSION)(create_vex_expression)
-register_command(PluginCommand.VEX_VALIDATE_VEX)(validate_vex)

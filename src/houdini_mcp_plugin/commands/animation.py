@@ -1,22 +1,13 @@
-"""Animation handlers for FXHoudini-MCP.
-
-Provides tools for keyframing, frame control, playback range, and
-playbar control.
-"""
+"""Animation handlers for Houdini MCP."""
 
 from __future__ import annotations
 
-# Built-in
 import math
 
-# Third-party
 import hou
 
-# Internal
 from houdini_mcp_plugin.dispatcher import register_command
 from houdini_mcp_protocol import PluginCommand
-
-###### Helpers
 
 
 def _get_parm(node_path: str, parm_name: str) -> hou.Parm:
@@ -65,9 +56,7 @@ def _keyframe_to_dict(key: hou.Keyframe) -> dict:
     return result
 
 
-###### Handlers
-
-
+@register_command(PluginCommand.ANIMATION_SET_KEYFRAME)
 def _set_keyframe(
     node_path: str,
     parm_name: str,
@@ -101,16 +90,13 @@ def _set_keyframe(
     }
 
 
+@register_command(PluginCommand.ANIMATION_SET_KEYFRAMES)
 def _set_keyframes(
     node_path: str,
     parm_name: str,
     keyframes: list,
 ) -> dict:
-    """Batch-set multiple keyframes on a parameter.
-
-    Each entry in keyframes is a dict with keys: frame, value, and
-    optionally slope and accel.
-    """
+    """Batch-set multiple keyframes on a parameter."""
 
     parm = _get_parm(node_path, parm_name)
 
@@ -149,6 +135,7 @@ def _set_keyframes(
     }
 
 
+@register_command(PluginCommand.ANIMATION_DELETE_KEYFRAME)
 def _delete_keyframe(
     node_path: str,
     parm_name: str,
@@ -169,7 +156,8 @@ def _delete_keyframe(
 
     if not found:
         raise hou.OperationFailed(
-            f"No keyframe found at frame {frame} on parameter '{parm_name}' of node '{node_path}'."
+            f"No keyframe found at frame {frame} on parameter '{parm_name}' of node "
+            f"'{node_path}'."
         )
 
     return {
@@ -181,6 +169,7 @@ def _delete_keyframe(
     }
 
 
+@register_command(PluginCommand.ANIMATION_GET_KEYFRAMES)
 def _get_keyframes(
     node_path: str,
     parm_name: str,
@@ -200,14 +189,9 @@ def _get_keyframes(
     }
 
 
+@register_command(PluginCommand.ANIMATION_SET_FRAME)
 def _set_frame(frame: float) -> dict:
-    """Set the current frame.
-
-    Args:
-        frame: Frame number. Non-numeric input used to reach hou.setFrame and come
-            back as "in method 'setFrame', argument 1 of type 'double'", a SWIG
-            binding message that names neither the argument nor this server.
-    """
+    """Set the current frame."""
 
     try:
         frame = float(frame)
@@ -222,6 +206,7 @@ def _set_frame(frame: float) -> dict:
     }
 
 
+@register_command(PluginCommand.ANIMATION_GET_FRAME)
 def _get_frame() -> dict:
     """Get the current frame."""
 
@@ -231,6 +216,7 @@ def _get_frame() -> dict:
     }
 
 
+@register_command(PluginCommand.ANIMATION_SET_FRAME_RANGE)
 def _set_frame_range(start: float, end: float) -> dict:
     """Set the global frame range."""
 
@@ -247,16 +233,9 @@ def _set_frame_range(start: float, end: float) -> dict:
     }
 
 
+@register_command(PluginCommand.ANIMATION_SET_PLAYBACK_RANGE)
 def _set_playback_range(start: float, end: float) -> dict:
-    """Set the playback range, widening the global range when Houdini clamps it.
-
-    A graphical Houdini clamps a playback range to the global one without a
-    word: 1-1200 asked of a 1-240 scene answered start 1, end 240,
-    "playback_range_set" (22.0.368). hython keeps 1-1200 as asked, so the
-    global range is widened only when the read-back shows the clamp. Widening
-    moves $FSTART/$FEND, and with them every ROP and File Cache left at its
-    default range; the reply names the global range before and after.
-    """
+    """Set the playback range, widening the global range when Houdini clamps it."""
 
     if not (math.isfinite(start) and math.isfinite(end)):
         raise hou.OperationFailed(
@@ -290,6 +269,7 @@ def _set_playback_range(start: float, end: float) -> dict:
     return result
 
 
+@register_command(PluginCommand.ANIMATION_PLAYBAR_CONTROL)
 def _playbar_control(
     action: str,
     real_time: bool | None = None,
@@ -328,16 +308,3 @@ def _playbar_control(
         'fps': hou.fps(),
         'status': 'playbar_action_executed',
     }
-
-
-###### Registration
-
-register_command(PluginCommand.ANIMATION_SET_KEYFRAME)(_set_keyframe)
-register_command(PluginCommand.ANIMATION_SET_KEYFRAMES)(_set_keyframes)
-register_command(PluginCommand.ANIMATION_DELETE_KEYFRAME)(_delete_keyframe)
-register_command(PluginCommand.ANIMATION_GET_KEYFRAMES)(_get_keyframes)
-register_command(PluginCommand.ANIMATION_SET_FRAME)(_set_frame)
-register_command(PluginCommand.ANIMATION_GET_FRAME)(_get_frame)
-register_command(PluginCommand.ANIMATION_SET_FRAME_RANGE)(_set_frame_range)
-register_command(PluginCommand.ANIMATION_SET_PLAYBACK_RANGE)(_set_playback_range)
-register_command(PluginCommand.ANIMATION_PLAYBAR_CONTROL)(_playbar_control)
