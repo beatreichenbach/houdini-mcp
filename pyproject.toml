@@ -1,0 +1,57 @@
+[project]
+name = "houdini-mcp"
+version = "0.1.0"
+description = "An MCP server for SideFX Houdini."
+authors = [
+    { name = "Beat Reichenbach" }
+]
+requires-python = ">=3.10"
+license = "MIT"
+readme = "README.md"
+dependencies = [
+    "mcp>=1.21.1,<3",
+    "httpx>=0.27,<1",
+    "pydantic>=2.0,<3"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pre-commit>=4.0",
+    "python-semantic-release>=9.0",
+    "pytest>=8.0",
+    "ruff>=0.16",
+    "ty>=0.0.82"
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["houdini_mcp*"]
+
+[tool.setuptools.package-data]
+houdini_mcp = ["py.typed"]
+
+[tool.semantic_release]
+allow_zero_version = true
+version_variables = ["houdini_mcp/__init__.py:__version__"]
+version_toml = ["pyproject.toml:project.version"]
+
+[tool.semantic_release.remote]
+ignore_token_for_push = true
+
+[tool.semantic_release.publish]
+upload_to_vcs_release = true
+
+[tool.ruff.format]
+quote-style = "single"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "ANN", "RUF"]
+ignore = ["SIM108"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+log_cli = true
+log_level = "INFO"
