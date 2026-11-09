@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 
 from .config import Settings
-from .install import client_config, install
+from .install import client_config, install, uninstall
 from .logging_config import configure_logging
 from .server import create_server
 
@@ -17,7 +17,12 @@ def main() -> None:
     """Run the MCP server or install the Houdini package."""
 
     parser = argparse.ArgumentParser(prog='houdini-mcp')
-    parser.add_argument('command', nargs='?', choices=('run', 'install'), default='run')
+    parser.add_argument(
+        'command',
+        nargs='?',
+        choices=('run', 'install', 'uninstall'),
+        default='run',
+    )
     parser.add_argument('--packages-dir', type=Path)
     args = parser.parse_args()
 
@@ -33,6 +38,14 @@ def main() -> None:
         for path in paths:
             logger.info('Wrote %s', path)
         print(client_config())
+        return
+
+    if args.command == 'uninstall':
+        paths = uninstall(args.packages_dir)
+        if not paths:
+            logger.warning('No Houdini package file found')
+        for path in paths:
+            logger.info('Removed %s', path)
         return
 
     logger.info('Starting Houdini MCP server')

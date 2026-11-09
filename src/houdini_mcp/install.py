@@ -31,6 +31,20 @@ def install(packages_dir: Path | None = None) -> list[Path]:
     return written
 
 
+def uninstall(packages_dir: Path | None = None) -> list[Path]:
+    """Remove the Houdini package file from the detected packages directories."""
+
+    removed: list[Path] = []
+    for target in _packages_dirs(packages_dir):
+        path = target / PACKAGE_FILE
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            continue
+        removed.append(path)
+    return removed
+
+
 def client_config() -> str:
     """Return the MCP client configuration as JSON."""
 
