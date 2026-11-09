@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import os
 from typing import Any
 
 import hou
@@ -66,6 +67,84 @@ def _menu_pairs(spec: dict) -> tuple:
             values.append(str(item))
             labels.append(str(item))
     return tuple(values), tuple(labels)
+
+
+def _layer_summary(layer: Any) -> dict:
+    """Return resolution, channels, and value ranges for a COP layer."""
+
+    summary: dict = {'available': True}
+    with contextlib.suppress(Exception):
+        summary['resolution'] = list(layer.bufferResolution())
+    with contextlib.suppress(Exception):
+        summary['storage'] = str(layer.storageType()).rsplit('.', 1)[-1]
+    with contextlib.suppress(Exception):
+        summary['is_constant'] = bool(layer.isConstant())
+    channels = 0
+    with contextlib.suppress(Exception):
+        channels = int(layer.channelCount())
+    summary['channels'] = channels
+    ranges = []
+    for channel in range(min(channels, 4)):
+        with contextlib.suppress(Exception):
+            ranges.append(
+                {
+                    'min': layer.computeMin(channel),
+                    'max': layer.computeMax(channel),
+                    'mean': layer.computeAverage(channel),
+                }
+            )
+    if ranges:
+        summary['channel_ranges'] = ranges
+    return summary
+
+
+def _track_entry(track: Any) -> dict[str, Any]:
+    """Return name, sample count, rate, and value range for a CHOP track."""
+
+    samples = track.allSamples()
+    return {
+        'name': track.name(),
+        'length': track.numSamples(),
+        'rate': track.clip().sampleRate(),
+        'min': min(samples) if samples else 0.0,
+        'max': max(samples) if samples else 0.0,
+    }
+
+
+def _find_flipbook_output(output_path: str, frame: float) -> str:
+    """Find the actual flipbook output after Houdini inserts a frame number."""
+
+    if os.path.isfile(output_path):
+        return output_path
+
+    base, ext = os.path.splitext(output_path)
+    frame_int = int(frame)
+    candidates = [
+        f'{base}.{frame_int:04d}{ext}',
+        f'{base}.{frame_int:03d}{ext}',
+        f'{base}.{frame_int}{ext}',
+        f'{base}_{frame_int:04d}{ext}',
+    ]
+    for candidate in candidates:
+        if os.path.isfile(candidate):
+            try:
+                os.rename(candidate, output_path)
+                return output_path
+            except OSError:
+                return candidate
+
+    return output_path
+
+
+def _size_flipbook(settings: Any, resolution: list | None) -> None:
+    """Size a flipbook from the viewport unless an explicit resolution is given."""
+
+    if resolution is not None:
+        settings.useResolution(True)
+        settings.resolution(tuple(resolution))
+    else:
+        settings.useResolution(False)
+    settings.outputZoom(100)
 
 
 def _menu_default(spec: dict, values: tuple) -> int:

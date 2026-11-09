@@ -1,0 +1,343 @@
+"""Animation handlers for FXHoudini-MCP.
+
+Provides tools for keyframing, frame control, playback range, and
+playbar control.
+"""
+
+from __future__ import annotations
+
+# Built-in
+import math
+
+# Third-party
+import hou
+
+# Internal
+from houdini_mcp_plugin.dispatcher import register_command
+from houdini_mcp_protocol import PluginCommand
+
+###### Helpers
+
+
+def _get_parm(node_path: str, parm_name: str) -> hou.Parm:
+    """Return a parameter object or raise if the node/parm is not found."""
+
+    node = hou.node(node_path)
+    if node is None:
+        raise hou.NodeError(f'Node not found: {node_path}')
+    parm = node.parm(parm_name)
+    if parm is None:
+        raise hou.OperationFailed(
+            f"Parameter '{parm_name}' not found on node '{node_path}'. "
+            f'Available parameters: {[p.name() for p in node.parms()[:30]]}'
+        )
+    return parm
+
+
+def _keyframe_to_dict(key: hou.Keyframe) -> dict:
+    """Convert a hou.Keyframe to a plain Python dict."""
+
+    result = {
+        'frame': key.frame(),
+        'value': key.value(),
+    }
+    try:
+        result['slope'] = key.slope()
+    except Exception:
+        result['slope'] = None
+    try:
+        result['accel'] = key.accel()
+    except Exception:
+        result['accel'] = None
+    try:
+        expr = key.expression()
+        result['expression'] = expr if expr else None
+    except Exception:
+        result['expression'] = None
+    try:
+        result['in_slope'] = key.inSlope()
+    except Exception:
+        result['in_slope'] = None
+    try:
+        result['in_accel'] = key.inAccel()
+    except Exception:
+        result['in_accel'] = None
+    return result
+
+
+###### Handlers
+
+
+def _set_keyframe(
+    node_path: str,
+    parm_name: str,
+    frame: float,
+    value: float,
+    slope: float | None = None,
+    accel: float | None = None,
+) -> dict:
+    """Set a single keyframe on a parameter."""
+
+    parm = _get_parm(node_path, parm_name)
+
+    key = hou.Keyframe()
+    key.setFrame(frame)
+    key.setValue(value)
+    if slope is not None:
+        key.setSlope(slope)
+    if accel is not None:
+        key.setAccel(accel)
+
+    parm.setKeyframe(key)
+
+    return {
+        'node_path': node_path,
+        'parm_name': parm_name,
+        'frame': frame,
+        'value': value,
+        'slope': slope,
+        'accel': accel,
+        'status': 'keyframe_set',
+    }
+
+
+def _set_keyframes(
+    node_path: str,
+    parm_name: str,
+    keyframes: list,
+) -> dict:
+    """Batch-set multiple keyframes on a parameter.
+
+    Each entry in keyframes is a dict with keys: frame, value, and
+    optionally slope and accel.
+    """
+
+    parm = _get_parm(node_path, parm_name)
+
+    if not keyframes:
+        raise hou.OperationFailed('keyframes list must not be empty.')
+
+    set_count = 0
+    for kf_data in keyframes:
+        frame = kf_data.get('frame')
+        value = kf_data.get('value')
+        if frame is None or value is None:
+            raise hou.OperationFailed(
+                f"Each keyframe must have 'frame' and 'value'. Got: {kf_data}"
+            )
+
+        key = hou.Keyframe()
+        key.setFrame(float(frame))
+        key.setValue(float(value))
+
+        kf_slope = kf_data.get('slope')
+        if kf_slope is not None:
+            key.setSlope(float(kf_slope))
+
+        kf_accel = kf_data.get('accel')
+        if kf_accel is not None:
+            key.setAccel(float(kf_accel))
+
+        parm.setKeyframe(key)
+        set_count += 1
+
+    return {
+        'node_path': node_path,
+        'parm_name': parm_name,
+        'keyframes_set': set_count,
+        'status': 'keyframes_set',
+    }
+
+
+def _delete_keyframe(
+    node_path: str,
+    parm_name: str,
+    frame: float,
+) -> dict:
+    """Delete a keyframe at the specified frame."""
+
+    parm = _get_parm(node_path, parm_name)
+
+    # Find the keyframe at the given frame
+    existing_keys = parm.keyframes()
+    found = False
+    for key in existing_keys:
+        if abs(key.frame() - frame) < 0.0001:
+            parm.deleteKeyframeAtFrame(key.frame())
+            found = True
+            break
+
+    if not found:
+        raise hou.OperationFailed(
+            f"No keyframe found at frame {frame} on parameter '{parm_name}' of node '{node_path}'."
+        )
+
+    return {
+        'node_path': node_path,
+        'parm_name': parm_name,
+        'deleted_frame': frame,
+        'remaining_keyframes': len(parm.keyframes()),
+        'status': 'keyframe_deleted',
+    }
+
+
+def _get_keyframes(
+    node_path: str,
+    parm_name: str,
+) -> dict:
+    """Get all keyframes on a parameter."""
+
+    parm = _get_parm(node_path, parm_name)
+
+    keys = parm.keyframes()
+    keyframe_list = [_keyframe_to_dict(k) for k in keys]
+
+    return {
+        'node_path': node_path,
+        'parm_name': parm_name,
+        'keyframe_count': len(keyframe_list),
+        'keyframes': keyframe_list,
+    }
+
+
+def _set_frame(frame: float) -> dict:
+    """Set the current frame.
+
+    Args:
+        frame: Frame number. Non-numeric input used to reach hou.setFrame and come
+            back as "in method 'setFrame', argument 1 of type 'double'", a SWIG
+            binding message that names neither the argument nor this server.
+    """
+
+    try:
+        frame = float(frame)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f'frame must be a number, not {type(frame).__name__}: {frame!r}'
+        ) from None
+    hou.setFrame(frame)
+    return {
+        'frame': hou.frame(),
+        'status': 'frame_set',
+    }
+
+
+def _get_frame() -> dict:
+    """Get the current frame."""
+
+    return {
+        'frame': hou.frame(),
+        'fps': hou.fps(),
+    }
+
+
+def _set_frame_range(start: float, end: float) -> dict:
+    """Set the global frame range."""
+
+    if start >= end:
+        raise hou.OperationFailed(f'start ({start}) must be less than end ({end}).')
+    hou.playbar.setFrameRange(start, end)
+
+    # Read back actual values
+    actual_start, actual_end = hou.playbar.frameRange()
+    return {
+        'start': actual_start,
+        'end': actual_end,
+        'status': 'frame_range_set',
+    }
+
+
+def _set_playback_range(start: float, end: float) -> dict:
+    """Set the playback range, widening the global range when Houdini clamps it.
+
+    A graphical Houdini clamps a playback range to the global one without a
+    word: 1-1200 asked of a 1-240 scene answered start 1, end 240,
+    "playback_range_set" (22.0.368). hython keeps 1-1200 as asked, so the
+    global range is widened only when the read-back shows the clamp. Widening
+    moves $FSTART/$FEND, and with them every ROP and File Cache left at its
+    default range; the reply names the global range before and after.
+    """
+
+    if not (math.isfinite(start) and math.isfinite(end)):
+        raise hou.OperationFailed(
+            f'start ({start}) and end ({end}) must be finite frames.'
+        )
+    if start >= end:
+        raise hou.OperationFailed(f'start ({start}) must be less than end ({end}).')
+    global_start, global_end = hou.playbar.frameRange()
+    hou.playbar.setPlaybackRange(start, end)
+    actual_start, actual_end = hou.playbar.playbackRange()
+    clamped = (start < global_start and actual_start > start) or (
+        end > global_end and actual_end < end
+    )
+    if clamped:
+        hou.playbar.setFrameRange(min(start, global_start), max(end, global_end))
+        hou.playbar.setPlaybackRange(start, end)
+        actual_start, actual_end = hou.playbar.playbackRange()
+
+    result = {
+        'start': actual_start,
+        'end': actual_end,
+        'status': 'playback_range_set',
+    }
+    if clamped:
+        result['frame_range_widened'] = {
+            'from': [global_start, global_end],
+            'to': list(hou.playbar.frameRange()),
+            'note': '$FSTART/$FEND moved with it: ROPs and caches at their default '
+            'range now cover the wider one.',
+        }
+    return result
+
+
+def _playbar_control(
+    action: str,
+    real_time: bool | None = None,
+    fps: float | None = None,
+) -> dict:
+    """Control playback: play, stop, or reverse."""
+
+    action = action.lower().strip()
+    valid_actions = ('play', 'stop', 'reverse')
+    if action not in valid_actions:
+        raise hou.OperationFailed(
+            f"Invalid action '{action}'. Must be one of: {valid_actions}"
+        )
+
+    # Apply optional settings before acting
+    if real_time is not None:
+        hou.playbar.setRealTime(real_time)
+
+    if fps is not None:
+        if fps <= 0:
+            raise hou.OperationFailed(f'fps must be positive, got {fps}')
+        hou.setFps(fps)
+
+    if action == 'play':
+        hou.playbar.play()
+    elif action == 'stop':
+        hou.playbar.stop()
+    elif action == 'reverse':
+        hou.playbar.reverse()
+
+    return {
+        'action': action,
+        'current_frame': hou.frame(),
+        'is_playing': hou.playbar.isPlaying(),
+        'real_time': hou.playbar.isRealTime(),
+        'fps': hou.fps(),
+        'status': 'playbar_action_executed',
+    }
+
+
+###### Registration
+
+register_command(PluginCommand.ANIMATION_SET_KEYFRAME)(_set_keyframe)
+register_command(PluginCommand.ANIMATION_SET_KEYFRAMES)(_set_keyframes)
+register_command(PluginCommand.ANIMATION_DELETE_KEYFRAME)(_delete_keyframe)
+register_command(PluginCommand.ANIMATION_GET_KEYFRAMES)(_get_keyframes)
+register_command(PluginCommand.ANIMATION_SET_FRAME)(_set_frame)
+register_command(PluginCommand.ANIMATION_GET_FRAME)(_get_frame)
+register_command(PluginCommand.ANIMATION_SET_FRAME_RANGE)(_set_frame_range)
+register_command(PluginCommand.ANIMATION_SET_PLAYBACK_RANGE)(_set_playback_range)
+register_command(PluginCommand.ANIMATION_PLAYBAR_CONTROL)(_playbar_control)

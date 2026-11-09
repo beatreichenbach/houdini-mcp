@@ -1,0 +1,956 @@
+"""PDG/TOPs handlers for FXHoudini-MCP.
+
+Provides tools for querying and controlling TOP networks, work items,
+schedulers, and PDG graph cooking in Houdini.
+"""
+
+from __future__ import annotations
+
+# Built-in
+import logging
+
+# Third-party
+import hou
+
+# Internal
+from houdini_mcp_plugin.dispatcher import register_command
+from houdini_mcp_plugin.errors import readable_message
+from houdini_mcp_protocol import PluginCommand
+
+logger = logging.getLogger(__name__)
+
+
+###### Helpers
+
+
+def _get_top_node(node_path: str) -> hou.Node:
+    """Return a TOP node or topnet, or say why the given node is neither.
+
+    This checked only existence despite its name. get_top_network_info on a box SOP
+    returned success with top_node_count 0 and cook_state "unknown", which reads as
+    "this TOP network is empty" -- so a caller starts adding work items to a box
+    instead of being told it picked the wrong node.
+    """
+
+    node = hou.node(node_path)
+    if node is None:
+        raise ValueError(f'Node not found: {node_path}')
+    category = node.type().category().name()
+    if category == 'Top':
+        return node
+    # A topnet is an Object whose children are TOPs; every network-level command
+    # here is meant to take one.
+    children = node.childTypeCategory()
+    if children is not None and children.name() == 'Top':
+        return node
+    raise ValueError(
+        f'{node_path} is a {category} node ({node.type().name()}), not a TOP node '
+        f'or a topnet. PDG tools work on a topnet or the TOP nodes inside one.'
+    )
+
+
+def _get_pdg_node(node: hou.Node):
+    """Return the underlying PDG node for a TOP node."""
+
+    pdg_node = node.getPDGNode()
+    if pdg_node is None:
+        raise ValueError(
+            f'Node {node.path()} does not have a PDG node. '
+            'It may not be a TOP node or the graph has not been generated.'
+        )
+    return pdg_node
+
+
+def _assert_has_generating_node(node: hou.Node) -> None:
+    """Raise unless *node* resolves to a TOP node that produces work items.
+
+    Blocking PDG calls (generateStaticWorkItems(True), cookWorkItems(block=True))
+    run on the main thread here, because the dispatcher marshals every hou.*
+    call through hdefereval. When the target cannot produce work items the
+    blocking call waits on a cook that never starts, and since the main thread
+    is what would advance that cook, Houdini's UI deadlocks and the app has to
+    be force-quit. A freshly created topnet hits this: it contains only a
+    localscheduler, so it is the common case rather than an exotic one.
+
+    Schedulers are the tell -- their PDG object has no ``nodeType``, while
+    Processor/Partitioner/Mapper nodes do.
+    """
+
+    target = node
+    if node.getPDGNode() is None and hasattr(node, 'displayNode'):
+        # TOP networks have no PDG node of their own; they generate through
+        # whichever child is displayed.
+        target = node.displayNode()
+
+    if target is None:
+        raise ValueError(
+            f'TOP network {node.path()} is empty, so there is nothing to '
+            'generate. Add a TOP node (for example wedge or filepattern) first.'
+        )
+
+    pdg_node = target.getPDGNode()
+    if pdg_node is None:
+        raise ValueError(
+            f'Node {target.path()} has no PDG node, so it cannot generate '
+            'work items. It may not be a TOP node.'
+        )
+
+    if not hasattr(pdg_node, 'nodeType'):
+        raise ValueError(
+            f'TOP network {node.path()} contains no work-item-generating '
+            f"nodes -- '{target.name()}' is a scheduler. Add a TOP node "
+            '(for example wedge or filepattern) before generating or cooking.'
+        )
+
+
+def _get_graph_context(node: hou.Node):
+    """Return the PDG graph context for a TOP node."""
+
+    pdg_node = node.getPDGNode()
+    if pdg_node is not None:
+        ctx = pdg_node.context
+        if ctx is not None:
+            return ctx
+    # Fallback: try to find the graph context from the parent topnet
+    parent = node
+    while parent is not None:
+        if (
+            parent.type().category().name() == 'TopNet'
+            or parent.type().name() == 'topnet'
+        ):
+            # A TOP network has no PDG node of its own -- it cooks through the
+            # node it displays -- so borrow the context from there. Houdini 22
+            # removed hou.pdg entirely, so the legacy lookup below cannot
+            # resolve anything there and this is the path that works.
+            display = parent.displayNode() if hasattr(parent, 'displayNode') else None
+            if display is not None:
+                display_pdg = display.getPDGNode()
+                if display_pdg is not None and display_pdg.context is not None:
+                    return display_pdg.context
+
+            # Legacy path for Houdini versions that still expose hou.pdg.
+            try:
+                contexts = hou.pdg.GraphContext.contexts()
+                for ctx in contexts:
+                    if ctx.name == parent.name():
+                        return ctx
+                # Return the first context if name match fails
+                if contexts:
+                    return contexts[0]
+            except (hou.OperationFailed, AttributeError) as e:
+                logger.debug('Could not retrieve PDG graph contexts: %s', e)
+            break
+        parent = parent.parent()
+    raise ValueError(
+        f'Cannot find PDG graph context for node {node.path()}. '
+        'Ensure the node is inside a TOP network.'
+    )
+
+
+def _work_item_state_name(state) -> str:
+    """Convert a PDG work item state enum to a readable string."""
+
+    state_map = {
+        0: 'undefined',
+        1: 'uncooked',
+        2: 'waiting',
+        3: 'scheduled',
+        4: 'cooking',
+        5: 'cooked_success',
+        6: 'cooked_cache',
+        7: 'cooked_fail',
+        8: 'cooked_cancel',
+        9: 'dirty',
+    }
+    try:
+        return state_map.get(int(state), str(state))
+    except (ValueError, TypeError) as e:
+        logger.debug('Could not convert work item state to int: %s', e)
+        return str(state)
+
+
+def _state_counts(pdg_node) -> dict:
+    """How many work items sit in each state, by readable name."""
+
+    counts: dict = {}
+    for wi in pdg_node.workItems:
+        name = _work_item_state_name(wi.state)
+        counts[name] = counts.get(name, 0) + 1
+    return counts
+
+
+def _work_item_to_dict(work_item) -> dict:
+    """Convert a PDG work item to a plain dict."""
+
+    info = {
+        'id': work_item.id,
+        'index': work_item.index,
+        'name': work_item.name,
+        'state': _work_item_state_name(work_item.state),
+        'frame': work_item.frame,
+        'priority': work_item.priority,
+        'batch_index': work_item.batchIndex,
+    }
+
+    # Collect attributes
+    try:
+        attribs = {}
+        for attrib in work_item.attribs:
+            try:
+                attribs[attrib.name] = {
+                    'type': str(attrib.type),
+                    'values': list(attrib.values),
+                }
+            except (AttributeError, TypeError) as e:
+                logger.debug(
+                    "Could not read work item attribute values for '%s': %s",
+                    attrib.name,
+                    e,
+                )
+                attribs[attrib.name] = {'type': str(attrib.type), 'values': []}
+        info['attributes'] = attribs
+    except (AttributeError, TypeError) as e:
+        logger.debug('Could not read work item attributes: %s', e)
+        info['attributes'] = {}
+
+    # Collect output files
+    try:
+        info['output_files'] = [
+            {'path': rf.path, 'tag': rf.tag, 'hash': rf.hash}
+            for rf in work_item.resultData
+        ]
+    except (AttributeError, TypeError) as e:
+        logger.debug('Could not read work item output files: %s', e)
+        info['output_files'] = []
+
+    return info
+
+
+###### tops.get_top_network_info
+
+
+def get_top_network_info(node_path: str) -> dict:
+    """Return an overview of a TOP network.
+
+    Provides node count, scheduler info, and cook state.
+
+    Args:
+        node_path: Path to a TOP network node (topnet) or a TOP node inside one.
+    """
+
+    node = _get_top_node(node_path)
+
+    # If pointing at a topnet, enumerate children; otherwise use parent
+    if node.type().category().name() == 'TopNet' or node.type().name() == 'topnet':
+        topnet = node
+    else:
+        topnet = node.parent()
+        if topnet is None or (
+            topnet.type().category().name() != 'TopNet'
+            and topnet.type().name() != 'topnet'
+        ):
+            topnet = node
+
+    children = topnet.children()
+    top_nodes = []
+    scheduler_nodes = []
+
+    for child in children:
+        child_type = child.type().name()
+        child_info = {
+            'name': child.name(),
+            'path': child.path(),
+            'type': child_type,
+        }
+        try:
+            errors = child.errors()
+            child_info['has_errors'] = bool(errors)
+        except (hou.OperationFailed, AttributeError) as e:
+            logger.debug("Could not read errors for child '%s': %s", child.name(), e)
+            child_info['has_errors'] = False
+
+        # Determine if it is a scheduler
+        try:
+            if (
+                hasattr(child, 'isScheduler') and child.isScheduler()
+            ) or 'scheduler' in child_type.lower():
+                scheduler_nodes.append(child_info)
+            else:
+                top_nodes.append(child_info)
+        except (hou.OperationFailed, AttributeError) as e:
+            logger.debug(
+                "Could not determine scheduler status for '%s': %s", child.name(), e
+            )
+            top_nodes.append(child_info)
+
+    # Cook state
+    cook_state = 'unknown'
+    try:
+        contexts = hou.pdg.GraphContext.contexts()
+        for ctx in contexts:
+            if ctx.name == topnet.name():
+                cook_state = str(ctx.cookState)
+                break
+    except (hou.OperationFailed, AttributeError) as e:
+        logger.debug("Could not read cook state for '%s': %s", topnet.name(), e)
+
+    return {
+        'network_path': topnet.path(),
+        'network_type': topnet.type().name(),
+        'top_node_count': len(top_nodes),
+        'scheduler_count': len(scheduler_nodes),
+        'top_nodes': top_nodes,
+        'scheduler_nodes': scheduler_nodes,
+        'cook_state': cook_state,
+    }
+
+
+###### tops.cook_top_node
+
+
+def cook_top_node(
+    node_path: str,
+    block: bool = True,
+    generate_only: bool = False,
+) -> dict:
+    """Cook a TOP node to execute its work items.
+
+    Args:
+        node_path: Path to the TOP node to cook.
+        block: If True, wait for cooking to complete before returning.
+        generate_only: If True, only generate work items without cooking.
+    """
+
+    node = _get_top_node(node_path)
+    if block or generate_only:
+        _assert_has_generating_node(node)
+
+    if generate_only:
+        try:
+            node.generateStaticWorkItems(block)
+        except AttributeError:
+            # Fallback for older Houdini versions
+            pdg_node = _get_pdg_node(node)
+            pdg_node.generateStaticItems()
+        return {
+            'success': True,
+            'node_path': node.path(),
+            'action': 'generate_only',
+            'message': 'Static work items generated.',
+        }
+
+    # Work items that cook out of process (ROP Fetch, the local scheduler's
+    # default) load the hip FROM DISK. Cooked with unsaved changes, every item
+    # failed on "Cannot find node" for a network built this session. Houdini's
+    # UI asks to save first; there is nobody to answer that here, so save, as
+    # write_cache(background=True) does, and say so.
+    saved_first = False
+    if hou.hipFile.hasUnsavedChanges():
+        if hou.hipFile.isNewFile():
+            raise ValueError(
+                'The scene has never been saved, and TOP work items cook from the hip '
+                'on disk. Save it with save_scene(file_path=...) first.'
+            )
+        hou.hipFile.save()
+        saved_first = True
+
+    if block:
+        try:
+            node.cookWorkItems(block=True)
+        except AttributeError:
+            # Fallback: use executeGraph
+            node.executeGraph(False, False)
+    else:
+        try:
+            node.executeGraph(False, False)
+        except Exception as e:
+            raise ValueError(
+                f'Failed to start non-blocking cook: {readable_message(e)}'
+            ) from e
+
+    # Gather result info
+    result = {
+        'success': True,
+        'node_path': node.path(),
+        'action': 'cook',
+        'blocking': block,
+    }
+    if saved_first:
+        result['saved_hip_first'] = hou.hipFile.path()
+
+    try:
+        pdg_node = _get_pdg_node(node)
+        work_items = list(pdg_node.workItems)
+        result['work_item_count'] = len(work_items)
+    except (ValueError, AttributeError) as e:
+        logger.debug('Could not read work item count: %s', e)
+        pdg_node = None
+        work_items = []
+        result['work_item_count'] = None
+
+    try:
+        errors = node.errors()
+        result['errors'] = list(errors) if errors else []
+    except (hou.OperationFailed, AttributeError) as e:
+        logger.debug('Could not read node errors: %s', e)
+        result['errors'] = []
+
+    if not block or pdg_node is None:
+        return result
+
+    # node.errors() only holds generation-time errors. A script that raises while
+    # *cooking* leaves the node clean and marks each work item cooked_fail, so the
+    # states are the only honest verdict on a blocking cook. This used to return
+    # success: True, errors: [] with every item failed.
+    counts = _state_counts(pdg_node)
+    result['state_counts'] = counts
+    failed = [
+        wi for wi in work_items if _work_item_state_name(wi.state) == 'cooked_fail'
+    ]
+    cancelled = counts.get('cooked_cancel', 0)
+    if failed or cancelled:
+        result['success'] = False
+        parts = []
+        if failed:
+            parts.append(f'{len(failed)} of {len(work_items)} work item(s) failed')
+        if cancelled:
+            parts.append(f'{cancelled} cancelled')
+        message = '; '.join(parts) + f' on {node.path()}.'
+        first_log = _work_item_log(failed[0]).strip() if failed else ''
+        if first_log:
+            message += f' First failure ({failed[0].name}): {first_log[-500:]}'
+        message += ' get_failed_work_items lists them all with their logs.'
+        result['message'] = message
+    return result
+
+
+###### tops.cancel_top_cook
+
+
+def cancel_top_cook(node_path: str) -> dict:
+    """Cancel any active cooking on a TOP network.
+
+    Args:
+        node_path: Path to a TOP node or TOP network.
+    """
+
+    node = _get_top_node(node_path)
+
+    try:
+        ctx = _get_graph_context(node)
+        ctx.cancelCook()
+    except Exception as e:
+        raise ValueError(f'Failed to cancel cook: {readable_message(e)}') from e
+
+    return {
+        'success': True,
+        'node_path': node.path(),
+        'message': 'Cook cancellation requested.',
+    }
+
+
+###### tops.pause_top_cook
+
+
+def pause_top_cook(node_path: str) -> dict:
+    """Pause cooking on a TOP network.
+
+    Args:
+        node_path: Path to a TOP node or TOP network.
+    """
+
+    node = _get_top_node(node_path)
+
+    try:
+        ctx = _get_graph_context(node)
+        ctx.pauseCook()
+    except Exception as e:
+        raise ValueError(f'Failed to pause cook: {readable_message(e)}') from e
+
+    return {
+        'success': True,
+        'node_path': node.path(),
+        'message': 'Cook paused.',
+    }
+
+
+###### tops.dirty_work_items
+
+
+def dirty_work_items(node_path: str, remove_outputs: bool = False) -> dict:
+    """Dirty (invalidate) work items on a TOP node so they can be regenerated.
+
+    Args:
+        node_path: Path to the TOP node.
+        remove_outputs: If True, also remove output files from disk.
+    """
+
+    node = _get_top_node(node_path)
+
+    try:
+        pdg_node = _get_pdg_node(node)
+        pdg_node.dirty(remove_outputs)
+    except (ValueError, AttributeError, hou.OperationFailed) as e:
+        logger.debug('Primary dirty failed, trying fallback: %s', e)
+        # Fallback: try dirtying via the node itself
+        try:
+            node.dirtyAllWorkItems(remove_outputs)
+        except AttributeError:
+            # Last resort: dirty through graph context
+            ctx = _get_graph_context(node)
+            ctx.dirty(remove_outputs)
+
+    return {
+        'success': True,
+        'node_path': node.path(),
+        'remove_outputs': remove_outputs,
+        'message': 'Work items dirtied.',
+    }
+
+
+###### tops.get_work_item_states
+
+
+def get_work_item_states(node_path: str) -> dict:
+    """Return the count of work items in each state for a TOP node.
+
+    States include: waiting, scheduled, cooking, cooked_success,
+    cooked_fail, cooked_cancel, etc.
+
+    Args:
+        node_path: Path to the TOP node.
+    """
+
+    node = _get_top_node(node_path)
+    pdg_node = _get_pdg_node(node)
+
+    state_counts = {}
+    total = 0
+
+    try:
+        work_items = pdg_node.workItems
+        for wi in work_items:
+            state_name = _work_item_state_name(wi.state)
+            state_counts[state_name] = state_counts.get(state_name, 0) + 1
+            total += 1
+    except Exception as e:
+        raise ValueError(f'Failed to read work items: {readable_message(e)}') from e
+
+    return {
+        'node_path': node.path(),
+        'total_work_items': total,
+        'state_counts': state_counts,
+    }
+
+
+###### tops.get_work_item_info
+
+
+def get_work_item_info(node_path: str, work_item_index: int) -> dict:
+    """Return detailed information about a specific work item.
+
+    Args:
+        node_path: Path to the TOP node.
+        work_item_index: Index of the work item within the node.
+    """
+
+    node = _get_top_node(node_path)
+    pdg_node = _get_pdg_node(node)
+
+    try:
+        work_items = list(pdg_node.workItems)
+    except Exception as e:
+        raise ValueError(f'Failed to read work items: {readable_message(e)}') from e
+
+    if work_item_index < 0 or work_item_index >= len(work_items):
+        raise ValueError(
+            f'Work item index {work_item_index} out of range. '
+            f'Node has {len(work_items)} work items (0-{len(work_items) - 1}).'
+        )
+
+    wi = work_items[work_item_index]
+    return {
+        'node_path': node.path(),
+        'work_item': _work_item_to_dict(wi),
+    }
+
+
+###### tops.get_pdg_graph
+
+
+def get_pdg_graph(node_path: str) -> dict:
+    """Return the PDG dependency graph structure for a TOP network.
+
+    Shows nodes and their dependency connections.
+
+    Args:
+        node_path: Path to a TOP network node or TOP node inside one.
+    """
+
+    node = _get_top_node(node_path)
+
+    # Navigate to the topnet
+    if node.type().category().name() == 'TopNet' or node.type().name() == 'topnet':
+        topnet = node
+    else:
+        topnet = node.parent()
+        if topnet is None:
+            topnet = node
+
+    children = topnet.children()
+    nodes_info = []
+    edges = []
+
+    for child in children:
+        node_info = {
+            'name': child.name(),
+            'path': child.path(),
+            'type': child.type().name(),
+        }
+
+        # Work item count if available
+        try:
+            pdg_n = child.getPDGNode()
+            if pdg_n is not None:
+                node_info['work_item_count'] = len(pdg_n.workItems)
+            else:
+                node_info['work_item_count'] = 0
+        except (hou.OperationFailed, AttributeError) as e:
+            logger.debug("Could not read work item count for '%s': %s", child.name(), e)
+            node_info['work_item_count'] = 0
+
+        nodes_info.append(node_info)
+
+        # Track input connections as edges
+        for input_idx, input_connectors in enumerate(child.inputConnectors()):
+            for connector in input_connectors:
+                src_node = connector.inputNode()
+                if src_node is not None:
+                    edges.append(
+                        {
+                            'from': src_node.path(),
+                            'to': child.path(),
+                            'input_index': input_idx,
+                        }
+                    )
+
+    return {
+        'network_path': topnet.path(),
+        'node_count': len(nodes_info),
+        'nodes': nodes_info,
+        'edge_count': len(edges),
+        'edges': edges,
+    }
+
+
+###### tops.generate_static_items
+
+
+def generate_static_items(node_path: str) -> dict:
+    """Generate static work items on a TOP node without cooking them.
+
+    This is useful for previewing what work items will be created.
+
+    Args:
+        node_path: Path to the TOP node.
+    """
+
+    node = _get_top_node(node_path)
+    _assert_has_generating_node(node)
+
+    try:
+        node.generateStaticWorkItems(True)
+    except AttributeError:
+        try:
+            pdg_node = _get_pdg_node(node)
+            pdg_node.generateStaticItems()
+        except Exception as e:
+            raise ValueError(
+                f'Failed to generate static items: {readable_message(e)}'
+            ) from e
+
+    # Gather generated item info
+    generated_count = 0
+    try:
+        pdg_node = _get_pdg_node(node)
+        work_items = pdg_node.workItems
+        generated_count = len(work_items)
+    except (ValueError, AttributeError) as e:
+        logger.debug('Could not read generated work item count: %s', e)
+
+    return {
+        'success': True,
+        'node_path': node.path(),
+        'generated_count': generated_count,
+        'message': f'Generated {generated_count} static work items.',
+    }
+
+
+###### tops.get_top_scheduler_info
+
+
+def get_top_scheduler_info(node_path: str) -> dict:
+    """Return information about a TOP scheduler node.
+
+    Args:
+        node_path: Path to a TOP scheduler node or a TOP network
+                   (returns info about its default scheduler).
+    """
+
+    node = _get_top_node(node_path)
+
+    # If the node itself is a scheduler, report on it directly
+    is_scheduler = False
+    try:
+        if hasattr(node, 'isScheduler') and node.isScheduler():
+            is_scheduler = True
+    except (hou.OperationFailed, AttributeError) as e:
+        logger.debug('Could not check isScheduler: %s', e)
+        if 'scheduler' in node.type().name().lower():
+            is_scheduler = True
+
+    if not is_scheduler:
+        # Find schedulers in the network
+        if node.type().category().name() == 'TopNet' or node.type().name() == 'topnet':
+            topnet = node
+        else:
+            topnet = node.parent()
+            if topnet is None:
+                topnet = node
+
+        schedulers = []
+        for child in topnet.children():
+            try:
+                if (
+                    hasattr(child, 'isScheduler') and child.isScheduler()
+                ) or 'scheduler' in child.type().name().lower():
+                    schedulers.append(child)
+            except (hou.OperationFailed, AttributeError) as e:
+                logger.debug(
+                    "Could not check scheduler status for '%s': %s", child.name(), e
+                )
+
+        if not schedulers:
+            return {
+                'node_path': node.path(),
+                'message': 'No scheduler nodes found in network.',
+                'schedulers': [],
+            }
+
+        # Report on all found schedulers
+        scheduler_infos = []
+        for sched in schedulers:
+            info = _build_scheduler_info(sched)
+            scheduler_infos.append(info)
+
+        return {
+            'node_path': node.path(),
+            'scheduler_count': len(scheduler_infos),
+            'schedulers': scheduler_infos,
+        }
+
+    # Single scheduler node
+    info = _build_scheduler_info(node)
+    return {
+        'node_path': node.path(),
+        'scheduler_count': 1,
+        'schedulers': [info],
+    }
+
+
+def _build_scheduler_info(sched_node: hou.Node) -> dict:
+    """Build a dict of scheduler info from a scheduler node."""
+
+    info = {
+        'name': sched_node.name(),
+        'path': sched_node.path(),
+        'type': sched_node.type().name(),
+    }
+
+    # Read common scheduler parameters
+    parm_names = [
+        'pdg_maxitems',
+        'pdg_maxprocs',
+        'pdg_workingdir',
+        'pdg_tempdirname',
+        'maxprocsmenu',
+    ]
+    parms = {}
+    for pname in parm_names:
+        parm = sched_node.parm(pname)
+        if parm is not None:
+            try:
+                parms[pname] = parm.eval()
+            except (hou.OperationFailed, AttributeError) as e:
+                logger.debug("Could not eval parm '%s': %s", pname, e)
+                parms[pname] = parm.rawValue()
+    info['parameters'] = parms
+
+    # Check if scheduler is the default
+    try:
+        parent = sched_node.parent()
+        if parent is not None:
+            default_sched = parent.parm('topscheduler')
+            if default_sched is not None:
+                info['is_default'] = default_sched.eval() == sched_node.name()
+            else:
+                info['is_default'] = None
+        else:
+            info['is_default'] = None
+    except (hou.OperationFailed, AttributeError) as e:
+        logger.debug('Could not determine default scheduler: %s', e)
+        info['is_default'] = None
+
+    return info
+
+
+###### tops.get_failed_work_items
+
+
+def get_failed_work_items(node_path: str, limit: int = 10) -> dict:
+    """List the work items that failed on a TOP node, with what they were doing.
+
+    Args:
+        node_path: Path to the TOP node.
+        limit: Cap on the number of items returned.
+    """
+
+    node = _get_top_node(node_path)
+    pdg_node = _get_pdg_node(node)
+    failed = []
+    total = 0
+    seen_logs: dict[str, str] = {}
+    for wi in pdg_node.workItems:
+        if _work_item_state_name(wi.state) != 'cooked_fail':
+            continue
+        total += 1
+        if len(failed) >= limit:
+            continue
+        info = _work_item_to_dict(wi)
+        info.pop('attributes', None)
+        with_log = _work_item_log(wi)
+        if with_log:
+            tail = with_log[-2000:]
+            # A wedge failing fifty times usually fails fifty times the same
+            # way: 2 KB each, 110 KB of one traceback. Later copies point back.
+            key = tail.split('\n', 1)[-1]
+            if key in seen_logs:
+                info['log_tail_same_as'] = seen_logs[key]
+            else:
+                seen_logs[key] = info['name']
+                info['log_tail'] = tail
+        failed.append(info)
+    # failed_count was the capped count, not how many failed.
+    return {
+        'node_path': node.path(),
+        'failed_count': total,
+        'returned': len(failed),
+        'failed': failed,
+    }
+
+
+def _log_uri_to_path(uri: str) -> str:
+    """``file:C:/x``, ``file:///C:/x`` and ``file:///tmp/x`` all to a local path."""
+
+    if uri.startswith('file://'):
+        path = uri[len('file://') :]
+        # file:///C:/x arrives as /C:/x; a POSIX file:///tmp/x must keep its slash.
+        if len(path) > 2 and path[0] == '/' and path[2] == ':':
+            path = path[1:]
+        return path
+    return uri[len('file:') :]
+
+
+def _work_item_log(work_item) -> str:
+    """This item's log text, or empty.
+
+    In-process items (the default for Python Script, and every item cooked without
+    a scheduler process) keep their output and traceback in ``logMessages``, not in
+    a file. Out-of-process items have a ``logURI`` the scheduler wrote. Read both,
+    text first. Measured on 22.0.368: a raising Python Script TOP puts the full
+    traceback in logMessages and leaves node.errors() empty.
+    """
+
+    text = ''
+    try:
+        text = work_item.logMessages or ''
+    except Exception:
+        text = ''
+    if text:
+        return text
+    try:
+        uri = work_item.logURI or ''
+    except Exception:
+        uri = ''
+    if uri.startswith('file:'):
+        try:
+            with open(
+                _log_uri_to_path(uri), encoding='utf-8', errors='replace'
+            ) as handle:
+                return handle.read()
+        except OSError:
+            return ''
+    return ''
+
+
+###### tops.get_top_logs
+
+
+def get_top_logs(
+    node_path: str, work_item_index: int | None = None, tail: int = 4000
+) -> dict:
+    """Return cook logs for a TOP node or one of its work items.
+
+    Node-level: the errors and warnings Houdini attached to the node. Item-level:
+    the scheduler's log for that work item, when one exists.
+
+    Args:
+        node_path: Path to the TOP node.
+        work_item_index: Index of a work item; omit for node-level messages.
+        tail: Maximum characters of log text returned (from the end).
+    """
+
+    node = _get_top_node(node_path)
+    result: dict = {'node_path': node.path()}
+    if work_item_index is None:
+        result['errors'] = list(node.errors())
+        result['warnings'] = list(node.warnings())
+        return result
+    pdg_node = _get_pdg_node(node)
+    items = list(pdg_node.workItems)
+    if not 0 <= work_item_index < len(items):
+        raise ValueError(
+            f'work_item_index {work_item_index} out of range: {node.path()} has '
+            f'{len(items)} work item(s).'
+        )
+    item = items[work_item_index]
+    log = _work_item_log(item)
+    result['work_item'] = {
+        'index': item.index,
+        'name': item.name,
+        'state': _work_item_state_name(item.state),
+    }
+    result['log'] = log[-tail:] if tail > 0 else log
+    result['truncated'] = tail > 0 and len(log) > tail
+    if not log:
+        result['message'] = (
+            'No log recorded for this work item: nothing was written to logMessages '
+            'and no scheduler log file exists.'
+        )
+    return result
+
+
+###### Registration
+
+register_command(PluginCommand.TOPS_GET_FAILED_WORK_ITEMS)(get_failed_work_items)
+register_command(PluginCommand.TOPS_GET_TOP_LOGS)(get_top_logs)
+register_command(PluginCommand.TOPS_GET_TOP_NETWORK_INFO)(get_top_network_info)
+register_command(PluginCommand.TOPS_COOK_TOP_NODE)(cook_top_node)
+register_command(PluginCommand.TOPS_CANCEL_TOP_COOK)(cancel_top_cook)
+register_command(PluginCommand.TOPS_PAUSE_TOP_COOK)(pause_top_cook)
+register_command(PluginCommand.TOPS_DIRTY_WORK_ITEMS)(dirty_work_items)
+register_command(PluginCommand.TOPS_GET_WORK_ITEM_STATES)(get_work_item_states)
+register_command(PluginCommand.TOPS_GET_WORK_ITEM_INFO)(get_work_item_info)
+register_command(PluginCommand.TOPS_GET_PDG_GRAPH)(get_pdg_graph)
+register_command(PluginCommand.TOPS_GENERATE_STATIC_ITEMS)(generate_static_items)
+register_command(PluginCommand.TOPS_GET_TOP_SCHEDULER_INFO)(get_top_scheduler_info)

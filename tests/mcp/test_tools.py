@@ -54,7 +54,15 @@ def test_server_registers_initial_tools() -> None:
 
     names = {tool.name for tool in asyncio.run(server.list_tools())}
 
-    assert {'get_scene_info', 'create_node', 'set_parameter'} <= names
+    assert {
+        'get_scene_info',
+        'create_node',
+        'set_parameter',
+        'build_network',
+        'get_geometry_info',
+        'search_help',
+        'capture_screenshot',
+    } <= names
 
 
 def test_create_node_sends_expected_params() -> None:
