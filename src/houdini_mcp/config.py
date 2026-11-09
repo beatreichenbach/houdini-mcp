@@ -9,17 +9,21 @@ from . import constants
 
 @dataclass(frozen=True)
 class Settings:
-    host: str
     port: int
     timeout: float
     log_level: int
+
+    @property
+    def host(self) -> str:
+        """Return the fixed loopback host."""
+
+        return constants.HOST
 
     @classmethod
     def from_env(cls) -> Settings:
         """Return settings read from environment variables."""
 
         return cls(
-            host=os.getenv(constants.HOST, constants.DEFAULT_HOST),
             port=_read_int(constants.PORT, constants.DEFAULT_PORT),
             timeout=_read_float(constants.TIMEOUT, constants.DEFAULT_TIMEOUT),
             log_level=_read_log_level(),

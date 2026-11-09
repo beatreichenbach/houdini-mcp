@@ -11,6 +11,7 @@ import hou
 import hwebserver
 
 from houdini_mcp_plugin import constants
+from houdini_mcp_protocol import request_headers
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +28,9 @@ def start(port: int | None = None) -> None:
         logger.info('Houdini MCP plugin is already running on port %d', _port)
         return
 
-    bind = _bind_address()
     base = port if port is not None else _configured_port()
     for candidate in range(base, base + constants.PORT_SEARCH_RANGE):
-        health = _query_health(_health_host(bind), candidate)
+        health = _query_health(constants.BIND_ADDRESS, candidate)
         if health is None:
             _port = candidate
             break
@@ -44,7 +44,7 @@ def start(port: int | None = None) -> None:
             f'no free port in {base}-{base + constants.PORT_SEARCH_RANGE - 1}'
         )
 
-    _bind_localhost_only(bind)
+    _bind_loopback()
 
     from houdini_mcp_plugin import commands, http  # noqa: F401
 
@@ -106,29 +106,19 @@ def _configured_port() -> int:
         return constants.DEFAULT_PORT
 
 
-def _bind_address() -> str:
-    """Return the configured bind address."""
-
-    return os.getenv(constants.BIND, constants.DEFAULT_BIND)
-
-
-def _health_host(bind_address: str) -> str:
-    """Return a connectable host for the bind address."""
-
-    if bind_address in ('0.0.0.0', ''):
-        return '127.0.0.1'
-    if bind_address == '::':
-        return '::1'
-    return bind_address
-
-
-def _bind_localhost_only(address: str) -> None:
-    """Restrict hwebserver to the configured bind address."""
+def _bind_loopback() -> None:
+    """Restrict hwebserver to the loopback address."""
 
     try:
-        hwebserver.setSettingsForPort({'ADDRESS': address}, 'main')
+        hwebserver.setSettingsForPort(
+            {
+                'ADDRESS': constants.BIND_ADDRESS,
+                'ALLOWED_HOSTS': list(constants.ALLOWED_HOSTS),
+            },
+            'main',
+        )
     except Exception:
-        logger.exception('Could not restrict Houdini MCP to %s', address)
+        logger.exception('Could not restrict Houdini MCP to %s', constants.BIND_ADDRESS)
 
 
 def _query_health(
@@ -144,7 +134,10 @@ def _query_health(
         data=urllib.parse.urlencode(
             {'json': json.dumps(['mcp.health', [], {}])}
         ).encode('utf-8'),
-        headers={'Content-Type': 'application/x-www-form-urlencoded'},
+        headers={
+            **request_headers(),
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
         method='POST',
     )
     try:

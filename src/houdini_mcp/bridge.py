@@ -15,6 +15,7 @@ from houdini_mcp_protocol import (
     Request,
     Response,
     ResponseStatus,
+    request_headers,
 )
 
 from .config import Settings
@@ -130,6 +131,7 @@ class HoudiniBridge:
             response = await self._client.post(
                 self.api_url,
                 data=_rpc_body(endpoint, params),
+                headers=request_headers(),
                 timeout=timeout or self._timeout,
             )
             response.raise_for_status()
@@ -185,6 +187,7 @@ async def find_servers(
             response = await client.post(
                 f'http://{host}:{port}/api',
                 data=_rpc_body(ApiCommand.HEALTH, {}),
+                headers=request_headers(),
             )
             response.raise_for_status()
             payload = response.json()

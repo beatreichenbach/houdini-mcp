@@ -8,7 +8,7 @@ from typing import Any, TypeVar
 
 import hwebserver
 
-from houdini_mcp_plugin import __version__, dispatcher, startup
+from houdini_mcp_plugin import __version__, dispatcher, security, startup
 from houdini_mcp_protocol import PROTOCOL_VERSION, ErrorCode, Response, ResponseStatus
 
 logger = logging.getLogger(__name__)
@@ -44,15 +44,20 @@ def _forbidden(reason: str) -> hwebserver.Response:
     return hwebserver.Response(body.encode('utf-8'), 403, 'application/json')
 
 
-def _has_origin(request: object) -> bool:
-    """Return whether the request carries an Origin header."""
+def _guard(request: object) -> hwebserver.Response | None:
+    """Return a 403 response unless the request comes from the local server."""
 
     try:
-        headers = dict(getattr(request, 'headers')())  # noqa: B009
+        headers = {
+            str(name): str(value)
+            for name, value in dict(getattr(request, 'headers')()).items()  # noqa: B009
+        }
     except Exception:
         logger.debug('Could not read request headers', exc_info=True)
-        return True
-    return any(str(key).lower() == 'origin' for key in headers)
+        headers = {}
+    if security.request_allowed(headers, startup.get_port()):
+        return None
+    return _forbidden('request is not allowed from this origin')
 
 
 @_api_function('mcp')
@@ -64,8 +69,9 @@ def execute(
 ) -> hwebserver.Response:
     """Dispatch a command and return a protocol response."""
 
-    if _has_origin(request):
-        return _forbidden('requests with an Origin header are not allowed')
+    denied = _guard(request)
+    if denied is not None:
+        return denied
     if not startup.is_running():
         response = Response(
             status=ResponseStatus.ERROR,
@@ -85,6 +91,9 @@ def execute(
 def health(request: object) -> hwebserver.Response:
     """Return plugin health without touching HOM."""
 
+    denied = _guard(request)
+    if denied is not None:
+        return denied
     return _json_response(
         {
             'status': 'ok' if startup.is_running() else 'stopped',
@@ -100,4 +109,7 @@ def health(request: object) -> hwebserver.Response:
 def list_commands(request: object) -> hwebserver.Response:
     """Return the registered command names."""
 
+    denied = _guard(request)
+    if denied is not None:
+        return denied
     return _json_response({'commands': dispatcher.list_commands()})

@@ -13,7 +13,10 @@ def _call(port: int, name: str, **kwargs: object) -> dict[str, Any]:
     request = urllib.request.Request(
         f'http://127.0.0.1:{port}/api',
         data=body,
-        headers={'Content-Type': 'application/x-www-form-urlencoded'},
+        headers={
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Houdini-MCP': '1',
+        },
     )
     with urllib.request.urlopen(request, timeout=2) as response:
         return json.loads(response.read().decode())

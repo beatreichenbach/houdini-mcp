@@ -38,8 +38,8 @@ Point your MCP client at the server:
 
 Restart Houdini after installing the package file.
 
-By default, the plugin binds to `127.0.0.1`.
-If you change `HOUDINI_MCP_BIND`, set `HOUDINI_MCP_HOST` on the MCP client to the same address.
+The plugin listens only on `127.0.0.1` and rejects browser and non-local requests.
+Houdini and the MCP client must run on the same machine.
 
 To remove it:
 
@@ -72,11 +72,9 @@ Inspect content with:
 
 | Variable                | Default        | Description                                                   |
 |-------------------------|----------------|---------------------------------------------------------------|
-| `HOUDINI_MCP_HOST`      | `localhost`    | Host of the Houdini plugin to connect to.                     |
 | `HOUDINI_MCP_PORT`      | `8100`         | First port the server scans and the plugin prefers.           |
 | `HOUDINI_MCP_TIMEOUT`   | `135`          | Command timeout in seconds.                                   |
 | `HOUDINI_MCP_LOG_LEVEL` | `INFO`         | Log level.                                                    |
-| `HOUDINI_MCP_BIND`      | `127.0.0.1`    | Address hwebserver binds to.                                  |
 | `HOUDINI_MCP_AUTOSTART` | `1`            | Set to `0` to disable autostart.                              |
 | `HOUDINI_MCP_CONTENT`   | none           | Additional content roots, separated by the OS path separator. |
 | `HOUDINI_MCP`           | set by install | Repository root used by the Houdini package file.             |
