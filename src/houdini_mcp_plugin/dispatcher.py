@@ -92,7 +92,7 @@ def _elapsed(started: float) -> float:
     return round((time.monotonic() - started) * 1000, 2)
 
 
-def _run_handler(handler: Handler, command: str, params: dict[str, Any]) -> Any:  # noqa: ANN401
+def _run_handler(handler: Handler, command: str, params: dict[str, Any]) -> Any:
     """Run a handler on Houdini's main thread."""
 
     return hdefereval.executeInMainThreadWithResult(
@@ -100,7 +100,7 @@ def _run_handler(handler: Handler, command: str, params: dict[str, Any]) -> Any:
     )
 
 
-def _call_handler(handler: Handler, command: str, params: dict[str, Any]) -> Any:  # noqa: ANN401
+def _call_handler(handler: Handler, command: str, params: dict[str, Any]) -> Any:
     """Call a handler inside an undo group."""
 
     if command in _NO_UNDO_GROUP:
