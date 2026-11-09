@@ -26,17 +26,6 @@ class Request:
             'request_id': self.request_id,
         }
 
-    @classmethod
-    def from_payload(cls, payload: dict[str, Any]) -> Request:
-        """Build a request from a payload."""
-
-        params = payload.get('params')
-        return cls(
-            command=str(payload['command']),
-            params=cast(dict[str, Any], params) if isinstance(params, dict) else {},
-            request_id=str(payload.get('request_id', '')),
-        )
-
 
 @dataclass
 class Response:

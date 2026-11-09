@@ -1,17 +1,4 @@
-from houdini_mcp_protocol import Request, Response, ResponseStatus
-
-
-def test_request_round_trip() -> None:
-    request = Request(command='scene.get_scene_info', params={'node': '/obj/geo1'})
-
-    payload = request.to_payload()
-
-    assert payload == {
-        'command': 'scene.get_scene_info',
-        'params': {'node': '/obj/geo1'},
-        'request_id': request.request_id,
-    }
-    assert Request.from_payload(payload) == request
+from houdini_mcp_protocol import Response, ResponseStatus
 
 
 def test_response_success() -> None:
