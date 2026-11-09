@@ -51,7 +51,7 @@ def _has_origin(request: object) -> bool:
         headers = dict(getattr(request, 'headers')())  # noqa: B009
     except Exception:
         logger.debug('Could not read request headers', exc_info=True)
-        return False
+        return True
     return any(str(key).lower() == 'origin' for key in headers)
 
 
