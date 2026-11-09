@@ -1,4 +1,5 @@
-"""Reading a parameter's menu the way Houdini lists it, without its error dialog.
+"""
+Reading a parameter's menu the way Houdini lists it, without its error dialog.
 
 ``hou.Parm.menuItems()`` runs the menu's item generator script. In a graphical
 session a PYTHON generator that raises is answered with Houdini's modal "Error

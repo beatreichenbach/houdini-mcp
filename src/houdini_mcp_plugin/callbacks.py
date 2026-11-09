@@ -1,4 +1,5 @@
-"""Pressing a parameter the way a click does, without Houdini's error dialog.
+"""
+Pressing a parameter the way a click does, without Houdini's error dialog.
 
 ``hou.Parm.pressButton()`` runs a parameter's callback script. In a graphical
 session a PYTHON callback that raises is answered with Houdini's modal "Error
@@ -147,7 +148,8 @@ def action_script(parm: hou.Parm) -> str:
 
 
 def run_action(parm: hou.Parm, arguments: dict | None = None) -> None:
-    """Run the parm's action button as a click on it would; CallbackError if it raises.
+    """
+    Run the parm's action button as a click on it would; CallbackError if it raises.
 
     Action scripts read ``kwargs["node"]``, ``kwargs["parmtuple"]`` (the
     prim pickers in loputils take the parm from it) and the modifier keys of
@@ -165,7 +167,8 @@ def run_action(parm: hou.Parm, arguments: dict | None = None) -> None:
 
 
 def press(parm: hou.Parm, arguments: dict | None = None) -> str:
-    """Do what a click on *parm* does; answer which route ran it.
+    """
+    Do what a click on *parm* does; answer which route ran it.
 
     ``"python"`` -- its Python callback, executed here (CallbackError if it
     raises); ``"hscript"`` / ``"native"`` -- through pressButton(), which

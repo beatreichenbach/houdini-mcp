@@ -11,8 +11,9 @@ from typing import Any
 import hou
 import hwebserver
 
-from houdini_mcp_plugin import constants
 from houdini_mcp_protocol import PORT_SEARCH_RANGE, request_headers
+
+from . import constants
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,7 @@ def start(port: int | None = None) -> None:
 
     _bind_loopback()
 
-    from houdini_mcp_plugin import commands, http  # noqa: F401
+    from . import commands, http  # noqa: F401
 
     in_background = hou.isUIAvailable()
     _running = True
@@ -125,7 +126,6 @@ def _bind_loopback() -> None:
             'main',
         )
     except Exception:
-        logger.exception('Could not restrict Houdini MCP to %s', constants.BIND_ADDRESS)
         raise
 
 

@@ -6,8 +6,9 @@ import math
 
 import hou
 
-from houdini_mcp_plugin.dispatcher import register_command
 from houdini_mcp_protocol import PluginCommand
+
+from ..dispatcher import register_command
 
 
 def _get_parm(node_path: str, parm_name: str) -> hou.Parm:

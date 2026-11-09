@@ -1,4 +1,5 @@
-"""Proving that a node that writes to disk actually wrote to disk.
+"""
+Proving that a node that writes to disk actually wrote to disk.
 
 Every tool here exists because a call returning without raising is not evidence
 that anything happened. Three separate tools shipped claiming success they never
@@ -54,7 +55,8 @@ NON_FILE_OUTPUTS = frozenset({'__render__.usd', 'ip', 'md'})
 
 @contextlib.contextmanager
 def at_frame(frame: float | None) -> Any:
-    """Evaluate output paths at the frame a write starts on.
+    """
+    Evaluate output paths at the frame a write starts on.
 
     The verdict compares files before and after by evaluating `$F` paths, and
     it used to do that at the current frame. Writing frames 10-12 while the
@@ -76,7 +78,8 @@ _LICENSE_WORDS = ('licens', 'licence')
 
 
 def license_error(errors: list[str]) -> str | None:
-    """The first error that is about licensing, or None.
+    """
+    The first error that is about licensing, or None.
 
     A render that fails for want of a Karma or husk license records that on
     the node like any other error. Buried in a list of twelve it went unread
@@ -102,7 +105,8 @@ def _file_entry(label: str, path: str) -> dict[str, Any]:
 
 
 def _render_product_paths(node: hou.Node) -> list[str]:
-    """The images a usdrender ROP writes when its own Output Image is empty.
+    """
+    The images a usdrender ROP writes when its own Output Image is empty.
 
     That is the default in Solaris: the path lives on the RenderProduct that
     Karma Render Settings authors (productName), and husk writes there. Reading
@@ -189,7 +193,8 @@ def reported_outputs(node: hou.Node) -> list[dict[str, Any]]:
 
 
 def wrote_anything(before: list[dict[str, Any]], after: list[dict[str, Any]]) -> bool:
-    """Whether any file output appeared or changed between two snapshots.
+    """
+    Whether any file output appeared or changed between two snapshots.
 
     Existence alone is not evidence: re-rendering over yesterday's frame would
     look like success even if nothing ran.
@@ -216,7 +221,8 @@ _MAX_MESSAGES = 12
 
 
 def node_messages(node: hou.Node) -> tuple[list[str], list[str]]:
-    """A node's errors and warnings, including those of whatever it delegates to.
+    """
+    A node's errors and warnings, including those of whatever it delegates to.
 
     Verified on Houdini 22.0: a filecache SOP whose Save to Disk fails reports
     ``errors() == ()`` on itself, while its internal ``render`` rop_geometry holds
@@ -271,8 +277,10 @@ _MAX_UPSTREAM = 120
 
 
 def upstream_messages(node: hou.Node) -> list[str]:
-    """Errors on the chain a node depends on: its input ancestors, the networks
-    they point at, and those networks' own ancestors. Each named by node."""
+    """
+    Errors on the chain a node depends on: its input ancestors, the networks
+    they point at, and those networks' own ancestors. Each named by node.
+    """
 
     found: list[str] = []
     seen: set[str] = set()
@@ -317,7 +325,8 @@ def write_verdict(
     action: str = 'Render',
     timeout: float | None = None,
 ) -> dict[str, Any]:
-    """What actually happened, for a node whose execution has just returned.
+    """
+    What actually happened, for a node whose execution has just returned.
 
     Returns the ``success`` / ``errors`` / ``warnings`` / ``wrote_files`` /
     ``outputs`` / ``message`` block that every write tool reports, so all of them
@@ -334,7 +343,7 @@ def write_verdict(
     """
 
     if timeout is None:
-        from houdini_mcp_plugin.config import output_timeout_seconds
+        from .config import output_timeout_seconds
 
         timeout = output_timeout_seconds()
     errors, warnings = node_messages(node)
@@ -401,7 +410,8 @@ def failure_verdict(
     *,
     action: str = 'Render',
 ) -> dict[str, Any]:
-    """The same shape as :func:`write_verdict`, for an execution that raised.
+    """
+    The same shape as :func:`write_verdict`, for an execution that raised.
 
     Keeping the shape identical means a caller never has to branch on which kind
     of failure it was to find out whether anything was written.

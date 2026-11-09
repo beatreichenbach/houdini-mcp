@@ -8,11 +8,12 @@ from typing import Any
 
 import hou
 
-from houdini_mcp_plugin.commands.nodes import _refuse_taken_name
-from houdini_mcp_plugin.dispatcher import register_command
-from houdini_mcp_plugin.errors import readable_message
-from houdini_mcp_plugin.ui import focus_network_editor as _focus_network_editor
 from houdini_mcp_protocol import PluginCommand
+
+from ..dispatcher import register_command
+from ..errors import readable_message
+from ..ui import focus_network_editor as _focus_network_editor
+from .nodes import _refuse_taken_name
 
 logger = logging.getLogger(__name__)
 

@@ -1,4 +1,5 @@
-"""Turning a Houdini exception into a sentence a caller can act on.
+"""
+Turning a Houdini exception into a sentence a caller can act on.
 
 ``str()`` on any ``hou.Error`` prepends Houdini's own generic sentence:
 
@@ -22,7 +23,8 @@ from __future__ import annotations
 
 
 def readable_message(exc: BaseException) -> str:
-    """What went wrong, without Houdini's generic preamble.
+    """
+    What went wrong, without Houdini's generic preamble.
 
     Falls back to ``str()`` for non-Houdini exceptions, and to the general
     description for a bare ``hou.OperationFailed()`` carrying no message of its
@@ -45,7 +47,8 @@ def readable_message(exc: BaseException) -> str:
 
 
 def as_text(value: object, name: str) -> str:
-    """A string argument, or a message that names the argument and its type.
+    """
+    A string argument, or a message that names the argument and its type.
 
     Handlers that took an optional ``filter`` called ``.lower()`` on it directly, so
     a non-string leaked ``'int' object has no attribute 'lower'`` -- a Python

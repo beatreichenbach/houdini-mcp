@@ -10,9 +10,10 @@ from typing import Any
 
 import hou
 
-from houdini_mcp_plugin.dispatcher import register_command
-from houdini_mcp_plugin.errors import as_text
 from houdini_mcp_protocol import PluginCommand
+
+from ..dispatcher import register_command
+from ..errors import as_text
 
 _MAX_CAPTURE_BYTES = 100 * 1024  # 100 KB
 

@@ -10,18 +10,19 @@ from typing import Any, cast
 
 import hou
 
-from houdini_mcp_plugin.callbacks import (
+from houdini_mcp_protocol import PluginCommand
+
+from ..callbacks import (
     CallbackError,
     _is_python,
     callback_script,
     press,
 )
-from houdini_mcp_plugin.dispatcher import register_command
-from houdini_mcp_plugin.dop_cache import dop_cache_note
-from houdini_mcp_plugin.errors import readable_message
-from houdini_mcp_plugin.menus import items as menu_items
-from houdini_mcp_plugin.serialize import geometry_summary, ramp_to_dict
-from houdini_mcp_protocol import PluginCommand
+from ..dispatcher import register_command
+from ..dop_cache import dop_cache_note
+from ..errors import readable_message
+from ..menus import items as menu_items
+from ..serialize import geometry_summary, ramp_to_dict
 
 
 def _resolve_node(node_path: str) -> hou.Node:
@@ -1269,7 +1270,7 @@ def _menu_template(
 ) -> hou.MenuParmTemplate:
     """A menu spare parm: items as set_hda_interface takes them, default by token..."""
 
-    from houdini_mcp_plugin.commands._helpers import _menu_default, _menu_pairs
+    from ._helpers import _menu_default, _menu_pairs
 
     spec: dict[str, Any] = {'name': parm_name, 'menu_items': menu_items}
     if menu_items is None and isinstance(default_value, (list, tuple)):
@@ -1624,7 +1625,7 @@ def _off_default(parm: hou.Parm) -> bool:
 def _valueless(parm: hou.Parm) -> bool:
     """Whether *parm* is a button, a folder or another parm with no value to report."""
 
-    from houdini_mcp_plugin.commands._helpers import _VALUELESS_PARM_TYPES
+    from ._helpers import _VALUELESS_PARM_TYPES
 
     try:
         return parm.parmTemplate().type().name() in _VALUELESS_PARM_TYPES
@@ -1699,7 +1700,7 @@ def _get_parameters(
     if inside is not None:
         if node_path is not None:
             raise ValueError(
-                'Pass either node_path (one node) or inside (a network), not both.'
+                'pass either node_path (one node) or inside (a network), not both.'
             )
         return _sweep_parameters(
             inside,
@@ -1793,7 +1794,7 @@ def _sweep_parameters(
 ) -> dict[str, Any]:
     """get_parameters over the nodes of a network, as one table of rows."""
 
-    from houdini_mcp_plugin.commands._helpers import _VALUELESS_PARM_TYPES
+    from ._helpers import _VALUELESS_PARM_TYPES
 
     parent = hou.node(inside)
     if parent is None:
@@ -2198,7 +2199,7 @@ def _prune_tree(
 def _node_type_for_tree(context: str, type_name: str) -> Any:
     """Resolve *type_name* in *context* the way createNode would, through the same..."""
 
-    from houdini_mcp_plugin.commands._helpers import _resolve_node_type
+    from ._helpers import _resolve_node_type
 
     categories = hou.nodeTypeCategories()
     category = categories.get(context)
@@ -2238,7 +2239,7 @@ def _get_parm_template_tree(
         group = node_type.parmTemplateGroup()
         subject = {'type': node_type.name(), 'context': context}
     else:
-        raise ValueError('Give node_path or type_name.')
+        raise ValueError('give node_path or type_name.')
 
     if folder is not None:
         labels = tuple(folder) if isinstance(folder, (list, tuple)) else (str(folder),)

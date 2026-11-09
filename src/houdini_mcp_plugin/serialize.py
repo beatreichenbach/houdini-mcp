@@ -1,4 +1,5 @@
-"""JSON coercion for HOM values.
+"""
+JSON coercion for HOM values.
 
 hwebserver JSON-encodes whatever an API function returns, and it does so
 *after* the handler has already succeeded -- outside its own try/except (see
@@ -30,7 +31,8 @@ _MAX_REPR = 200
 
 
 def _hou_types(*names: str) -> tuple[type, ...]:
-    """Resolve HOM class names to a tuple usable with isinstance().
+    """
+    Resolve HOM class names to a tuple usable with isinstance().
 
     Names that are missing on this Houdini version -- or that are not classes,
     which is the case when ``hou`` is a test double -- are skipped.
@@ -59,7 +61,8 @@ _PARMS = _hou_types('Parm', 'ParmTuple')
 
 
 def ramp_to_dict(ramp: Any) -> dict:
-    """Return a ``hou.Ramp`` as its constructor arguments.
+    """
+    Return a ``hou.Ramp`` as its constructor arguments.
 
     Keys, values and basis together round-trip back into ``hou.Ramp``, which
     is what a client needs to inspect or rebuild the ramp. Colour ramps yield
@@ -81,7 +84,8 @@ def ramp_to_dict(ramp: Any) -> dict:
 
 
 def geometry_summary(geo: Any) -> dict:
-    """Return a cheap summary of a ``hou.Geometry``.
+    """
+    Return a cheap summary of a ``hou.Geometry``.
 
     Counts come from intrinsics rather than ``len(geo.points())``: the latter
     materialises a Python tuple of point objects, which is ruinous on heavy
@@ -103,7 +107,8 @@ def geometry_summary(geo: Any) -> dict:
 
 
 def to_jsonable(value: Any, _depth: int = 0) -> Any:
-    """Convert *value* into something ``json.dumps`` accepts.
+    """
+    Convert *value* into something ``json.dumps`` accepts.
 
     Containers are walked recursively. Unrecognised objects degrade to a
     truncated ``repr`` rather than raising, because the caller's alternative
@@ -177,7 +182,8 @@ def to_jsonable(value: Any, _depth: int = 0) -> Any:
 
 
 def json_default(value: Any) -> Any:
-    """``default=`` hook for ``json.dumps``.
+    """
+    ``default=`` hook for ``json.dumps``.
 
     Only called for objects the encoder cannot handle, so the happy path pays
     nothing. Must never return another unserialisable object: every branch of

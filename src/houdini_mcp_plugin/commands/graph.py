@@ -15,7 +15,21 @@ from typing import Any
 
 import hou
 
-from houdini_mcp_plugin.commands.nodes import (
+from houdini_mcp_protocol import PluginCommand
+
+from ..config import (
+    layout_if_enabled,
+    place_new_node,
+    place_new_nodes,
+    update_mode_warning,
+)
+from ..dispatcher import register_command
+from ..dop_cache import dop_cache_note
+from ..errors import readable_message
+from ..menus import MenuScriptError, items_and_labels
+from ..menus import items as menu_items
+from ..outputs import license_error
+from .nodes import (
     _find_input,
     _find_output,
     _indirect_input_item,
@@ -23,7 +37,7 @@ from houdini_mcp_plugin.commands.nodes import (
     _output_index,
     _resolve_input_index,
 )
-from houdini_mcp_plugin.commands.parameters import (
+from .parameters import (
     LockedParmError,
     _clear_expression,
     _factory_type,
@@ -39,19 +53,6 @@ from houdini_mcp_plugin.commands.parameters import (
     suggest_parms,
     template_labels,
 )
-from houdini_mcp_plugin.config import (
-    layout_if_enabled,
-    place_new_node,
-    place_new_nodes,
-    update_mode_warning,
-)
-from houdini_mcp_plugin.dispatcher import register_command
-from houdini_mcp_plugin.dop_cache import dop_cache_note
-from houdini_mcp_plugin.errors import readable_message
-from houdini_mcp_plugin.menus import MenuScriptError, items_and_labels
-from houdini_mcp_plugin.menus import items as menu_items
-from houdini_mcp_plugin.outputs import license_error
-from houdini_mcp_protocol import PluginCommand
 
 # Folder types whose contents are instance templates rather than parameters.
 # MultiparmBlock is the common one; the scroll and tab variants behave the same
@@ -73,7 +74,7 @@ def _resolve_node_type(category: hou.NodeTypeCategory, type_name: str) -> Any:
     types = category.nodeTypes()
     if type_name in types:
         return types[type_name]
-    from houdini_mcp_plugin.commands._helpers import _version_key
+    from ._helpers import _version_key
 
     prefix = type_name + '::'
     versioned = [key for key in types if key.startswith(prefix)]
@@ -1013,7 +1014,7 @@ def _geometry_summary(node: hou.Node) -> dict[str, Any] | None:
         is_cop = node.type().category().name() == 'Cop'
     if is_cop:
         with contextlib.suppress(Exception):
-            from houdini_mcp_plugin.commands._helpers import _layer_summary
+            from ._helpers import _layer_summary
 
             layer = node.layer()
             if layer is not None:
@@ -1022,7 +1023,7 @@ def _geometry_summary(node: hou.Node) -> dict[str, Any] | None:
         # A CHOP's evidence is its channels: that they exist, under the names
         # an export will look for, and that they move.
         with contextlib.suppress(Exception):
-            from houdini_mcp_plugin.commands._helpers import _track_entry
+            from ._helpers import _track_entry
 
             tracks = node.tracks()
             summary = {'channels': [_track_entry(track) for track in tracks[:12]]}
@@ -1047,14 +1048,14 @@ def _geometry_summary(node: hou.Node) -> dict[str, Any] | None:
         'point_attribs': [a.name() for a in geo.pointAttribs()][:30],
     }
     with contextlib.suppress(Exception):
-        from houdini_mcp_plugin.commands.geometry import prim_type_counts
+        from .geometry import prim_type_counts
 
         if types := prim_type_counts(geo):
             summary['prim_types'] = types
     # A heightfield or a pyro source is volumes: "7 points, attrib P" said
     # nothing about which layers exist or whether they hold anything.
     with contextlib.suppress(Exception):
-        from houdini_mcp_plugin.commands.geometry import _volume_entry
+        from .geometry import _volume_entry
 
         volumes = list(geo.primsOfType(hou.primType.Volume)) + list(
             geo.primsOfType(hou.primType.VDB)
@@ -2343,7 +2344,7 @@ def _frame_measurement(
     row['bbox'] = [list(bbox.minvec()), list(bbox.maxvec())]
 
     if attribs:
-        from houdini_mcp_plugin.commands.geometry import _get_attrib_stats
+        from .geometry import _get_attrib_stats
 
         stats = _get_attrib_stats(
             node_path=node.path(),
@@ -2357,7 +2358,7 @@ def _frame_measurement(
             row['missing_attribs'] = stats['missing']
 
     if volumes:
-        from houdini_mcp_plugin.commands.geometry import _get_volume_info
+        from .geometry import _get_volume_info
 
         info = _get_volume_info(node_path=node.path())
         row['volumes'] = [

@@ -10,10 +10,11 @@ from typing import Any
 
 import hou
 
-from houdini_mcp_plugin.dispatcher import register_command
-from houdini_mcp_plugin.errors import as_int, as_text
-from houdini_mcp_plugin.ui import keep_viewer_state
 from houdini_mcp_protocol import PluginCommand
+
+from ..dispatcher import register_command
+from ..errors import as_int, as_text
+from ..ui import keep_viewer_state
 
 _LIST_CAP = 60
 _SCRIPT_CAP = 20_000

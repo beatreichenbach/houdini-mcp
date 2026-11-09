@@ -7,9 +7,10 @@ from typing import Any
 
 import hou
 
-from houdini_mcp_plugin.dispatcher import register_command
-from houdini_mcp_plugin.errors import readable_message
 from houdini_mcp_protocol import PluginCommand
+
+from ..dispatcher import register_command
+from ..errors import readable_message
 
 logger = logging.getLogger(__name__)
 
@@ -305,7 +306,7 @@ def cook_top_node(
     if hou.hipFile.hasUnsavedChanges():
         if hou.hipFile.isNewFile():
             raise ValueError(
-                'The scene has never been saved, and TOP work items cook from the hip '
+                'the scene has never been saved, and TOP work items cook from the hip '
                 'on disk. Save it with save_scene(file_path=...) first.'
             )
         hou.hipFile.save()

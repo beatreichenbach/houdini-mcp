@@ -9,8 +9,10 @@ from typing import Any
 
 import hou
 
-from houdini_mcp_plugin.dispatcher import register_command
-from houdini_mcp_plugin.ui import (
+from houdini_mcp_protocol import PluginCommand
+
+from ..dispatcher import register_command
+from ..ui import (
     keep_viewer_state,
     require_ui,
     selection_hidden,
@@ -19,7 +21,6 @@ from houdini_mcp_plugin.ui import (
     viewer_context,
     viewer_stays_out_of_dops,
 )
-from houdini_mcp_protocol import PluginCommand
 
 logger = logging.getLogger(__name__)
 
@@ -366,7 +367,7 @@ def set_viewport_display(
     )
     if all(value is None for value in asked):
         raise ValueError(
-            'Pass display_mode, environment_background, reference_plane, point_size '
+            'pass display_mode, environment_background, reference_plane, point_size '
             'or color_scheme.'
         )
     # Refused before anything is touched, so a bad value never half-applies a call.
@@ -512,7 +513,7 @@ def set_viewport_direction(
     free_view = rotation is not None or pivot is not None or distance is not None
     if direction is None and not free_view:
         raise ValueError(
-            'Pass direction, or rotation / pivot / distance for the free view.'
+            'pass direction, or rotation / pivot / distance for the free view.'
         )
     view_type = None
     if direction is not None:
@@ -672,7 +673,7 @@ def set_viewport_renderer(
             # view, so this request is meaningless in an object-level viewport
             # and saying "unverifiable" would hide a real mistake.
             raise ValueError(
-                'This viewport is not a scene graph view, so it has no Hydra '
+                'this viewport is not a scene graph view, so it has no Hydra '
                 'delegate to set. Hydra renderers (Karma, Storm) apply to a '
                 'Solaris viewport: put the viewer in a LOP network first.'
             )
@@ -855,7 +856,7 @@ def capture_screenshot(
         # Which network the image shows, and a note when it is a DOP view.
         viewer = viewer_context(pane_tab)
         viewport = pane_tab.curViewport()
-        from houdini_mcp_plugin.commands._helpers import (
+        from ._helpers import (
             _find_flipbook_output,
             _size_flipbook,
         )
@@ -939,7 +940,7 @@ def capture_network_editor(
             break
 
     if network_editor is None:
-        raise RuntimeError('No Network Editor pane found.')
+        raise RuntimeError('no Network Editor pane found.')
 
     # Navigate to the specified node if provided
     node_bounds = None
@@ -1008,7 +1009,7 @@ def set_current_network(network_path: str, other_objects: str | None = 'hide') -
             break
 
     if network_editor is None:
-        raise RuntimeError('No Network Editor pane found.')
+        raise RuntimeError('no Network Editor pane found.')
 
     # cd() to a node that is not a network (a SOP) left the editor where it
     # was and the reply said success: from /obj/fern/popnet to
@@ -1065,7 +1066,7 @@ def find_error_nodes(root_path: str = '/') -> dict:
     if root is None:
         raise ValueError(f'Root path not found: {root_path}')
 
-    from houdini_mcp_plugin.commands.graph import _condensed
+    from .graph import _condensed
 
     error_nodes = []
     warning_nodes = []
@@ -1136,7 +1137,7 @@ def _find_scene_viewer(pane_name: str | None = None) -> Any:
         if pane_tab.type() == hou.paneTabType.SceneViewer:
             return pane_tab
 
-    raise RuntimeError('No Scene Viewer pane found.')
+    raise RuntimeError('no Scene Viewer pane found.')
 
 
 def _find_pane_by_name(pane_name: str) -> Any:

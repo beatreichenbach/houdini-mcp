@@ -12,12 +12,13 @@ from typing import Any
 
 import hou
 
-from houdini_mcp_plugin.commands.nodes import _refuse_taken_name
-from houdini_mcp_plugin.config import place_new_node
-from houdini_mcp_plugin.dispatcher import register_command
-from houdini_mcp_plugin.outputs import at_frame
-from houdini_mcp_plugin.ui import focus_network_editor as _focus_network_editor
 from houdini_mcp_protocol import PluginCommand
+
+from ..config import place_new_node
+from ..dispatcher import register_command
+from ..outputs import at_frame
+from ..ui import focus_network_editor as _focus_network_editor
+from .nodes import _refuse_taken_name
 
 # USD modules -- may not be available in all Houdini configurations
 try:

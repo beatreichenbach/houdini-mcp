@@ -1,4 +1,5 @@
-"""Saying "this needs a graphical Houdini" instead of crashing about it.
+"""
+Saying "this needs a graphical Houdini" instead of crashing about it.
 
 ``hou.ui`` does not exist in hython or hbatch. Ten handlers reached for it without
 checking, so asking for a viewport screenshot in a headless session answered:
@@ -24,11 +25,12 @@ from typing import Any
 
 import hou
 
-from houdini_mcp_plugin.config import layout_if_enabled
+from .config import layout_if_enabled
 
 
 def ui_available() -> bool:
-    """Whether this Houdini has a UI at all.
+    """
+    Whether this Houdini has a UI at all.
 
     ``hou.isUIAvailable`` is itself missing in some headless builds, so the
     attribute check comes first.
@@ -41,7 +43,8 @@ def ui_available() -> bool:
 
 
 def require_ui(operation: str, *, alternative: str = '') -> None:
-    """Raise a readable error when *operation* needs a UI and there is none.
+    """
+    Raise a readable error when *operation* needs a UI and there is none.
 
     Args:
         operation: What was being attempted, named as the caller would name it
@@ -75,7 +78,8 @@ OTHER_OBJECTS = {'hide': 0, 'show': 1, 'ghost': 2}
 
 
 def set_other_objects(mode: str | None) -> str | None:
-    """Set how every Scene Viewer draws objects other than the current one.
+    """
+    Set how every Scene Viewer draws objects other than the current one.
 
     Returns the mode applied, or None when there was nothing to do: no UI, no
     viewer, or *mode* None. Best effort by design, since isolating the viewer
@@ -116,7 +120,8 @@ def _viewed_object(network: Any) -> hou.Node | None:
 
 
 def pattern_hides(pattern: str, obj_path: str) -> bool:
-    """Whether the Visible Objects *pattern* certainly leaves *obj_path* out.
+    """
+    Whether the Visible Objects *pattern* certainly leaves *obj_path* out.
 
     Tokens are read left to right as Houdini does, a later one overriding an
     earlier one: "*", a name or path with wildcards, "^" to take away,
@@ -143,7 +148,8 @@ def pattern_hides(pattern: str, obj_path: str) -> bool:
 def hidden_by_visible_objects(
     scene_viewer: Any, obj: hou.Node | None = None
 ) -> list[dict]:
-    """The viewports of *scene_viewer* whose Visible Objects pattern hides *obj*.
+    """
+    The viewports of *scene_viewer* whose Visible Objects pattern hides *obj*.
 
     *obj* defaults to the object the viewer is in.
 
@@ -226,7 +232,8 @@ def _restore_cameras(cameras: list) -> None:
 
 @contextlib.contextmanager
 def keep_viewer_state() -> Generator[None]:
-    """Keep every view's camera and the node selection across a network editor move.
+    """
+    Keep every view's camera and the node selection across a network editor move.
 
     The Scene Viewer follows the network editor, and a ``cd`` to another level
     unbinds each view's camera and selects that network's current node
@@ -304,7 +311,8 @@ def _viewers_in_dops() -> set[str]:
 
 @contextlib.contextmanager
 def viewer_stays_out_of_dops() -> Generator[None]:
-    """Put the network editor back if the block took a Scene Viewer into a DOP network.
+    """
+    Put the network editor back if the block took a Scene Viewer into a DOP network.
 
     The Scene Viewer follows the network editor in the same call (measured on
     22.0.429): an editor sent into a DOP network to show a node created there
@@ -337,7 +345,8 @@ def viewer_stays_out_of_dops() -> Generator[None]:
 
 
 def viewer_context(scene_viewer: Any) -> dict:
-    """The network *scene_viewer* draws, and a note when that is a DOP network.
+    """
+    The network *scene_viewer* draws, and a note when that is a DOP network.
 
     For a viewport capture's reply. In a DOP network the viewer draws the
     simulation's objects (a collider solid, particles as points), not the
@@ -389,7 +398,8 @@ def focus_network_editor(
     place_unpositioned: bool = True,
     other_objects: str | None = None,
 ) -> None:
-    """Best-effort: lay out *node*'s network and select it if it is visible.
+    """
+    Best-effort: lay out *node*'s network and select it if it is visible.
 
     The handlers that create or rewire a node end here. Callers that created
     nothing pass ``place_unpositioned=False``, so a call that only rewires or
@@ -425,7 +435,8 @@ def focus_network_editor(
 
 @contextlib.contextmanager
 def selection_hidden() -> Generator[None]:
-    """Draw no selection highlight for the block (a viewport capture), then put it back.
+    """
+    Draw no selection highlight for the block (a viewport capture), then put it back.
 
     A selected object is drawn with a selection outline, and a capture took it
     along whoever had selected it. The viewer has no switch for that highlight

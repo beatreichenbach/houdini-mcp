@@ -7,12 +7,13 @@ from typing import Any
 
 import hou
 
-from houdini_mcp_plugin.commands.nodes import _refuse_taken_name
-from houdini_mcp_plugin.config import layout_if_enabled, place_new_node
-from houdini_mcp_plugin.dispatcher import register_command
-from houdini_mcp_plugin.errors import readable_message
-from houdini_mcp_plugin.ui import focus_network_editor
 from houdini_mcp_protocol import PluginCommand
+
+from ..config import layout_if_enabled, place_new_node
+from ..dispatcher import register_command
+from ..errors import readable_message
+from ..ui import focus_network_editor
+from .nodes import _refuse_taken_name
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,7 @@ def _ensure_obj_context() -> hou.Node:
 
     obj = hou.node('/obj')
     if obj is None:
-        raise ValueError('Cannot find /obj context')
+        raise ValueError('cannot find /obj context')
     return obj
 
 
@@ -56,7 +57,7 @@ def _ensure_out_context() -> hou.Node:
 
     out = hou.node('/out')
     if out is None:
-        raise ValueError('Cannot find /out context')
+        raise ValueError('cannot find /out context')
     return out
 
 
@@ -988,7 +989,7 @@ def _build_sop_chain(
     if steps is None or len(steps) == 0:
         raise ValueError('steps list is required and must not be empty')
     _get_node(parent_path)
-    from houdini_mcp_plugin.commands.graph import build_network
+    from .graph import build_network
 
     # A linear build_network: every type and parameter is validated before
     # anything is created, tuples ("rad", "t", "size") are set whole, and a

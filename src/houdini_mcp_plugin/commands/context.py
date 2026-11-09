@@ -7,8 +7,9 @@ from typing import Any
 
 import hou
 
-from houdini_mcp_plugin.dispatcher import register_command
 from houdini_mcp_protocol import PluginCommand
+
+from ..dispatcher import register_command
 
 # Snapshot storage for compare_snapshots
 _snapshots: dict[str, dict] = {}
@@ -48,7 +49,7 @@ def _has_errors(node: hou.Node) -> bool:
 def _non_default_parms(node: hou.Node) -> dict[str, Any]:
     """Return a dict of parameter names to values for non-default parameters."""
 
-    from houdini_mcp_plugin.commands.nodes import _component_default, _is_at_default
+    from .nodes import _component_default, _is_at_default
 
     result: dict[str, Any] = {}
     for parm in node.parms():

@@ -10,17 +10,18 @@ from typing import Any
 
 import hou
 
-from houdini_mcp_plugin.callbacks import press
-from houdini_mcp_plugin.dispatcher import register_command
-from houdini_mcp_plugin.outputs import (
+from houdini_mcp_protocol import PluginCommand
+
+from ..callbacks import press
+from ..dispatcher import register_command
+from ..outputs import (
     at_frame as _at_frame,
 )
-from houdini_mcp_plugin.outputs import (
+from ..outputs import (
     failure_verdict,
     reported_outputs,
     write_verdict,
 )
-from houdini_mcp_protocol import PluginCommand
 
 
 def _menu_index_by_label(parm: hou.Parm, label_substring: str) -> int | None:
@@ -401,7 +402,7 @@ def _write_cache(
     # file to load and an unsaved change would be cached as last saved.
     if background and hou.hipFile.isNewFile():
         raise ValueError(
-            'Save the hip first (save_scene): a background cache loads it from disk'
+            'save the hip first (save_scene): a background cache loads it from disk'
         )
 
     # Set frame range if provided

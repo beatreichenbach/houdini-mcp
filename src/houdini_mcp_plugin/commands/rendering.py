@@ -12,26 +12,27 @@ from typing import Any
 
 import hou
 
-from houdini_mcp_plugin.callbacks import CallbackError, press
-from houdini_mcp_plugin.commands.viewport import _no_mplay
-from houdini_mcp_plugin.config import place_new_node
-from houdini_mcp_plugin.dispatcher import register_command
-from houdini_mcp_plugin.errors import readable_message
-from houdini_mcp_plugin.outputs import (
+from houdini_mcp_protocol import PluginCommand
+
+from ..callbacks import CallbackError, press
+from ..config import place_new_node
+from ..dispatcher import register_command
+from ..errors import readable_message
+from ..outputs import (
     at_frame,
     failure_verdict,
     license_error,
     reported_outputs,
     write_verdict,
 )
-from houdini_mcp_plugin.ui import (
+from ..ui import (
     keep_viewer_state,
     require_ui,
     selection_hidden,
     viewer_context,
     viewer_stays_out_of_dops,
 )
-from houdini_mcp_protocol import PluginCommand
+from .viewport import _no_mplay
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +103,7 @@ def render_viewport(
 
     if scene_viewer is None:
         raise RuntimeError(
-            'No Scene Viewer pane found. A viewport must be open to capture.'
+            'no Scene Viewer pane found. A viewport must be open to capture.'
         )
 
     viewport = scene_viewer.curViewport()
@@ -170,11 +171,11 @@ def render_quad_view(
             break
 
     if scene_viewer is None:
-        raise RuntimeError('No Scene Viewer pane found.')
+        raise RuntimeError('no Scene Viewer pane found.')
 
     viewports = scene_viewer.viewports()
     if not viewports:
-        raise RuntimeError('No viewports available in the Scene Viewer.')
+        raise RuntimeError('no viewports available in the Scene Viewer.')
 
     if resolution is not None and len(resolution) != 2:
         raise ValueError('resolution must be a list of [width, height]')
@@ -349,7 +350,7 @@ def set_render_settings(node_path: str, settings: dict) -> dict:
     """Set render parameters on a ROP node."""
 
     node, _, _ = _renderable(node_path)
-    from houdini_mcp_plugin.commands.parameters import _set_parameters
+    from .parameters import _set_parameters
 
     # A frame range on a ROP is $FSTART/$FEND keyframes: a raw set() kept
     # them, the range did not change, and this still listed it as applied.
@@ -554,7 +555,7 @@ def _launch_background_render(
 
     if hou.hipFile.isNewFile():
         raise ValueError(
-            'Save the hip first (save_scene): a background render loads it from disk'
+            'save the hip first (save_scene): a background render loads it from disk'
         )
     hou.hipFile.save()
     hfs = hou.getenv('HFS') or ''
@@ -643,7 +644,7 @@ def _override_targets(
             for i, (component, v) in enumerate(zip(parm_tuple, value, strict=True))
         )
     if missing:
-        from houdini_mcp_plugin.commands.parameters import parm_labels, suggest_parms
+        from .parameters import parm_labels, suggest_parms
 
         labels = parm_labels(node)
         hints = {
@@ -892,10 +893,10 @@ def render_node_network(
             break
 
     if network_editor is None:
-        raise RuntimeError('No Network Editor pane found.')
+        raise RuntimeError('no Network Editor pane found.')
 
     # Capture the network editor as an image via Qt widget grab
-    from houdini_mcp_plugin.commands.viewport import _capture_pane_tab_qt
+    from .viewport import _capture_pane_tab_qt
 
     # Navigate to the node's parent network so the node is visible, and frame
     # it, keeping the viewer's cameras and the selection. Showing a node in a

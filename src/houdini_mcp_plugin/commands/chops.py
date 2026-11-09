@@ -6,12 +6,13 @@ from typing import Any
 
 import hou
 
-from houdini_mcp_plugin.commands.nodes import _refuse_taken_name
-from houdini_mcp_plugin.config import place_new_node
-from houdini_mcp_plugin.dispatcher import register_command
-from houdini_mcp_plugin.errors import readable_message
-from houdini_mcp_plugin.ui import focus_network_editor as _focus_network_editor
 from houdini_mcp_protocol import PluginCommand
+
+from ..config import place_new_node
+from ..dispatcher import register_command
+from ..errors import readable_message
+from ..ui import focus_network_editor as _focus_network_editor
+from .nodes import _refuse_taken_name
 
 
 def _get_node(node_path: str) -> hou.Node:
@@ -189,7 +190,7 @@ def _export_chop_to_parm(
     target_node = _get_node(target_node_path)
     parm = target_node.parm(target_parm_name)
     if parm is None:
-        from houdini_mcp_plugin.commands.parameters import parm_labels, suggest_parms
+        from .parameters import parm_labels, suggest_parms
 
         close = suggest_parms(target_parm_name, parm_labels(target_node))
         hint = f' Did you mean: {close}?' if close else ''
@@ -198,7 +199,7 @@ def _export_chop_to_parm(
             f'{target_node_path}.{hint}'
         )
 
-    from houdini_mcp_plugin.commands.parameters import set_whole_expression
+    from .parameters import set_whole_expression
 
     expression = f'chop("{chop_path}/{channel_name}")'
     replaced_keys = set_whole_expression(parm, expression, hou.exprLanguage.Hscript)

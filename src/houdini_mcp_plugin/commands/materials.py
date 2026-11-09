@@ -6,16 +6,17 @@ from typing import Any
 
 import hou
 
-from houdini_mcp_plugin.commands.nodes import (
+from houdini_mcp_protocol import PluginCommand
+
+from ..config import place_new_node
+from ..dispatcher import register_command
+from ..errors import as_text, readable_message
+from ..ui import focus_network_editor as _focus_network_editor
+from .nodes import (
     _component_default,
     _is_at_default,
     _refuse_taken_name,
 )
-from houdini_mcp_plugin.config import place_new_node
-from houdini_mcp_plugin.dispatcher import register_command
-from houdini_mcp_plugin.errors import as_text, readable_message
-from houdini_mcp_plugin.ui import focus_network_editor as _focus_network_editor
-from houdini_mcp_protocol import PluginCommand
 
 
 def _get_node(node_path: str) -> hou.Node:

@@ -8,9 +8,10 @@ from typing import Any
 
 import hou
 
-from houdini_mcp_plugin.dispatcher import register_command
-from houdini_mcp_plugin.errors import readable_message
 from houdini_mcp_protocol import PluginCommand
+
+from ..dispatcher import register_command
+from ..errors import readable_message
 
 logger = logging.getLogger(__name__)
 

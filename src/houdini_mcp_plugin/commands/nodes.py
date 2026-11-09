@@ -10,25 +10,26 @@ from typing import Any
 
 import hou
 
-from houdini_mcp_plugin import constants
-from houdini_mcp_plugin.callbacks import (
+from houdini_mcp_protocol import PluginCommand
+
+from .. import constants
+from ..callbacks import (
     CallbackError,
     action_script,
     callback_script,
     press,
     run_action,
 )
-from houdini_mcp_plugin.config import (
+from ..config import (
     auto_layout_enabled,
     mark_placed,
     place_new_node,
 )
-from houdini_mcp_plugin.dispatcher import register_command
-from houdini_mcp_plugin.dop_cache import dop_cache_note
-from houdini_mcp_plugin.errors import readable_message
-from houdini_mcp_plugin.serialize import to_jsonable
-from houdini_mcp_plugin.ui import focus_network_editor as _focus_network_editor
-from houdini_mcp_protocol import PluginCommand
+from ..dispatcher import register_command
+from ..dop_cache import dop_cache_note
+from ..errors import readable_message
+from ..serialize import to_jsonable
+from ..ui import focus_network_editor as _focus_network_editor
 
 
 def _get_node(node_path: str) -> hou.Node:
@@ -101,7 +102,7 @@ def delete_node(node_path: str | None = None, node_paths: list | None = None) ->
     """Delete a node from the scene, or several in one call."""
 
     if (node_path is None) == (node_paths is None):
-        raise ValueError('Pass node_path or node_paths, not both and not neither.')
+        raise ValueError('pass node_path or node_paths, not both and not neither.')
     if node_paths is not None:
         return _delete_nodes(node_paths)
     assert node_path is not None
@@ -916,7 +917,7 @@ def change_node_type(
 ) -> dict:
     """Swap a node for another type in place — wires, name, position, flags and..."""
 
-    from houdini_mcp_plugin.commands._helpers import _resolve_node_type
+    from ._helpers import _resolve_node_type
 
     node = _get_node(node_path)
     category = node.type().category()
@@ -1184,7 +1185,7 @@ def disconnect_node(
                 f'on node {node_path}. Connected inputs: {connected}.'
             )
     else:
-        raise ValueError('Provide either input_index or set disconnect_all=True.')
+        raise ValueError('provide either input_index or set disconnect_all=True.')
 
     reply = {
         'success': True,
@@ -1284,7 +1285,7 @@ def set_node_flags(
             not_applied[flag] = f'asked for {bool(wanted)}, Houdini kept {actual}'
 
     if not changed and not not_applied:
-        raise ValueError('No flags were specified.')
+        raise ValueError('no flags were specified.')
 
     if changed.get('display'):
         _focus_network_editor(node, place_unpositioned=False)
@@ -1494,5 +1495,5 @@ def set_object_transform(
             node.setInput(0, new_parent)
             applied['parent'] = new_parent.path()
     if not applied:
-        raise ValueError('Nothing to set: give translate, rotate, scale or parent.')
+        raise ValueError('nothing to set: give translate, rotate, scale or parent.')
     return {'success': True, 'node_path': node.path(), **applied}

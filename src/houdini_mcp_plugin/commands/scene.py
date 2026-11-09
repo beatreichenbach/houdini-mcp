@@ -8,20 +8,21 @@ from typing import Any
 
 import hou
 
-from houdini_mcp_plugin.callbacks import press
-from houdini_mcp_plugin.config import (
+from houdini_mcp_protocol import PluginCommand
+
+from ..callbacks import press
+from ..config import (
     require_inside_project_root,
     update_mode_name,
 )
-from houdini_mcp_plugin.dispatcher import register_command
-from houdini_mcp_plugin.outputs import (
+from ..dispatcher import register_command
+from ..outputs import (
     OUTPUT_PARMS,
     failure_verdict,
     reported_outputs,
     write_verdict,
 )
-from houdini_mcp_plugin.ui import focus_network_editor as _focus_network_editor
-from houdini_mcp_protocol import PluginCommand
+from ..ui import focus_network_editor as _focus_network_editor
 
 # Extensions that are really two, so the frame number belongs before both.
 # os.path.splitext("cache.bgeo.sc") yields ("cache.bgeo", ".sc"), which produced
@@ -632,7 +633,7 @@ def get_context_info(context: str) -> dict:
 def _undo_available() -> None:
     if not hou.undos.areEnabled():
         raise RuntimeError(
-            'Undo is not available in this session (hython and batch mode keep no '
+            'undo is not available in this session (hython and batch mode keep no '
             'undo history). Undo needs a graphical Houdini.'
         )
 

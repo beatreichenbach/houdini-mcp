@@ -8,13 +8,14 @@ from typing import Any
 
 import hou
 
-from houdini_mcp_plugin import constants
+from . import constants
 
 _FALSY = {'0', 'false', 'off', 'no'}
 
 
 def auto_layout_enabled() -> bool:
-    """Whether handlers may auto-arrange nodes in the network editor.
+    """
+    Whether handlers may auto-arrange nodes in the network editor.
 
     Reads ``HOUDINI_MCP_AUTO_LAYOUT`` via ``hou.getenv`` first (so it can
     be set in houdini.env or toggled at runtime with ``hou.putenv``), then
@@ -31,7 +32,8 @@ def auto_layout_enabled() -> bool:
 
 
 def output_timeout_seconds() -> float:
-    """How long a clean render or cache write may take to show its file.
+    """
+    How long a clean render or cache write may take to show its file.
 
     ``HOUDINI_MCP_OUTPUT_TIMEOUT`` via ``hou.getenv`` first, then the process
     environment; default 2 seconds. A usdrender_rop returns when husk exits
@@ -53,7 +55,8 @@ def output_timeout_seconds() -> float:
 
 
 def project_root() -> str | None:
-    """The directory file operations are confined to, or None for no limit.
+    """
+    The directory file operations are confined to, or None for no limit.
 
     ``HOUDINI_MCP_PROJECT_ROOT`` via ``hou.getenv`` first, then the process
     environment, so it can live in houdini.env or be set at runtime.
@@ -66,7 +69,8 @@ def project_root() -> str | None:
 
 
 def require_inside_project_root(file_path: str, what: str = 'path') -> str:
-    """Raise unless *file_path* lies under the project root; return it unchanged.
+    """
+    Raise unless *file_path* lies under the project root; return it unchanged.
 
     Only the paths the handlers themselves open, save, load or install are
     checked: hip files, imports, exports, HDA libraries. A file path written
@@ -107,7 +111,8 @@ def update_mode_name() -> str | None:
 
 
 def update_mode_warning() -> str | None:
-    """A sentence when nodes are not cooking on their own, else None.
+    """
+    A sentence when nodes are not cooking on their own, else None.
 
     In Manual (or On Mouse Up) mode a freshly created node holds no cooked
     geometry, so a verb that reads cooked evidence answers "0 points, no
@@ -126,7 +131,8 @@ def update_mode_warning() -> str | None:
 
 
 def layout_if_enabled(node: hou.Node, place_unpositioned: bool = True) -> None:
-    """Lay out *node*'s children unless auto-layout is disabled.
+    """
+    Lay out *node*'s children unless auto-layout is disabled.
 
     Also the placement floor for every creation path: each handler already
     funnels through here (directly or via its ``_focus_network_editor``), so a
@@ -185,7 +191,8 @@ def mark_placed(node: hou.Node) -> None:
 
 
 def _is_unplaced(node: hou.Node) -> bool:
-    """Whether the placement floor should position *node*.
+    """
+    Whether the placement floor should position *node*.
 
     Unplaced means nobody has positioned it: no placement tag, and still at
     exactly ``(0, 0)``. The residual cost is unchanged -- a node a user parked
@@ -197,7 +204,8 @@ def _is_unplaced(node: hou.Node) -> bool:
 
 
 def place_new_node(node: hou.Node) -> None:
-    """Give a *freshly created* node a sensible position, moving nothing else.
+    """
+    Give a *freshly created* node a sensible position, moving nothing else.
 
     Deliberately not gated by ``HOUDINI_MCP_AUTO_LAYOUT``: that flag guards
     *rearranging an existing network*, while this only places the node that was
@@ -216,7 +224,8 @@ def place_new_node(node: hou.Node) -> None:
 
 
 def place_new_nodes(nodes: Any) -> None:
-    """Place freshly created *nodes*, in creation order.
+    """
+    Place freshly created *nodes*, in creation order.
 
     Order matters: each node is positioned relative to its inputs, so the
     upstream end of a fresh chain has to be placed first.
@@ -228,7 +237,8 @@ def place_new_nodes(nodes: Any) -> None:
 
 
 def _unplaced_children(parent: hou.Node) -> list:
-    """Children nothing has positioned yet.
+    """
+    Children nothing has positioned yet.
 
     This is how the placement floor recognises fresh nodes without tracking
     every ``createNode`` call. ``children()`` returns creation order, which is
@@ -241,7 +251,8 @@ def _unplaced_children(parent: hou.Node) -> list:
 
 
 def _place_if_unplaced(node: hou.Node) -> None:
-    """Place *node* itself if it is still parked at the origin.
+    """
+    Place *node* itself if it is still parked at the origin.
 
     Guarded against top-level managers: ``moveToGoodPosition`` on ``/obj``
     happily relocates it inside the root network (measured on 22.0.368), so a

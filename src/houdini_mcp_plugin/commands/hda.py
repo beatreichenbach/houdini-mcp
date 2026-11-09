@@ -9,11 +9,12 @@ from typing import Any
 
 import hou
 
-from houdini_mcp_plugin.commands.parameters import _expression_error, _template_to_dict
-from houdini_mcp_plugin.config import require_inside_project_root
-from houdini_mcp_plugin.dispatcher import register_command
-from houdini_mcp_plugin.errors import as_text, readable_message
 from houdini_mcp_protocol import PluginCommand
+
+from ..config import require_inside_project_root
+from ..dispatcher import register_command
+from ..errors import as_text, readable_message
+from .parameters import _expression_error, _template_to_dict
 
 
 def _get_node(node_path: str) -> hou.Node:
@@ -220,7 +221,7 @@ def get_hda_info(
             raise ValueError(f"Type '{type_name}' is not an HDA.")
     else:
         raise ValueError(
-            'At least one of node_path, hda_file, or type_name must be provided.'
+            'at least one of node_path, hda_file, or type_name must be provided.'
         )
 
     info = _definition_to_dict(definition)

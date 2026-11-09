@@ -7,10 +7,11 @@ import re
 
 import hou
 
-from houdini_mcp_plugin.dispatcher import register_command
-from houdini_mcp_plugin.errors import readable_message
-from houdini_mcp_plugin.ui import focus_network_editor as _focus_network_editor
 from houdini_mcp_protocol import PluginCommand
+
+from ..dispatcher import register_command
+from ..errors import readable_message
+from ..ui import focus_network_editor as _focus_network_editor
 
 
 def _get_node(node_path: str) -> hou.Node:
@@ -256,7 +257,7 @@ def create_vex_expression(
         raise ValueError(f"Parameter '{parm_name}' not found on node {node_path}.")
     if re.search(r'(^|[^\w$])[fvisp]?\[?\]?@\w|;\s*$', vex_code):
         raise ValueError(
-            "That is VEX (attribute @ syntax or a trailing ';'), which a parameter "
+            "that is VEX (attribute @ syntax or a trailing ';'), which a parameter "
             'expression cannot run: parameters take HScript or Python. Put VEX in a '
             'wrangle with create_wrangle, or write the HScript equivalent (point(), '
             'ch()).'
@@ -278,7 +279,7 @@ def create_vex_expression(
         ) from e
     finally:
         hou.setPwd(previous)
-    from houdini_mcp_plugin.commands.parameters import set_whole_expression
+    from .parameters import set_whole_expression
 
     replaced = set_whole_expression(parm, vex_code, hou.exprLanguage.Hscript)
     value = parm.eval()

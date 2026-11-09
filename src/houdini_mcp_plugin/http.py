@@ -8,8 +8,9 @@ from typing import Any, TypeVar
 
 import hwebserver
 
-from houdini_mcp_plugin import __version__, dispatcher, security, startup
 from houdini_mcp_protocol import PROTOCOL_VERSION, ErrorCode, Response, ResponseStatus
+
+from . import __version__, dispatcher, security, startup
 
 logger = logging.getLogger(__name__)
 
