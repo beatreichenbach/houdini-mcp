@@ -6,6 +6,8 @@ from dataclasses import dataclass
 
 from . import constants
 
+_FALSY = {'0', 'false', 'off', 'no'}
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -28,6 +30,13 @@ class Settings:
             timeout=_read_float(constants.TIMEOUT, constants.DEFAULT_TIMEOUT),
             log_level=_read_log_level(),
         )
+
+
+def auto_layout_enabled() -> bool:
+    """Return whether tools may auto-arrange nodes in the network editor."""
+
+    value = os.getenv('HOUDINI_MCP_AUTO_LAYOUT', '0')
+    return value.strip().lower() not in _FALSY
 
 
 def _read_int(name: str, default: int) -> int:
