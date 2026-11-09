@@ -66,6 +66,8 @@ extra-paths = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-m 'not integration'"
+markers = ["integration: requires a live Houdini session"]
 asyncio_default_fixture_loop_scope = "function"
 log_cli = true
 log_level = "INFO"
