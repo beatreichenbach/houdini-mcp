@@ -4,7 +4,7 @@ import logging
 import os
 from dataclasses import dataclass
 
-from . import env
+from . import constants
 
 
 @dataclass(frozen=True)
@@ -16,10 +16,12 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> Settings:
+        """Return settings read from environment variables."""
+
         return cls(
-            host=os.getenv(env.HOST, env.DEFAULT_HOST),
-            port=_read_int(env.PORT, env.DEFAULT_PORT),
-            timeout=_read_float(env.TIMEOUT, env.DEFAULT_TIMEOUT),
+            host=os.getenv(constants.HOST, constants.DEFAULT_HOST),
+            port=_read_int(constants.PORT, constants.DEFAULT_PORT),
+            timeout=_read_float(constants.TIMEOUT, constants.DEFAULT_TIMEOUT),
             log_level=_read_log_level(),
         )
 
@@ -45,10 +47,10 @@ def _read_float(name: str, default: float) -> float:
 
 
 def _read_log_level() -> int:
-    value = os.getenv(env.LOG_LEVEL)
+    value = os.getenv(constants.LOG_LEVEL)
     if value is None:
         return logging.INFO
     level = logging.getLevelNamesMapping().get(value.upper())
     if level is None:
-        raise ValueError(f'invalid {env.LOG_LEVEL}: {value!r}')
+        raise ValueError(f'invalid {constants.LOG_LEVEL}: {value!r}')
     return level

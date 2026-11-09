@@ -18,6 +18,8 @@ class Request:
     request_id: str = field(default_factory=lambda: uuid4().hex)
 
     def to_payload(self) -> dict[str, Any]:
+        """Return this request as a JSON-compatible payload."""
+
         return {
             'command': self.command,
             'params': self.params,
@@ -26,6 +28,8 @@ class Request:
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> Request:
+        """Build a request from a payload."""
+
         params = payload.get('params')
         return cls(
             command=str(payload['command']),
@@ -42,8 +46,21 @@ class Response:
     request_id: str = ''
     timing_ms: float = 0.0
 
+    def to_payload(self) -> dict[str, Any]:
+        """Return this response as a JSON-compatible payload."""
+
+        return {
+            'status': self.status,
+            'data': self.data,
+            'error': self.error,
+            'request_id': self.request_id,
+            'timing_ms': self.timing_ms,
+        }
+
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> Response:
+        """Build a response from a payload."""
+
         status = (
             ResponseStatus.SUCCESS
             if payload.get('status') == ResponseStatus.SUCCESS

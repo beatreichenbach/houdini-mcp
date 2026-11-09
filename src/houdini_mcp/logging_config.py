@@ -5,6 +5,8 @@ import sys
 
 
 def configure_logging(level: int) -> None:
+    """Configure stderr logging for the MCP server."""
+
     handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(
         logging.Formatter(

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mainMenu>
+  <menuBar>
+    <subMenu id="houdini_mcp_menu">
+      <label>MCP</label>
+      <insertBefore>help_menu</insertBefore>
+
+      <scriptItem id="houdini_mcp_start">
+        <label>Start Server</label>
+        <scriptCode><![CDATA[
+import hou
+import houdini_mcp_plugin.startup as startup
+
+try:
+    startup.start()
+except Exception as exc:
+    hou.ui.displayMessage(
+        f'Could not start the Houdini MCP plugin:\n\n{exc}',
+        severity=hou.severityType.Error,
+        title='Houdini MCP',
+    )
+else:
+    hou.ui.setStatusMessage(f'Houdini MCP running on port {startup.get_port()}')
+]]></scriptCode>
+      </scriptItem>
+
+      <scriptItem id="houdini_mcp_stop">
+        <label>Stop Server</label>
+        <scriptCode><![CDATA[
+import hou
+import houdini_mcp_plugin.startup as startup
+
+startup.stop()
+hou.ui.setStatusMessage('Houdini MCP stopped')
+]]></scriptCode>
+      </scriptItem>
+
+      <separatorItem/>
+
+      <scriptItem id="houdini_mcp_status">
+        <label>Status...</label>
+        <scriptCode><![CDATA[
+import hou
+import houdini_mcp_plugin.startup as startup
+
+if startup.is_running():
+    message = f'Running on port {startup.get_port()}'
+else:
+    message = 'Stopped'
+
+hou.ui.displayMessage(message, title='Houdini MCP')
+]]></scriptCode>
+      </scriptItem>
+    </subMenu>
+  </menuBar>
+</mainMenu>

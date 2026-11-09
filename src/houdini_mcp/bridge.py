@@ -7,8 +7,15 @@ from typing import Any, cast
 
 import httpx
 
-from houdini_mcp_protocol import ErrorCode, Request, Response, ResponseStatus
-from houdini_mcp_protocol.commands import EXECUTE, HEALTH, LIST_COMMANDS
+from houdini_mcp_protocol import (
+    PLUGIN_COMMANDS,
+    PROTOCOL_VERSION,
+    ApiCommand,
+    ErrorCode,
+    Request,
+    Response,
+    ResponseStatus,
+)
 
 from .config import Settings
 from .errors import HoudiniCommandError, HoudiniConnectionError
@@ -34,6 +41,8 @@ class HoudiniBridge:
         return f'{self.base_url}/api'
 
     async def discover(self) -> None:
+        """Find and connect to a running Houdini plugin."""
+
         servers = await find_servers(self._host, self._port)
         if not servers:
             logger.warning(
@@ -56,11 +65,28 @@ class HoudiniBridge:
                 self._port,
             )
 
+        protocol_version = server.get('protocol_version')
+        if protocol_version != PROTOCOL_VERSION:
+            logger.warning(
+                'Plugin protocol version %s does not match server %s',
+                protocol_version,
+                PROTOCOL_VERSION,
+            )
+
+        commands = set(await self.list_commands())
+        missing = PLUGIN_COMMANDS - commands
+        if missing:
+            logger.warning('Plugin is missing commands: %s', ', '.join(sorted(missing)))
+
     async def health_check(self) -> dict[str, Any]:
-        return await self._post(HEALTH, {})
+        """Return the plugin health payload."""
+
+        return await self._post(ApiCommand.HEALTH, {})
 
     async def list_commands(self) -> list[str]:
-        payload = await self._post(LIST_COMMANDS, {})
+        """Return the commands registered by the plugin."""
+
+        payload = await self._post(ApiCommand.LIST_COMMANDS, {})
         commands = payload.get('commands')
         if not isinstance(commands, list):
             return []
@@ -72,9 +98,13 @@ class HoudiniBridge:
         params: dict[str, Any] | None = None,
         timeout: float | None = None,
     ) -> Any:  # noqa: ANN401
+        """Run a command in Houdini and return its result."""
+
         logger.debug('Calling Houdini command %s', command)
         request = Request(command=command, params=params or {})
-        payload = await self._post(EXECUTE, request.to_payload(), timeout=timeout)
+        payload = await self._post(
+            ApiCommand.EXECUTE, request.to_payload(), timeout=timeout
+        )
         response = Response.from_payload(payload)
         if response.status is ResponseStatus.ERROR:
             error = response.error or {}
@@ -86,6 +116,8 @@ class HoudiniBridge:
         return response.data
 
     async def close(self) -> None:
+        """Close the HTTP client."""
+
         await self._client.aclose()
 
     async def _post(
@@ -152,7 +184,7 @@ async def find_servers(
         try:
             response = await client.post(
                 f'http://{host}:{port}/api',
-                data=_rpc_body(HEALTH, {}),
+                data=_rpc_body(ApiCommand.HEALTH, {}),
             )
             response.raise_for_status()
             payload = response.json()

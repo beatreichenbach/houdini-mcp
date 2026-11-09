@@ -21,7 +21,8 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "ruff>=0.16",
-    "ty>=0.0.82"
+    "ty>=0.0.82",
+    "types-houdini>=21.0"
 ]
 
 [build-system]
@@ -30,15 +31,19 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["houdini_mcp*", "houdini_mcp_protocol*"]
+include = ["houdini_mcp*", "houdini_mcp_protocol*", "houdini_mcp_plugin*"]
 
 [tool.setuptools.package-data]
 houdini_mcp = ["py.typed"]
 houdini_mcp_protocol = ["py.typed"]
+houdini_mcp_plugin = ["py.typed"]
 
 [tool.semantic_release]
 allow_zero_version = true
-version_variables = ["houdini_mcp/__init__.py:__version__"]
+version_variables = [
+    "src/houdini_mcp/__init__.py:__version__",
+    "src/houdini_mcp_plugin/__init__.py:__version__",
+]
 version_toml = ["pyproject.toml:project.version"]
 
 [tool.semantic_release.remote]
@@ -53,6 +58,9 @@ quote-style = "single"
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "UP", "B", "SIM", "ANN", "RUF"]
 ignore = ["SIM108"]
+
+[tool.ty.analysis]
+replace-imports-with-any = ["hwebserver", "hdefereval"]
 
 [tool.ty.environment]
 extra-paths = ["src"]
