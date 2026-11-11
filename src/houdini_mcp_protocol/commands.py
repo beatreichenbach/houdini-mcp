@@ -131,6 +131,7 @@ class PluginCommand(StrEnum):
     NODES_FIND_NODES = 'nodes.find_nodes'
     NODES_GET_NODE_INFO = 'nodes.get_node_info'
     NODES_LAYOUT_CHILDREN = 'nodes.layout_children'
+    NODES_LAYOUT_NODES = 'nodes.layout_nodes'
     NODES_LIST_CHILDREN = 'nodes.list_children'
     NODES_LIST_NETWORK_BOXES = 'nodes.list_network_boxes'
     NODES_LIST_NODE_TYPES = 'nodes.list_node_types'

@@ -349,6 +349,20 @@ async def layout_children(
 
 
 @tool
+async def layout_nodes(
+    ctx: BridgeContext,
+    node_paths: list[str],
+    margin: list[float] | None = None,
+) -> dict:
+    """Place nodes as a block in free space beside the rest of the network."""
+
+    params: dict = {'node_paths': node_paths}
+    if margin is not None:
+        params['margin'] = margin
+    return await run_command(ctx, 'nodes.layout_nodes', params)
+
+
+@tool
 async def set_node_position(
     ctx: BridgeContext, node_path: str, x: float, y: float
 ) -> dict:

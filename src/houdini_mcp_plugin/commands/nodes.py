@@ -15,7 +15,7 @@ from houdini_mcp_protocol import PluginCommand
 from .. import constants
 from ..host import register_command
 from ..runtime import callbacks as callback_helpers
-from ..runtime import config, dop_cache, ui
+from ..runtime import config, dop_cache, layout, ui
 from ..runtime import errors as error_helpers
 from ..serialize import to_jsonable
 
@@ -955,6 +955,31 @@ def layout_children(parent_path: str, spacing: float | None = None) -> dict:
         'parent_path': parent_path,
         'laid_out_count': len(children_paths),
     }
+
+
+@register_command(PluginCommand.NODES_LAYOUT_NODES)
+def layout_nodes(node_paths: list[str], margin: list | None = None) -> dict:
+    """Move nodes as a block into free space beside the rest of the network."""
+
+    if not node_paths:
+        raise ValueError('node_paths is empty.')
+
+    nodes = []
+    for path in dict.fromkeys(node_paths):
+        node = _get_node(path)
+        if node not in nodes:
+            nodes.append(node)
+
+    parsed_margin = None
+    if margin is not None:
+        try:
+            if not isinstance(margin, (list, tuple)) or len(margin) != 2:
+                raise TypeError
+            parsed_margin = [float(margin[0]), float(margin[1])]
+        except (TypeError, ValueError):
+            raise ValueError(f'margin must be [x, y], got {margin!r}.') from None
+
+    return layout.place_nodes_block(nodes, parsed_margin)
 
 
 @register_command(PluginCommand.NODES_SET_NODE_POSITION)

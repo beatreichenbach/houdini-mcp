@@ -6,8 +6,14 @@
   Use the shelf tool only when no studio template exists for that asset class.
 - Templates are network boxes. Resolve them with `list_network_boxes`; box
   membership is the template, not node names, position or adjacency.
+- A node-by-node copy leaves each copy's inputs wired to the originals.
+  Reconnect every input whose source is inside the copied set to the
+  corresponding copy before editing parameters, and check the chain is
+  contiguous afterwards.
 - Never use Python to create nodes, set parameters, wire inputs, or press buttons when a tool or native node exists.
 - Use `create_node`'s `position` when flow direction matters. Layout only new nodes.
+- Place a new or copied branch as a block in free space beside the existing network (`layout_nodes`);
+  never reflow a network that contains a template or a hand-built layout.
 
 ## Batch the work
 
