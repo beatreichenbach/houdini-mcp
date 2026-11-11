@@ -8,7 +8,7 @@ from typing import Any
 
 import hou
 
-from . import constants
+from .. import constants
 
 _FALSY = {'0', 'false', 'off', 'no'}
 

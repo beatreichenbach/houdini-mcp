@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import inspect
 import logging
+import threading
 import time
 import traceback
 from collections.abc import Callable, Generator
@@ -12,13 +13,14 @@ import hdefereval
 
 from houdini_mcp_protocol import ErrorCode, Response, ResponseStatus
 
-from .serialize import to_jsonable
+from ..serialize import to_jsonable
 
 logger = logging.getLogger(__name__)
 
 Handler = Callable[..., Any]
 
 _registry: dict[str, Handler] = {}
+_registry_lock = threading.RLock()
 _NO_UNDO_GROUP = frozenset({'scene.undo', 'scene.redo'})
 
 
@@ -26,7 +28,8 @@ def register_command(name: str) -> Callable[[Handler], Handler]:
     """Register a handler for a command name."""
 
     def decorator(handler: Handler) -> Handler:
-        _registry[str(name)] = handler
+        with _registry_lock:
+            _registry[str(name)] = handler
         return handler
 
     return decorator
@@ -35,13 +38,15 @@ def register_command(name: str) -> Callable[[Handler], Handler]:
 def list_commands() -> list[str]:
     """Return the registered command names."""
 
-    return sorted(_registry)
+    with _registry_lock:
+        return sorted(_registry)
 
 
 def dispatch(command: str, params: dict[str, Any]) -> Response:
     """Run a command and return a protocol response."""
 
-    handler = _registry.get(command)
+    with _registry_lock:
+        handler = _registry.get(command)
     if handler is None:
         return Response(
             status=ResponseStatus.ERROR,

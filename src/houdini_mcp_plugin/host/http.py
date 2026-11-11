@@ -10,7 +10,8 @@ import hwebserver
 
 from houdini_mcp_protocol import PROTOCOL_VERSION, ErrorCode, Response, ResponseStatus
 
-from . import __version__, dispatcher, security, startup
+from .. import __version__
+from . import dispatcher, security, startup
 
 logger = logging.getLogger(__name__)
 

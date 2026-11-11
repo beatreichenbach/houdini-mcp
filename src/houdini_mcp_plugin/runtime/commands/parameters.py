@@ -12,17 +12,17 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
+from ...host.dispatcher import register_command
+from ...serialize import geometry_summary, ramp_to_dict
 from ..callbacks import (
     CallbackError,
     _is_python,
     callback_script,
     press,
 )
-from ..dispatcher import register_command
 from ..dop_cache import dop_cache_note
 from ..errors import readable_message
 from ..menus import items as menu_items
-from ..serialize import geometry_summary, ramp_to_dict
 
 
 def _resolve_node(node_path: str) -> hou.Node:

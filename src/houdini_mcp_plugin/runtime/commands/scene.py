@@ -10,12 +10,12 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
+from ...host.dispatcher import register_command
 from ..callbacks import press
 from ..config import (
     require_inside_project_root,
     update_mode_name,
 )
-from ..dispatcher import register_command
 from ..outputs import (
     OUTPUT_PARMS,
     failure_verdict,

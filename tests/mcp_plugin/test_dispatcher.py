@@ -1,4 +1,4 @@
-from houdini_mcp_plugin import dispatcher
+from houdini_mcp_plugin.host import dispatcher
 from houdini_mcp_protocol import ErrorCode, ResponseStatus
 
 

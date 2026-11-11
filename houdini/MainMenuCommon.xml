@@ -9,7 +9,7 @@
         <label>Start Server</label>
         <scriptCode><![CDATA[
 import hou
-import houdini_mcp_plugin.startup as startup
+import houdini_mcp_plugin.host.startup as startup
 
 try:
     startup.start()
@@ -28,7 +28,7 @@ else:
         <label>Pause Server</label>
         <scriptCode><![CDATA[
 import hou
-import houdini_mcp_plugin.startup as startup
+import houdini_mcp_plugin.host.startup as startup
 
 startup.pause()
 hou.ui.setStatusMessage('Houdini MCP paused')
@@ -41,7 +41,7 @@ hou.ui.setStatusMessage('Houdini MCP paused')
         <label>Status...</label>
         <scriptCode><![CDATA[
 import hou
-import houdini_mcp_plugin.startup as startup
+import houdini_mcp_plugin.host.startup as startup
 
 if startup.is_running():
     message = f'Running on port {startup.get_port()}'

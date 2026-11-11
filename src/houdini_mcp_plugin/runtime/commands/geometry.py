@@ -11,8 +11,8 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
+from ...host.dispatcher import register_command
 from ..config import place_new_node, update_mode_warning
-from ..dispatcher import register_command
 
 
 def _get_sop_geo(node_path: str, output_index: int = 0) -> hou.Geometry:

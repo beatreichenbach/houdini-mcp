@@ -14,9 +14,9 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
+from ...host.dispatcher import register_command
 from ..callbacks import CallbackError, press
 from ..config import place_new_node
-from ..dispatcher import register_command
 from ..errors import readable_message
 from ..outputs import (
     at_frame,

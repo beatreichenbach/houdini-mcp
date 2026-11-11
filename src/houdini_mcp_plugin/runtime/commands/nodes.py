@@ -12,7 +12,9 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
-from .. import constants
+from ... import constants
+from ...host.dispatcher import register_command
+from ...serialize import to_jsonable
 from ..callbacks import (
     CallbackError,
     action_script,
@@ -25,10 +27,8 @@ from ..config import (
     mark_placed,
     place_new_node,
 )
-from ..dispatcher import register_command
 from ..dop_cache import dop_cache_note
 from ..errors import readable_message
-from ..serialize import to_jsonable
 from ..ui import focus_network_editor as _focus_network_editor
 
 

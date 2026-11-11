@@ -32,13 +32,6 @@ async def execute_python(
 
 
 @tool
-async def reload_plugin(ctx: BridgeContext) -> dict:
-    """Re-import the plugin's Houdini-side code without restarting Houdini."""
-
-    return await run_command(ctx, 'code.reload_plugin', {})
-
-
-@tool
 async def execute_hscript(ctx: BridgeContext, command: str) -> dict:
     """Execute an HScript command in Houdini."""
 

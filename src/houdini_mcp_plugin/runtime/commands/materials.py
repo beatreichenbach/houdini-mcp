@@ -8,8 +8,8 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
+from ...host.dispatcher import register_command
 from ..config import place_new_node
-from ..dispatcher import register_command
 from ..errors import as_text, readable_message
 from ..ui import focus_network_editor as _focus_network_editor
 from .nodes import (

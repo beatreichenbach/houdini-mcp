@@ -29,7 +29,7 @@
 ## Python packages
 
 - `houdini_mcp` is the MCP server, started by the MCP client outside Houdini.
-- `houdini_mcp_plugin` is the HTTP receiver inside Houdini, executing `hou` calls on the main thread.
+- `houdini_mcp_plugin` is the HTTP receiver inside Houdini, split into a stable `host` and the command `runtime`.
 - `houdini_mcp_protocol` is the shared, stdlib-only contract between them.
 
 ## Package boundaries
@@ -55,6 +55,8 @@ houdini-mcp/
     │   ├── resources/            # resource registration
     │   └── tools/                # MCP tools
     ├── houdini_mcp_plugin/       # Houdini-side plugin
+    │   ├── host/                 # HTTP server, dispatcher, startup
+    │   └── runtime/              # command handlers and helpers
     └── houdini_mcp_protocol/     # shared contract
 ```
 

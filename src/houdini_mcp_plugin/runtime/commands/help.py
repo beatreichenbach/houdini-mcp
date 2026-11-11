@@ -11,7 +11,7 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
-from ..dispatcher import register_command
+from ...host.dispatcher import register_command
 
 # Scopes are discovered from the install, not listed here. Houdini 22.0 ships 47
 # help archives and a hardcoded nine served only 27.6 of 34.3 MB of text. What it

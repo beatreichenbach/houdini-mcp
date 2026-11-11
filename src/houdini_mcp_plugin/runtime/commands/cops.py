@@ -10,7 +10,7 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
-from ..dispatcher import register_command
+from ...host.dispatcher import register_command
 from ..errors import readable_message
 from ..ui import focus_network_editor as _focus_network_editor
 from .nodes import _refuse_taken_name

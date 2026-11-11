@@ -9,8 +9,8 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
+from ...host.dispatcher import register_command
 from ..config import layout_if_enabled, place_new_node
-from ..dispatcher import register_command
 from ..errors import readable_message
 from ..ui import focus_network_editor
 from .nodes import _refuse_taken_name

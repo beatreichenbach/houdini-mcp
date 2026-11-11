@@ -12,8 +12,8 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
+from ...host.dispatcher import register_command
 from ..callbacks import press
-from ..dispatcher import register_command
 from ..outputs import (
     at_frame as _at_frame,
 )

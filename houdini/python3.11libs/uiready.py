@@ -1,9 +1,9 @@
 import logging
 
 try:
-    from houdini_mcp_plugin import startup
+    from houdini_mcp_plugin.host import startup
 
     if startup.autostart_enabled():
         startup.ensure_running()
-except Exception:
-    logging.getLogger(__name__).exception('Failed to start Houdini MCP plugin')
+except Exception as e:
+    logging.getLogger(__name__).exception('%s', e)

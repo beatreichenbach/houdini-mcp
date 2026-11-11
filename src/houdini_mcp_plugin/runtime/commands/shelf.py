@@ -12,7 +12,7 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
-from ..dispatcher import register_command
+from ...host.dispatcher import register_command
 from ..errors import as_int, as_text
 from ..ui import keep_viewer_state
 

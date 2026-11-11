@@ -17,13 +17,13 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
+from ...host.dispatcher import register_command
 from ..config import (
     layout_if_enabled,
     place_new_node,
     place_new_nodes,
     update_mode_warning,
 )
-from ..dispatcher import register_command
 from ..dop_cache import dop_cache_note
 from ..errors import readable_message
 from ..menus import MenuScriptError, items_and_labels

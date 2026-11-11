@@ -11,8 +11,8 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
+from ...host.dispatcher import register_command
 from ..config import require_inside_project_root
-from ..dispatcher import register_command
 from ..errors import as_text, readable_message
 from .parameters import _expression_error, _template_to_dict
 

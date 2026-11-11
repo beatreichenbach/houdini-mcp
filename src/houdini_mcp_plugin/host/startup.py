@@ -13,7 +13,7 @@ import hwebserver
 
 from houdini_mcp_protocol import PORT_SEARCH_RANGE, request_headers
 
-from . import constants
+from .. import constants
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,8 @@ def start(port: int | None = None) -> None:
 
     _bind_loopback()
 
-    from . import commands, http  # noqa: F401
+    from ..runtime import commands  # noqa: F401
+    from . import http  # noqa: F401
 
     in_background = hou.isUIAvailable()
     _running = True

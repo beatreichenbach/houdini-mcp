@@ -12,7 +12,7 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
-from ..dispatcher import register_command
+from ...host.dispatcher import register_command
 from ..errors import as_text
 
 _MAX_CAPTURE_BYTES = 100 * 1024  # 100 KB
