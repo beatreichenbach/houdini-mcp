@@ -12,7 +12,7 @@ from ..host import register_command
 
 
 @register_command(PluginCommand.TAKES_LIST_TAKES)
-def _list_takes(**_: Any) -> dict[str, Any]:
+def list_takes(**_: Any) -> dict[str, Any]:
     """List all takes in the scene with their hierarchy."""
 
     current_take = hou.takes.currentTake()
@@ -41,7 +41,7 @@ def _list_takes(**_: Any) -> dict[str, Any]:
 
 
 @register_command(PluginCommand.TAKES_GET_CURRENT_TAKE)
-def _get_current_take(**_: Any) -> dict[str, Any]:
+def get_current_take(**_: Any) -> dict[str, Any]:
     """Get the current take and list its overridden parameters."""
 
     current_take = hou.takes.currentTake()
@@ -77,7 +77,7 @@ def _get_current_take(**_: Any) -> dict[str, Any]:
 
 
 @register_command(PluginCommand.TAKES_SET_CURRENT_TAKE)
-def _set_current_take(*, name: str, **_: Any) -> dict[str, Any]:
+def set_current_take(*, name: str, **_: Any) -> dict[str, Any]:
     """Set the current take by name."""
 
     target_take = None
@@ -99,7 +99,7 @@ def _set_current_take(*, name: str, **_: Any) -> dict[str, Any]:
 
 
 @register_command(PluginCommand.TAKES_CREATE_TAKE)
-def _create_take(
+def create_take(
     *,
     name: str,
     parent_name: str | None = None,

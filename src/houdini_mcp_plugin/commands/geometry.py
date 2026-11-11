@@ -14,55 +14,6 @@ from houdini_mcp_protocol import PluginCommand
 from ..host import register_command
 from ..runtime import config
 
-
-def _get_sop_geo(node_path: str, output_index: int = 0) -> hou.Geometry:
-    """Return the cooked read-only geometry for a SOP node."""
-
-    node = hou.node(node_path)
-    if node is None:
-        raise hou.OperationFailed(f'Node not found: {node_path}')
-    geo = node.geometry(output_index) if output_index else node.geometry()
-    if geo is None:
-        raise hou.OperationFailed(
-            f'Node has no geometry: {node_path}{_cook_errors(node)}'
-        )
-    return geo
-
-
-def _cook_errors(node: hou.Node) -> str:
-    """The node's own cook errors as a sentence tail ("" when it has none)."""
-
-    errors: list = []
-    with contextlib.suppress(Exception):
-        errors = list(node.errors())
-    return f' -- its cook failed: {"; ".join(errors)}' if errors else ''
-
-
-def _vec_to_list(v: Any) -> Any:
-    """Convert hou.Vector2/3/4, hou.Color, etc."""
-
-    if isinstance(
-        v, (hou.Vector2, hou.Vector3, hou.Vector4, hou.Quaternion, hou.Color)
-    ):
-        return list(v)
-    if isinstance(v, hou.Matrix3):
-        return [[v.at(r, c) for c in range(3)] for r in range(3)]
-    if isinstance(v, hou.Matrix4):
-        return [[v.at(r, c) for c in range(4)] for r in range(4)]
-    return v
-
-
-def _attrib_meta(attrib: hou.Attrib) -> dict[str, Any]:
-    """Return JSON-safe metadata for an attribute."""
-
-    return {
-        'name': attrib.name(),
-        'type': attrib.dataType().name(),
-        'size': attrib.size(),
-        'is_array': attrib.isArrayType(),
-    }
-
-
 # "primitive" is what attribcreate's Class menu, the UI and hou.attribType.Prim
 # call it; a session guessed "prim" only after a refusal that listed nothing.
 _ATTRIB_CLASS_ALIASES = {
@@ -79,70 +30,50 @@ _ATTRIB_CLASS_ALIASES = {
 }
 
 
-def _attrib_class_key(attrib_class: str) -> str:
-    """ "point", "prim", "vertex" or "detail" for *attrib_class* and its aliases."""
-
-    key = _ATTRIB_CLASS_ALIASES.get(str(attrib_class).strip().lower())
-    if key is None:
-        raise ValueError(
-            f'Invalid attrib_class: {attrib_class!r}. '
-            "Use 'point', 'prim' (or 'primitive'), 'vertex' or 'detail'."
-        )
-    return key
-
-
-def _loop_context(node: hou.Node) -> dict[str, str] | None:
-    """The for-each block *node* sits in, as {begin, end} paths — or None."""
-
-    try:
-        parent = node.parent()
-        ancestors = set(node.inputAncestors())
-    except Exception:
-        return None
-    if parent is None:
-        return None
-    for child in parent.children():
-        try:
-            if not child.type().name().startswith('block_end'):
-                continue
-            if node not in child.inputAncestors():
-                continue
-            begin = child.parm('blockpath').evalAsNode()
-        except Exception:
-            continue
-        if begin is not None and begin in ancestors:
-            return {'begin': begin.path(), 'end': child.path()}
-    return None
-
-
-def _cook_state(node: hou.Node) -> tuple[dict[str, Any], list[str]]:
-    """How the numbers about to be reported came to be — read BEFORE geometry()."""
-
-    state: dict[str, Any] = {}
-    warnings: list[str] = []
-    with contextlib.suppress(Exception):
-        state['cooked_for_this_call'] = bool(node.needsToCook())
-    with contextlib.suppress(Exception):
-        state['cook_count'] = int(node.cookCount())
-    loop = _loop_context(node)
-    if loop is not None:
-        state['inside_loop'] = True
-        state['loop'] = loop
-        warnings.append(
-            f'Node sits inside for-each loop {loop["begin"]} → {loop["end"]}: read '
-            f'this '
-            f'way it shows one iteration at best (the last one the block_end cooked, '
-            f'or '
-            f"the loop's initial input), so these numbers are not the loop's result. "
-            f'Read '
-            f'{loop["end"]} for '
-            f'the merged output.'
-        )
-    return state, warnings
-
-
 # Packed types countPrimType also counts under PackedPrim.
 _PACKED_SUBTYPES = ('Agent', 'PackedGeometry', 'PackedFragment')
+
+
+_INTRINSIC_ROWS_SHOWN = 100
+
+
+#: Rows one batched call returns. Beyond it the caller gets a window and is
+#: told there is more, rather than a reply nobody can read.
+_INTRINSIC_ROW_CAP = 2000
+
+
+_STATS_ATTRIB_CAP = 12
+
+
+_VERTICES_PER_PRIM_CAP = 200_000
+
+
+# Volume statistics come from intrinsics, which is the only route that works for
+# both types: hou.VDB has activeVoxelCount() but no minValue()/maxValue(), and
+# hou.Volume has neither. The intrinsics below are present on both.
+#
+# NEVER read the "voxeldata" intrinsic here: it returns every voxel value, so on
+# a real sim field it is millions of floats through the bridge. The whole point
+# of this handler is to answer the question without moving the data.
+_VOLUME_INTRINSICS = (
+    ('min_value', 'volumeminvalue'),
+    ('max_value', 'volumemaxvalue'),
+    ('mean_value', 'volumeavgvalue'),
+    ('active_voxels', 'activevoxelcount'),
+    ('voxel_size', 'voxelsize'),
+)
+
+
+# The voxel statistics, sampling and field comparison below are adapted from
+# JTCHE/houdini-mcp (MIT, Copyright (c) 2025 Capoom, (c) 2026 John Chedeville);
+# see NOTICE.
+
+# Past this many voxels a read is refused rather than stalling the session:
+# a VDB comes back as a Python tuple, about 180 ms per 8M voxels.
+_MAX_VOXELS_READ = 64_000_000
+
+
+_PERCENTILES = (1, 5, 25, 50, 75, 95, 99)
 
 
 def prim_type_counts(geo: hou.Geometry) -> dict[str, int]:
@@ -170,7 +101,7 @@ def prim_type_counts(geo: hou.Geometry) -> dict[str, int]:
 
 
 @register_command(PluginCommand.GEOMETRY_GET_GEOMETRY_INFO)
-def _get_geometry_info(
+def get_geometry_info(
     *, node_path: str, output_index: int = 0, **_: Any
 ) -> dict[str, Any]:
     """Return summary information about a SOP node's geometry."""
@@ -218,7 +149,7 @@ def _get_geometry_info(
 
 
 @register_command(PluginCommand.GEOMETRY_GET_POINTS)
-def _get_points(
+def get_points(
     *,
     node_path: str,
     attributes: list[str] | None = None,
@@ -267,7 +198,7 @@ def _get_points(
 
 
 @register_command(PluginCommand.GEOMETRY_GET_PRIMS)
-def _get_prims(
+def get_prims(
     *,
     node_path: str,
     attributes: list[str] | None = None,
@@ -323,7 +254,7 @@ def _get_prims(
 
 
 @register_command(PluginCommand.GEOMETRY_GET_ATTRIB_VALUES)
-def _get_attrib_values(
+def get_attrib_values(
     *,
     node_path: str,
     attrib_name: str,
@@ -386,27 +317,8 @@ def _get_attrib_values(
     }
 
 
-def _attrib_array(geo: Any, cls: str, attrib: Any) -> Any:
-    """Every value of one attribute, flat: a numpy view for numbers."""
-
-    name = attrib.name()
-    data = attrib.dataType()
-    if data in (hou.attribData.Float, hou.attribData.Int):
-        kind = 'Float' if data == hou.attribData.Float else 'Int'
-        with contextlib.suppress(Exception):
-            import numpy as np  # ty: ignore[import-not-found]
-
-            numeric = (
-                hou.numericData.Float32 if kind == 'Float' else hou.numericData.Int32
-            )
-            raw = getattr(geo, f'{cls}{kind}AttribValuesAsString')(name, numeric)
-            return np.frombuffer(raw, dtype=np.float32 if kind == 'Float' else np.int32)
-        return getattr(geo, f'{cls}{kind}AttribValues')(name)
-    return getattr(geo, f'{cls}StringAttribValues')(name)
-
-
 @register_command(PluginCommand.GEOMETRY_SET_DETAIL_ATTRIB)
-def _set_detail_attrib(
+def set_detail_attrib(
     *,
     node_path: str,
     attrib_name: str,
@@ -465,7 +377,7 @@ def _set_detail_attrib(
 
 
 @register_command(PluginCommand.GEOMETRY_GET_GROUPS)
-def _get_groups(*, node_path: str) -> dict[str, Any]:
+def get_groups(*, node_path: str) -> dict[str, Any]:
     """List all point/prim/edge groups with membership counts."""
 
     geo = _get_sop_geo(node_path)
@@ -506,28 +418,8 @@ def _get_groups(*, node_path: str) -> dict[str, Any]:
     }
 
 
-def _group_page(group: Any, iterator: str, lister: str, start: int, end: int) -> list:
-    """Members start..end of a group, walking only that far into it."""
-
-    import itertools
-
-    try:
-        return list(itertools.islice(getattr(group, iterator)(), max(start, 0), end))
-    except Exception:
-        return list(getattr(group, lister)()[start:end])
-
-
-def _group_size(group: Any, counter: str, lister: str) -> int:
-    """A group's member count without building its members (pointCount etc.)."""
-
-    try:
-        return int(getattr(group, counter)())
-    except Exception:
-        return len(getattr(group, lister)())
-
-
 @register_command(PluginCommand.GEOMETRY_GET_GROUP_MEMBERS)
-def _get_group_members(
+def get_group_members(
     *,
     node_path: str,
     group_name: str,
@@ -594,7 +486,7 @@ def _get_group_members(
 
 
 @register_command(PluginCommand.GEOMETRY_GET_BOUNDING_BOX)
-def _get_bounding_box(*, node_path: str) -> dict[str, Any]:
+def get_bounding_box(*, node_path: str) -> dict[str, Any]:
     """Get axis-aligned bounding box for a SOP node's geometry."""
 
     geo = _get_sop_geo(node_path)
@@ -610,7 +502,7 @@ def _get_bounding_box(*, node_path: str) -> dict[str, Any]:
 
 
 @register_command(PluginCommand.GEOMETRY_GET_ATTRIBUTE_INFO)
-def _get_attribute_info(
+def get_attribute_info(
     *,
     node_path: str,
     attrib_name: str,
@@ -649,7 +541,7 @@ def _get_attribute_info(
 
 
 @register_command(PluginCommand.GEOMETRY_SAMPLE_GEOMETRY)
-def _sample_geometry(
+def sample_geometry(
     *,
     node_path: str,
     sample_count: int = 100,
@@ -709,123 +601,8 @@ def _sample_geometry(
     }
 
 
-def _intrinsic_row(prim: Any, names: list[str] | None) -> dict[str, Any]:
-    """One prim's intrinsics, all of them or just the ones asked for."""
-
-    wanted = names if names is not None else list(prim.intrinsicNames())
-    row: dict[str, Any] = {}
-    for name in wanted:
-        try:
-            row[name] = _vec_to_list(prim.intrinsicValue(name))
-        except Exception:
-            row[name] = None
-    return row
-
-
-def _is_number(value: Any) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
-
-
-def _extremes(values: list[Any], rows: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """min/max/avg over the numeric entries, and the prim each extreme is on."""
-
-    numbers = [v for v in values if _is_number(v)]
-    if not numbers:
-        return None
-    low = min(numbers)
-    high = max(numbers)
-    return {
-        'min': low,
-        'max': high,
-        'avg': sum(numbers) / len(numbers),
-        'min_prim': rows[values.index(low)]['prim_index'],
-        'max_prim': rows[values.index(high)]['prim_index'],
-    }
-
-
-def _intrinsic_table(
-    geo: hou.Geometry,
-    indices: list[int],
-    names: list[str] | None,
-    total_prims: int,
-) -> dict[str, Any]:
-    """A table of intrinsics over many prims, with extremes per column."""
-
-    rows: list[dict[str, Any]] = []
-    for index in indices:
-        prim = geo.prim(index)
-        row = {'prim_index': index, 'prim_type': prim.type().name()}
-        row.update(_intrinsic_row(prim, names))
-        rows.append(row)
-
-    columns = (
-        names
-        if names is not None
-        else sorted({k for r in rows for k in r} - {'prim_index'})
-    )
-    stats: dict[str, Any] = {}
-    for column in columns:
-        values = [r.get(column) for r in rows]
-        scalar = _extremes(values, rows)
-        if scalar is not None:
-            stats[column] = scalar
-            continue
-        # A vector intrinsic (`bounds` is six floats): one min/max over whole
-        # lists answers nothing, so each component gets its own extremes and
-        # the prim they belong to.
-        vectors = [v for v in values if isinstance(v, (list, tuple))]
-        if not vectors or len({len(v) for v in vectors}) != 1:
-            continue
-        components: list[dict[str, Any]] = []
-        for component in range(len(vectors[0])):
-            column_values = [
-                v[component] if isinstance(v, (list, tuple)) else None for v in values
-            ]
-            extremes = _extremes(column_values, rows)
-            if extremes is not None:
-                components.append({'index': component, **extremes})
-        if components:
-            stats[column] = {'components': components}
-    # The stats cover every row; the rows returned are the first
-    # _INTRINSIC_ROWS_SHOWN plus the prims holding an extreme. 2000 full rows
-    # were up to 922 KB, while the question is almost always "which prims
-    # are the outliers", which the stats answer.
-    extreme = set()
-    for entry in stats.values():
-        for item in [entry, *entry.get('components', [])]:
-            extreme.update(item[key] for key in ('min_prim', 'max_prim') if key in item)
-    shown = [
-        r
-        for i, r in enumerate(rows)
-        if i < _INTRINSIC_ROWS_SHOWN or r['prim_index'] in extreme
-    ]
-    result = {
-        'total_prims': total_prims,
-        'prim_count': len(rows),
-        'intrinsics': names,
-        'prims': shown,
-        'stats': stats,
-    }
-    if len(shown) < len(rows):
-        result['rows_shown'] = len(shown)
-        result['note'] = (
-            f'Stats cover all {len(rows)} prims; rows shown are the first '
-            f'{_INTRINSIC_ROWS_SHOWN} and the prims holding an extreme. Ask for '
-            f'prim_indices to read specific rows.'
-        )
-    return result
-
-
-_INTRINSIC_ROWS_SHOWN = 100
-
-
-#: Rows one batched call returns. Beyond it the caller gets a window and is
-#: told there is more, rather than a reply nobody can read.
-_INTRINSIC_ROW_CAP = 2000
-
-
 @register_command(PluginCommand.GEOMETRY_GET_PRIM_INTRINSICS)
-def _get_prim_intrinsics(
+def get_prim_intrinsics(
     *,
     node_path: str,
     prim_index: int | None = None,
@@ -958,7 +735,7 @@ def _get_prim_intrinsics(
 
 
 @register_command(PluginCommand.GEOMETRY_FIND_NEAREST_POINT)
-def _find_nearest_point(
+def find_nearest_point(
     *,
     node_path: str,
     position: list[float],
@@ -1022,37 +799,8 @@ def _find_nearest_point(
     }
 
 
-_STATS_ATTRIB_CAP = 12
-
-
-def _numeric_components(values: Any) -> list[float]:
-    """Flatten a scalar, vector or tuple attribute value to floats."""
-
-    if isinstance(values, (int, float)):
-        return [float(values)]
-    try:
-        return [float(v) for v in values]
-    except (TypeError, ValueError):
-        return []
-
-
-def _element_count(geo: hou.Geometry, cls: str, element_getter: Any) -> int:
-    """Points, prims or vertices in *geo*, from intrinsics when they answer."""
-
-    intrinsic = {
-        'point': 'pointcount',
-        'prim': 'primitivecount',
-        'vertex': 'vertexcount',
-    }[cls]
-    with contextlib.suppress(Exception):
-        count = geo.intrinsicValue(intrinsic)
-        if isinstance(count, int):
-            return count
-    return len(element_getter())
-
-
 @register_command(PluginCommand.GEOMETRY_GET_ATTRIB_STATS)
-def _get_attrib_stats(
+def get_attrib_stats(
     *,
     node_path: str | None = None,
     attribs: list[str] | str | None = None,
@@ -1121,6 +869,418 @@ def _get_attrib_stats(
         'rows': rows,
         'frame_restored': current,
     }
+
+
+@register_command(PluginCommand.GEOMETRY_GET_VOLUME_INFO)
+def get_volume_info(
+    *,
+    node_path: str,
+    max_volumes: int = 24,
+    threshold: float | None = None,
+    bins: Any = 0,
+) -> dict[str, Any]:
+    """Per-volume names, resolution, active voxels and value ranges."""
+
+    geo = _get_sop_geo(node_path)
+    volumes = _volume_prims(geo)
+    shown = volumes[:max_volumes]
+    entries = []
+    for prim in shown:
+        entry = _volume_entry(prim)
+        voxels = entry.get('active_voxels', entry.get('total_voxels'))
+        if 'mean_value' in entry and voxels is not None:
+            # Free: the mean intrinsic is sum / voxels. On a VDB both count
+            # active voxels only, which for fog is the whole field.
+            entry['sum'] = entry['mean_value'] * voxels
+        if threshold is not None or bins:
+            array, origin = _voxel_array(prim)
+            entry['voxel_stats'] = _value_summary(array, bins, threshold)
+            if threshold is not None and array.size:
+                entry['box_above_threshold'] = _box_above(
+                    prim, array, origin, threshold
+                )
+        entries.append(entry)
+    return {
+        'node_path': node_path,
+        'volume_count': len(volumes),
+        'volumes': entries,
+        'truncated': len(volumes) > len(shown),
+    }
+
+
+@register_command(PluginCommand.GEOMETRY_SAMPLE_VOLUME)
+def sample_volume(
+    *,
+    node_path: str,
+    fields: list[str],
+    positions: list | None = None,
+    from_node: str | None = None,
+    limit: int = 1000,
+    bins: Any = 0,
+    threshold: float | None = None,
+) -> dict[str, Any]:
+    """Named volumes read at world positions, or at another node's points."""
+
+    geo = _get_sop_geo(node_path)
+    for field in fields:
+        _named_volume(geo, field, node_path)
+    if from_node:
+        points = _get_sop_geo(from_node)
+    elif positions:
+        points = _points_at(positions)
+    else:
+        raise ValueError(
+            'give positions ([[x, y, z], ...]) or from_node (a SOP whose points to '
+            'read '
+            'at).'
+        )
+    read = _read_fields_at(geo, fields, points)
+    count = len(next(iter(read.values()))) if read else 0
+    report: dict[str, Any] = {
+        'node_path': node_path,
+        'positions': count,
+        'summary': {
+            field: _value_summary(values, bins, threshold)
+            for field, values in read.items()
+        },
+    }
+    if count <= limit:
+        report['values'] = {field: values.tolist() for field, values in read.items()}
+    else:
+        report['note'] = f'{count} positions: summary only. Raise limit for the values.'
+    return report
+
+
+@register_command(PluginCommand.GEOMETRY_COMPARE_VOLUMES)
+def compare_volumes(
+    *,
+    node_path: str,
+    field: str,
+    against: str,
+    against_node: str | None = None,
+    bands: Any = 10,
+) -> dict[str, Any]:
+    """How much of ``field`` sits where ``against`` is in each band."""
+
+    import numpy as np  # ty: ignore[import-not-found]
+
+    geo = _get_sop_geo(node_path)
+    prim = _named_volume(geo, field, node_path)
+    other = _get_sop_geo(against_node) if against_node else geo
+    _named_volume(other, against, against_node or node_path)
+
+    points = _points_at(_grid_positions(prim))
+    here = _read_fields_at(geo, [field], points)[field]
+    there = _read_fields_at(other, [against], points)[against]
+    if not here.size:
+        return {
+            'node_path': node_path,
+            'field': field,
+            'against': against,
+            'samples': 0,
+        }
+    counts, edges = np.histogram(there, bins=_edges(bands))
+    totals, _ = np.histogram(there, bins=edges, weights=here)
+    return {
+        'node_path': node_path,
+        'field': field,
+        'against': against,
+        'samples': int(here.size),
+        'field_total': float(here.sum()),
+        'bands': [
+            {
+                'from': float(edges[i]),
+                'to': float(edges[i + 1]),
+                'samples': int(counts[i]),
+                'field_total': float(totals[i]),
+            }
+            for i in range(len(counts))
+        ],
+        'note': 'Totals sum sampled values, not integrals: compare bands, not absolute '
+        'amounts.',
+    }
+
+
+def _get_sop_geo(node_path: str, output_index: int = 0) -> hou.Geometry:
+    """Return the cooked read-only geometry for a SOP node."""
+
+    node = hou.node(node_path)
+    if node is None:
+        raise hou.OperationFailed(f'Node not found: {node_path}')
+    geo = node.geometry(output_index) if output_index else node.geometry()
+    if geo is None:
+        raise hou.OperationFailed(
+            f'Node has no geometry: {node_path}{_cook_errors(node)}'
+        )
+    return geo
+
+
+def _cook_errors(node: hou.Node) -> str:
+    """The node's own cook errors as a sentence tail ("" when it has none)."""
+
+    errors: list = []
+    with contextlib.suppress(Exception):
+        errors = list(node.errors())
+    return f' -- its cook failed: {"; ".join(errors)}' if errors else ''
+
+
+def _vec_to_list(v: Any) -> Any:
+    """Convert hou.Vector2/3/4, hou.Color, etc."""
+
+    if isinstance(
+        v, (hou.Vector2, hou.Vector3, hou.Vector4, hou.Quaternion, hou.Color)
+    ):
+        return list(v)
+    if isinstance(v, hou.Matrix3):
+        return [[v.at(r, c) for c in range(3)] for r in range(3)]
+    if isinstance(v, hou.Matrix4):
+        return [[v.at(r, c) for c in range(4)] for r in range(4)]
+    return v
+
+
+def _attrib_meta(attrib: hou.Attrib) -> dict[str, Any]:
+    """Return JSON-safe metadata for an attribute."""
+
+    return {
+        'name': attrib.name(),
+        'type': attrib.dataType().name(),
+        'size': attrib.size(),
+        'is_array': attrib.isArrayType(),
+    }
+
+
+def _attrib_class_key(attrib_class: str) -> str:
+    """ "point", "prim", "vertex" or "detail" for *attrib_class* and its aliases."""
+
+    key = _ATTRIB_CLASS_ALIASES.get(str(attrib_class).strip().lower())
+    if key is None:
+        raise ValueError(
+            f'Invalid attrib_class: {attrib_class!r}. '
+            "Use 'point', 'prim' (or 'primitive'), 'vertex' or 'detail'."
+        )
+    return key
+
+
+def _loop_context(node: hou.Node) -> dict[str, str] | None:
+    """The for-each block *node* sits in, as {begin, end} paths — or None."""
+
+    try:
+        parent = node.parent()
+        ancestors = set(node.inputAncestors())
+    except Exception:
+        return None
+    if parent is None:
+        return None
+    for child in parent.children():
+        try:
+            if not child.type().name().startswith('block_end'):
+                continue
+            if node not in child.inputAncestors():
+                continue
+            begin = child.parm('blockpath').evalAsNode()
+        except Exception:
+            continue
+        if begin is not None and begin in ancestors:
+            return {'begin': begin.path(), 'end': child.path()}
+    return None
+
+
+def _cook_state(node: hou.Node) -> tuple[dict[str, Any], list[str]]:
+    """How the numbers about to be reported came to be — read BEFORE geometry()."""
+
+    state: dict[str, Any] = {}
+    warnings: list[str] = []
+    with contextlib.suppress(Exception):
+        state['cooked_for_this_call'] = bool(node.needsToCook())
+    with contextlib.suppress(Exception):
+        state['cook_count'] = int(node.cookCount())
+    loop = _loop_context(node)
+    if loop is not None:
+        state['inside_loop'] = True
+        state['loop'] = loop
+        warnings.append(
+            f'Node sits inside for-each loop {loop["begin"]} → {loop["end"]}: read '
+            f'this '
+            f'way it shows one iteration at best (the last one the block_end cooked, '
+            f'or '
+            f"the loop's initial input), so these numbers are not the loop's result. "
+            f'Read '
+            f'{loop["end"]} for '
+            f'the merged output.'
+        )
+    return state, warnings
+
+
+def _attrib_array(geo: Any, cls: str, attrib: Any) -> Any:
+    """Every value of one attribute, flat: a numpy view for numbers."""
+
+    name = attrib.name()
+    data = attrib.dataType()
+    if data in (hou.attribData.Float, hou.attribData.Int):
+        kind = 'Float' if data == hou.attribData.Float else 'Int'
+        with contextlib.suppress(Exception):
+            import numpy as np  # ty: ignore[import-not-found]
+
+            numeric = (
+                hou.numericData.Float32 if kind == 'Float' else hou.numericData.Int32
+            )
+            raw = getattr(geo, f'{cls}{kind}AttribValuesAsString')(name, numeric)
+            return np.frombuffer(raw, dtype=np.float32 if kind == 'Float' else np.int32)
+        return getattr(geo, f'{cls}{kind}AttribValues')(name)
+    return getattr(geo, f'{cls}StringAttribValues')(name)
+
+
+def _group_page(group: Any, iterator: str, lister: str, start: int, end: int) -> list:
+    """Members start..end of a group, walking only that far into it."""
+
+    import itertools
+
+    try:
+        return list(itertools.islice(getattr(group, iterator)(), max(start, 0), end))
+    except Exception:
+        return list(getattr(group, lister)()[start:end])
+
+
+def _group_size(group: Any, counter: str, lister: str) -> int:
+    """A group's member count without building its members (pointCount etc.)."""
+
+    try:
+        return int(getattr(group, counter)())
+    except Exception:
+        return len(getattr(group, lister)())
+
+
+def _intrinsic_row(prim: Any, names: list[str] | None) -> dict[str, Any]:
+    """One prim's intrinsics, all of them or just the ones asked for."""
+
+    wanted = names if names is not None else list(prim.intrinsicNames())
+    row: dict[str, Any] = {}
+    for name in wanted:
+        try:
+            row[name] = _vec_to_list(prim.intrinsicValue(name))
+        except Exception:
+            row[name] = None
+    return row
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _extremes(values: list[Any], rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """min/max/avg over the numeric entries, and the prim each extreme is on."""
+
+    numbers = [v for v in values if _is_number(v)]
+    if not numbers:
+        return None
+    low = min(numbers)
+    high = max(numbers)
+    return {
+        'min': low,
+        'max': high,
+        'avg': sum(numbers) / len(numbers),
+        'min_prim': rows[values.index(low)]['prim_index'],
+        'max_prim': rows[values.index(high)]['prim_index'],
+    }
+
+
+def _intrinsic_table(
+    geo: hou.Geometry,
+    indices: list[int],
+    names: list[str] | None,
+    total_prims: int,
+) -> dict[str, Any]:
+    """A table of intrinsics over many prims, with extremes per column."""
+
+    rows: list[dict[str, Any]] = []
+    for index in indices:
+        prim = geo.prim(index)
+        row = {'prim_index': index, 'prim_type': prim.type().name()}
+        row.update(_intrinsic_row(prim, names))
+        rows.append(row)
+
+    columns = (
+        names
+        if names is not None
+        else sorted({k for r in rows for k in r} - {'prim_index'})
+    )
+    stats: dict[str, Any] = {}
+    for column in columns:
+        values = [r.get(column) for r in rows]
+        scalar = _extremes(values, rows)
+        if scalar is not None:
+            stats[column] = scalar
+            continue
+        # A vector intrinsic (`bounds` is six floats): one min/max over whole
+        # lists answers nothing, so each component gets its own extremes and
+        # the prim they belong to.
+        vectors = [v for v in values if isinstance(v, (list, tuple))]
+        if not vectors or len({len(v) for v in vectors}) != 1:
+            continue
+        components: list[dict[str, Any]] = []
+        for component in range(len(vectors[0])):
+            column_values = [
+                v[component] if isinstance(v, (list, tuple)) else None for v in values
+            ]
+            extremes = _extremes(column_values, rows)
+            if extremes is not None:
+                components.append({'index': component, **extremes})
+        if components:
+            stats[column] = {'components': components}
+    # The stats cover every row; the rows returned are the first
+    # _INTRINSIC_ROWS_SHOWN plus the prims holding an extreme. 2000 full rows
+    # were up to 922 KB, while the question is almost always "which prims
+    # are the outliers", which the stats answer.
+    extreme = set()
+    for entry in stats.values():
+        for item in [entry, *entry.get('components', [])]:
+            extreme.update(item[key] for key in ('min_prim', 'max_prim') if key in item)
+    shown = [
+        r
+        for i, r in enumerate(rows)
+        if i < _INTRINSIC_ROWS_SHOWN or r['prim_index'] in extreme
+    ]
+    result = {
+        'total_prims': total_prims,
+        'prim_count': len(rows),
+        'intrinsics': names,
+        'prims': shown,
+        'stats': stats,
+    }
+    if len(shown) < len(rows):
+        result['rows_shown'] = len(shown)
+        result['note'] = (
+            f'Stats cover all {len(rows)} prims; rows shown are the first '
+            f'{_INTRINSIC_ROWS_SHOWN} and the prims holding an extreme. Ask for '
+            f'prim_indices to read specific rows.'
+        )
+    return result
+
+
+def _numeric_components(values: Any) -> list[float]:
+    """Flatten a scalar, vector or tuple attribute value to floats."""
+
+    if isinstance(values, (int, float)):
+        return [float(values)]
+    try:
+        return [float(v) for v in values]
+    except (TypeError, ValueError):
+        return []
+
+
+def _element_count(geo: hou.Geometry, cls: str, element_getter: Any) -> int:
+    """Points, prims or vertices in *geo*, from intrinsics when they answer."""
+
+    intrinsic = {
+        'point': 'pointcount',
+        'prim': 'primitivecount',
+        'vertex': 'vertexcount',
+    }[cls]
+    with contextlib.suppress(Exception):
+        count = geo.intrinsicValue(intrinsic)
+        if isinstance(count, int):
+            return count
+    return len(element_getter())
 
 
 def _check_percentiles(percentiles: list | None) -> list[float] | None:
@@ -1340,9 +1500,6 @@ def _string_counts(
     return {'count': len(values), **_value_counts(values)}
 
 
-_VERTICES_PER_PRIM_CAP = 200_000
-
-
 def _vertices_per_prim(geo: Any, rows: list[int] | None) -> dict[str, Any]:
     """Distribution of vertex counts per primitive (a trail's length)."""
 
@@ -1517,22 +1674,6 @@ def _numpy_stats(
     return entry
 
 
-# Volume statistics come from intrinsics, which is the only route that works for
-# both types: hou.VDB has activeVoxelCount() but no minValue()/maxValue(), and
-# hou.Volume has neither. The intrinsics below are present on both.
-#
-# NEVER read the "voxeldata" intrinsic here: it returns every voxel value, so on
-# a real sim field it is millions of floats through the bridge. The whole point
-# of this handler is to answer the question without moving the data.
-_VOLUME_INTRINSICS = (
-    ('min_value', 'volumeminvalue'),
-    ('max_value', 'volumemaxvalue'),
-    ('mean_value', 'volumeavgvalue'),
-    ('active_voxels', 'activevoxelcount'),
-    ('voxel_size', 'voxelsize'),
-)
-
-
 def _volume_entry(prim: Any) -> dict[str, Any]:
     """Name, resolution, voxel counts and value range for one volume prim."""
 
@@ -1607,15 +1748,6 @@ def _named_volume(geo: hou.Geometry, name: str, node_path: str) -> Any:
     )
 
 
-# The voxel statistics, sampling and field comparison below are adapted from
-# JTCHE/houdini-mcp (MIT, Copyright (c) 2025 Capoom, (c) 2026 John Chedeville);
-# see NOTICE.
-
-# Past this many voxels a read is refused rather than stalling the session:
-# a VDB comes back as a Python tuple, about 180 ms per 8M voxels.
-_MAX_VOXELS_READ = 64_000_000
-
-
 def _voxel_array(prim: Any) -> Any:
     """A volume's voxels as a float numpy array indexed [z, y, x], and its index..."""
 
@@ -1656,9 +1788,6 @@ def _voxel_array(prim: Any) -> Any:
             'shape. Use sample_volume to read it at positions.'
         )
     return values.reshape(shape[2], shape[1], shape[0]), origin
-
-
-_PERCENTILES = (1, 5, 25, 50, 75, 95, 99)
 
 
 def _edges(bins: Any) -> Any:
@@ -1732,43 +1861,6 @@ def _box_above(
     }
 
 
-@register_command(PluginCommand.GEOMETRY_GET_VOLUME_INFO)
-def _get_volume_info(
-    *,
-    node_path: str,
-    max_volumes: int = 24,
-    threshold: float | None = None,
-    bins: Any = 0,
-) -> dict[str, Any]:
-    """Per-volume names, resolution, active voxels and value ranges."""
-
-    geo = _get_sop_geo(node_path)
-    volumes = _volume_prims(geo)
-    shown = volumes[:max_volumes]
-    entries = []
-    for prim in shown:
-        entry = _volume_entry(prim)
-        voxels = entry.get('active_voxels', entry.get('total_voxels'))
-        if 'mean_value' in entry and voxels is not None:
-            # Free: the mean intrinsic is sum / voxels. On a VDB both count
-            # active voxels only, which for fog is the whole field.
-            entry['sum'] = entry['mean_value'] * voxels
-        if threshold is not None or bins:
-            array, origin = _voxel_array(prim)
-            entry['voxel_stats'] = _value_summary(array, bins, threshold)
-            if threshold is not None and array.size:
-                entry['box_above_threshold'] = _box_above(
-                    prim, array, origin, threshold
-                )
-        entries.append(entry)
-    return {
-        'node_path': node_path,
-        'volume_count': len(volumes),
-        'volumes': entries,
-        'truncated': len(volumes) > len(shown),
-    }
-
-
 def _points_at(positions: list) -> hou.Geometry:
     points = hou.Geometry()
     points.createPoints([hou.Vector3(*position) for position in positions])
@@ -1790,49 +1882,6 @@ def _read_fields_at(geo: hou.Geometry, fields: list[str], points: hou.Geometry) 
             result.pointFloatAttribValues('__mcp_sample'), dtype=np.float64
         )
     return found
-
-
-@register_command(PluginCommand.GEOMETRY_SAMPLE_VOLUME)
-def _sample_volume(
-    *,
-    node_path: str,
-    fields: list[str],
-    positions: list | None = None,
-    from_node: str | None = None,
-    limit: int = 1000,
-    bins: Any = 0,
-    threshold: float | None = None,
-) -> dict[str, Any]:
-    """Named volumes read at world positions, or at another node's points."""
-
-    geo = _get_sop_geo(node_path)
-    for field in fields:
-        _named_volume(geo, field, node_path)
-    if from_node:
-        points = _get_sop_geo(from_node)
-    elif positions:
-        points = _points_at(positions)
-    else:
-        raise ValueError(
-            'give positions ([[x, y, z], ...]) or from_node (a SOP whose points to '
-            'read '
-            'at).'
-        )
-    read = _read_fields_at(geo, fields, points)
-    count = len(next(iter(read.values()))) if read else 0
-    report: dict[str, Any] = {
-        'node_path': node_path,
-        'positions': count,
-        'summary': {
-            field: _value_summary(values, bins, threshold)
-            for field, values in read.items()
-        },
-    }
-    if count <= limit:
-        report['values'] = {field: values.tolist() for field, values in read.items()}
-    else:
-        report['note'] = f'{count} positions: summary only. Raise limit for the values.'
-    return report
 
 
 def _grid_positions(prim: Any, most: int = 30000) -> list:
@@ -1857,53 +1906,3 @@ def _grid_positions(prim: Any, most: int = 30000) -> list:
         for j in range(counts[1])
         for k in range(counts[2])
     ]
-
-
-@register_command(PluginCommand.GEOMETRY_COMPARE_VOLUMES)
-def _compare_volumes(
-    *,
-    node_path: str,
-    field: str,
-    against: str,
-    against_node: str | None = None,
-    bands: Any = 10,
-) -> dict[str, Any]:
-    """How much of ``field`` sits where ``against`` is in each band."""
-
-    import numpy as np  # ty: ignore[import-not-found]
-
-    geo = _get_sop_geo(node_path)
-    prim = _named_volume(geo, field, node_path)
-    other = _get_sop_geo(against_node) if against_node else geo
-    _named_volume(other, against, against_node or node_path)
-
-    points = _points_at(_grid_positions(prim))
-    here = _read_fields_at(geo, [field], points)[field]
-    there = _read_fields_at(other, [against], points)[against]
-    if not here.size:
-        return {
-            'node_path': node_path,
-            'field': field,
-            'against': against,
-            'samples': 0,
-        }
-    counts, edges = np.histogram(there, bins=_edges(bands))
-    totals, _ = np.histogram(there, bins=edges, weights=here)
-    return {
-        'node_path': node_path,
-        'field': field,
-        'against': against,
-        'samples': int(here.size),
-        'field_total': float(here.sum()),
-        'bands': [
-            {
-                'from': float(edges[i]),
-                'to': float(edges[i + 1]),
-                'samples': int(counts[i]),
-                'field_total': float(totals[i]),
-            }
-            for i in range(len(counts))
-        ],
-        'note': 'Totals sum sampled values, not integrals: compare bands, not absolute '
-        'amounts.',
-    }

@@ -15,78 +15,11 @@ from ..host import register_command
 _snapshots: dict[str, dict] = {}
 
 
-def _get_node(node_path: str) -> hou.Node:
-    """Resolve a node path and raise a clear error if it does not exist."""
-
-    node = hou.node(node_path)
-    if node is None:
-        raise ValueError(f'Node not found: {node_path}')
-    return node
-
-
-def _node_flags(node: hou.Node) -> dict[str, bool]:
-    """Safely read common flags from a node."""
-
-    flags: dict[str, bool] = {}
-    with contextlib.suppress(Exception):
-        flags['display'] = node.isDisplayFlagSet()
-    with contextlib.suppress(Exception):
-        flags['render'] = node.isRenderFlagSet()
-    with contextlib.suppress(Exception):
-        flags['bypass'] = node.isBypassed()
-    return flags
-
-
-def _has_errors(node: hou.Node) -> bool:
-    """Return True if the node has any errors."""
-
-    try:
-        return bool(node.errors())
-    except Exception:
-        return False
-
-
-def _non_default_parms(node: hou.Node) -> dict[str, Any]:
-    """Return a dict of parameter names to values for non-default parameters."""
-
-    from .nodes import _component_default, _is_at_default
-
-    result: dict[str, Any] = {}
-    for parm in node.parms():
-        try:
-            val = parm.eval()
-        except Exception:
-            continue
-        try:
-            default = _component_default(parm)
-        except Exception:
-            default = None
-        if not _is_at_default(parm, val, default):
-            if isinstance(val, (hou.Vector2, hou.Vector3, hou.Vector4)):
-                val = list(val)
-            result[parm.name()] = val
-    return result
-
-
 _NAMED_INPUT_CATEGORIES = ('Vop', 'Cop')
 
 
-def _name_connectors(wire: dict, source: Any, target: Any, named_inputs: bool) -> None:
-    """Add the connector names that tell wires apart."""
-
-    with contextlib.suppress(Exception):
-        names = source.outputNames()
-        if len(names) > 1 and wire['from_output'] < len(names):
-            wire['from_output_name'] = names[wire['from_output']]
-    if named_inputs:
-        with contextlib.suppress(Exception):
-            names = target.inputNames()
-            if wire['to_input'] < len(names):
-                wire['to_input_name'] = names[wire['to_input']]
-
-
 @register_command(PluginCommand.CONTEXT_GET_NETWORK_OVERVIEW)
-def _get_network_overview(
+def get_network_overview(
     path: str = '/obj',
     depth: int = 2,
     **_: Any,
@@ -237,7 +170,7 @@ def _get_network_overview(
 
 
 @register_command(PluginCommand.CONTEXT_GET_COOK_CHAIN)
-def _get_cook_chain(node_path: str, **_: Any) -> dict:
+def get_cook_chain(node_path: str, **_: Any) -> dict:
     """Trace the cook dependency chain from sources to the target node."""
 
     target = _get_node(node_path)
@@ -277,7 +210,7 @@ def _get_cook_chain(node_path: str, **_: Any) -> dict:
 
 
 @register_command(PluginCommand.CONTEXT_EXPLAIN_NODE)
-def _explain_node(node_path: str, **_: Any) -> dict:
+def explain_node(node_path: str, **_: Any) -> dict:
     """Return a human-readable explanation of a node."""
 
     node = _get_node(node_path)
@@ -379,7 +312,7 @@ def _explain_node(node_path: str, **_: Any) -> dict:
 
 
 @register_command(PluginCommand.CONTEXT_GET_SELECTION)
-def _get_selection(**_: Any) -> dict:
+def get_selection(**_: Any) -> dict:
     """Get the current selection in Houdini."""
 
     # Node selection
@@ -448,7 +381,7 @@ def _get_selection(**_: Any) -> dict:
 
 
 @register_command(PluginCommand.CONTEXT_SET_SELECTION)
-def _set_selection(node_paths: list | None = None, **_: Any) -> dict:
+def set_selection(node_paths: list | None = None, **_: Any) -> dict:
     """Select nodes by their paths."""
 
     if node_paths is None:
@@ -485,7 +418,7 @@ def _set_selection(node_paths: list | None = None, **_: Any) -> dict:
 
 
 @register_command(PluginCommand.CONTEXT_GET_SCENE_SUMMARY)
-def _get_scene_summary(**_: Any) -> dict:
+def get_scene_summary(**_: Any) -> dict:
     """Return a high-level overview of the entire Houdini scene."""
 
     # /obj children
@@ -585,7 +518,7 @@ def _get_scene_summary(**_: Any) -> dict:
 
 
 @register_command(PluginCommand.CONTEXT_COMPARE_SNAPSHOTS)
-def _compare_snapshots(
+def compare_snapshots(
     action: str = 'take',
     snapshot_name: str = 'default',
     **_: Any,
@@ -683,7 +616,7 @@ def _compare_snapshots(
 
 
 @register_command(PluginCommand.CONTEXT_GET_NODE_ERRORS_DETAILED)
-def _get_node_errors_detailed(
+def get_node_errors_detailed(
     node_path: str | None = None,
     root_path: str = '/',
     **_: Any,
@@ -758,3 +691,70 @@ def _get_node_errors_detailed(
         'error_node_count': len(results),
         'details': results,
     }
+
+
+def _get_node(node_path: str) -> hou.Node:
+    """Resolve a node path and raise a clear error if it does not exist."""
+
+    node = hou.node(node_path)
+    if node is None:
+        raise ValueError(f'Node not found: {node_path}')
+    return node
+
+
+def _node_flags(node: hou.Node) -> dict[str, bool]:
+    """Safely read common flags from a node."""
+
+    flags: dict[str, bool] = {}
+    with contextlib.suppress(Exception):
+        flags['display'] = node.isDisplayFlagSet()
+    with contextlib.suppress(Exception):
+        flags['render'] = node.isRenderFlagSet()
+    with contextlib.suppress(Exception):
+        flags['bypass'] = node.isBypassed()
+    return flags
+
+
+def _has_errors(node: hou.Node) -> bool:
+    """Return True if the node has any errors."""
+
+    try:
+        return bool(node.errors())
+    except Exception:
+        return False
+
+
+def _non_default_parms(node: hou.Node) -> dict[str, Any]:
+    """Return a dict of parameter names to values for non-default parameters."""
+
+    from .nodes import _component_default, _is_at_default
+
+    result: dict[str, Any] = {}
+    for parm in node.parms():
+        try:
+            val = parm.eval()
+        except Exception:
+            continue
+        try:
+            default = _component_default(parm)
+        except Exception:
+            default = None
+        if not _is_at_default(parm, val, default):
+            if isinstance(val, (hou.Vector2, hou.Vector3, hou.Vector4)):
+                val = list(val)
+            result[parm.name()] = val
+    return result
+
+
+def _name_connectors(wire: dict, source: Any, target: Any, named_inputs: bool) -> None:
+    """Add the connector names that tell wires apart."""
+
+    with contextlib.suppress(Exception):
+        names = source.outputNames()
+        if len(names) > 1 and wire['from_output'] < len(names):
+            wire['from_output_name'] = names[wire['from_output']]
+    if named_inputs:
+        with contextlib.suppress(Exception):
+            names = target.inputNames()
+            if wire['to_input'] < len(names):
+                wire['to_input_name'] = names[wire['to_input']]

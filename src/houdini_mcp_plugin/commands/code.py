@@ -18,33 +18,15 @@ from ..runtime import errors as error_helpers
 _MAX_CAPTURE_BYTES = 100 * 1024  # 100 KB
 
 
-def _truncate_output(text: str) -> str:
-    """Truncate captured output to _MAX_CAPTURE_BYTES if it exceeds the limit."""
-
-    if len(text) > _MAX_CAPTURE_BYTES:
-        return text[:_MAX_CAPTURE_BYTES] + '\n[truncated]'
-    return text
-
-
-def _serialize_result(value: Any) -> Any:
-    """Convert arbitrary Python objects to JSON-safe types."""
-
-    if value is None:
-        return None
-    if isinstance(value, (bool, int, float, str)):
-        return value
-    if isinstance(value, bytes):
-        return value.decode('utf-8', errors='replace')
-    if isinstance(value, (list, tuple)):
-        return [_serialize_result(v) for v in value]
-    if isinstance(value, dict):
-        return {str(k): _serialize_result(v) for k, v in value.items()}
-    # Fallback: stringify
-    return str(value)
+_UPDATE_MODES = {
+    'auto': hou.updateMode.AutoUpdate,
+    'on_mouse_up': hou.updateMode.OnMouseUp,
+    'manual': hou.updateMode.Manual,
+}
 
 
 @register_command(PluginCommand.CODE_EXECUTE_PYTHON)
-def _execute_python(
+def execute_python(
     code: str, return_expression: str | None = None, **_: Any
 ) -> dict[str, Any]:
     """Execute arbitrary Python code inside Houdini's interpreter."""
@@ -118,7 +100,7 @@ def _execute_python(
 
 
 @register_command(PluginCommand.CODE_EXECUTE_HSCRIPT)
-def _execute_hscript(command: str, **_: Any) -> dict[str, Any]:
+def execute_hscript(command: str, **_: Any) -> dict[str, Any]:
     """Execute an HScript command and return its output."""
 
     # A non-string reached the SWIG binding and came back as "in method
@@ -132,7 +114,7 @@ def _execute_hscript(command: str, **_: Any) -> dict[str, Any]:
 
 
 @register_command(PluginCommand.CODE_EVALUATE_EXPRESSION)
-def _evaluate_expression(
+def evaluate_expression(
     expression: str, language: str = 'hscript', **_: Any
 ) -> dict[str, Any]:
     """Evaluate an expression and return its result."""
@@ -151,7 +133,7 @@ def _evaluate_expression(
 
 
 @register_command(PluginCommand.CODE_GET_ENV_VARIABLE)
-def _get_env_variable(var_name: str, **_: Any) -> dict[str, Any]:
+def get_env_variable(var_name: str, **_: Any) -> dict[str, Any]:
     """Get a Houdini environment variable."""
 
     value = hou.getenv(error_helpers.as_text(var_name, 'var_name'))
@@ -164,9 +146,7 @@ def _get_env_variable(var_name: str, **_: Any) -> dict[str, Any]:
 
 
 @register_command(PluginCommand.CODE_GET_FILE_REFERENCES)
-def _get_file_references(
-    include_missing_only: bool = False, **_: Any
-) -> dict[str, Any]:
+def get_file_references(include_missing_only: bool = False, **_: Any) -> dict[str, Any]:
     """Every file path the scene references, with the parameter that holds it."""
 
     references = []
@@ -188,15 +168,8 @@ def _get_file_references(
     return {'count': len(references), 'references': references}
 
 
-_UPDATE_MODES = {
-    'auto': hou.updateMode.AutoUpdate,
-    'on_mouse_up': hou.updateMode.OnMouseUp,
-    'manual': hou.updateMode.Manual,
-}
-
-
 @register_command(PluginCommand.CODE_SET_UPDATE_MODE)
-def _set_update_mode(mode: str | None = None, **_: Any) -> dict[str, Any]:
+def set_update_mode(mode: str | None = None, **_: Any) -> dict[str, Any]:
     """Set (or, with no mode, read) Houdini's cook update mode."""
 
     if mode is not None:
@@ -209,3 +182,28 @@ def _set_update_mode(mode: str | None = None, **_: Any) -> dict[str, Any]:
     current = hou.updateModeSetting()
     name = next((k for k, v in _UPDATE_MODES.items() if v == current), str(current))
     return {'success': True, 'mode': name}
+
+
+def _truncate_output(text: str) -> str:
+    """Truncate captured output to _MAX_CAPTURE_BYTES if it exceeds the limit."""
+
+    if len(text) > _MAX_CAPTURE_BYTES:
+        return text[:_MAX_CAPTURE_BYTES] + '\n[truncated]'
+    return text
+
+
+def _serialize_result(value: Any) -> Any:
+    """Convert arbitrary Python objects to JSON-safe types."""
+
+    if value is None:
+        return None
+    if isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, bytes):
+        return value.decode('utf-8', errors='replace')
+    if isinstance(value, (list, tuple)):
+        return [_serialize_result(v) for v in value]
+    if isinstance(value, dict):
+        return {str(k): _serialize_result(v) for k, v in value.items()}
+    # Fallback: stringify
+    return str(value)

@@ -16,130 +16,94 @@ from ..runtime import config
 from ..runtime import errors as error_helpers
 from .parameters import _expression_error, _template_to_dict
 
-
-def _get_node(node_path: str) -> hou.Node:
-    """Return a node or raise if not found."""
-
-    node = hou.node(node_path)
-    if node is None:
-        raise ValueError(f'Node not found: {node_path}')
-    return node
-
-
-def _get_definition(node: hou.Node) -> hou.HDADefinition:
-    """Return the HDA definition for a node or raise."""
-
-    definition = node.type().definition()
-    if definition is None:
-        raise ValueError(
-            f'Node {node.path()} is not an HDA instance. Its type is '
-            f"'{node.type().name()}'."
-        )
-    return definition
+_FOLDER_TYPES = {
+    'tabs': 'Tabs',
+    'simple': 'Simple',
+    'collapsible': 'Collapsible',
+    'radio': 'RadioButtons',
+    'radiobuttons': 'RadioButtons',
+    'import': 'ImportBlock',
+    'multiparm': 'MultiparmBlock',
+}
 
 
-def _is_embedded(definition: hou.HDADefinition) -> bool:
-    """True for a definition stored in the hip file."""
-
-    return definition.libraryFilePath() == 'Embedded'
-
-
-def _section_text(sections: dict[str, hou.HDASection], name: str) -> str:
-    """Return the stripped text of an HDA section, or an empty string."""
-
-    section = sections.get(name)
-    if section is None:
-        return ''
-    with contextlib.suppress(Exception):
-        return section.contents().strip()
-    return ''
+# create_spare_parameters' spelling of the same fields, accepted here so one
+# spec works for both verbs.
+_SPEC_ALIASES = {
+    'parm_name': 'name',
+    'parm_type': 'type',
+    'default_value': 'default',
+    'min_val': 'min',
+    'max_val': 'max',
+}
 
 
-def _section_lines(sections: dict[str, hou.HDASection], name: str) -> list[str]:
-    """Return the non-empty lines of an HDA section."""
-
-    return [
-        line.strip()
-        for line in _section_text(sections, name).splitlines()
-        if line.strip()
-    ]
-
-
-def _definition_to_dict(definition: hou.HDADefinition) -> dict:
-    """Convert an HDA definition to a plain dict."""
-
-    info = {
-        'type_name': definition.nodeTypeName(),
-        'description': definition.description(),
-        'icon': definition.icon(),
-        'library_file': definition.libraryFilePath(),
-    }
-
-    try:
-        info['version'] = definition.version()
-    except Exception:
-        info['version'] = None
-
-    try:
-        info['min_num_inputs'] = definition.minNumInputs()
-        info['max_num_inputs'] = definition.maxNumInputs()
-    except Exception:
-        info['min_num_inputs'] = None
-        info['max_num_inputs'] = None
-
-    try:
-        info['max_num_outputs'] = definition.maxNumOutputs()
-    except Exception:
-        info['max_num_outputs'] = None
-
-    sections: dict[str, hou.HDASection] = {}
-    with contextlib.suppress(Exception):
-        sections = definition.sections()
-
-    # Section names
-    info['sections'] = sorted(sections.keys())
-
-    # Compiled and black-boxed definitions ship without their contents.
-    info['is_editable'] = bool({'Contents', 'Contents.gz'} & set(info['sections']))
-
-    try:
-        info['embedded'] = _is_embedded(definition)
-    except Exception:
-        info['embedded'] = None
-
-    info['dive_target'] = _section_text(sections, 'DiveTarget') or None
-    info['editable_nodes'] = _section_lines(sections, 'EditableNodes')
-
-    return info
+_NAMING_SCHEMES = {
+    'base1': 'Base1',
+    'xyzw': 'XYZW',
+    'xyz': 'XYZW',
+    'rgba': 'RGBA',
+    'rgb': 'RGBA',
+    'uvw': 'UVW',
+    'uv': 'UVW',
+    'minmax': 'MinMax',
+    'maxmin': 'MaxMin',
+    'startend': 'StartEnd',
+    'beginend': 'BeginEnd',
+    'xywh': 'XYWH',
+}
 
 
-def _parm_template_to_dict(pt: Any) -> dict:
-    """Convert a parm template to a plain dict."""
+_COMPONENT_SUFFIXES = {
+    'XYZW': ['x', 'y', 'z', 'w'],
+    'RGBA': ['r', 'g', 'b', 'a'],
+    'UVW': ['u', 'v', 'w'],
+    'XYWH': ['x', 'y', 'w', 'h'],
+    'MinMax': ['min', 'max'],
+    'MaxMin': ['max', 'min'],
+    'StartEnd': ['start', 'end'],
+    'BeginEnd': ['begin', 'end'],
+}
 
-    info = {
-        'name': pt.name(),
-        'label': pt.label(),
-        'type': str(pt.type()),
-    }
-    try:
-        info['default_value'] = list(pt.defaultValue())
-    except Exception:
-        try:
-            info['default_value'] = list(pt.defaultExpression())
-        except Exception:
-            info['default_value'] = None
 
-    try:
-        info['num_components'] = pt.numComponents()
-    except Exception:
-        info['num_components'] = 1
+_MODIFY_KEYS = (
+    'label',
+    'help',
+    'default',
+    'default_expression',
+    'default_expression_language',
+    'min',
+    'max',
+    'min_strict',
+    'max_strict',
+    'hide_when',
+    'disable_when',
+    'hidden',
+    'join_with_next',
+    'menu_items',
+    'callback',
+    'callback_language',
+    'naming_scheme',
+    'new_name',
+    'tags',
+)
 
-    try:
-        info['is_hidden'] = pt.isHidden()
-    except Exception:
-        info['is_hidden'] = False
 
-    return info
+_OP_ALIASES = {
+    'add': 'insert',
+    'append': 'insert',
+    'add_button': 'insert',
+    'add_multiparm': 'insert',
+    'delete': 'remove',
+    'show': 'show',
+    'set': 'modify',
+    'set_conditional': 'modify',
+    'set_default': 'modify',
+    'set_default_expression': 'modify',
+    'set_label': 'modify',
+    'rename': 'modify',
+    'update': 'modify',
+}
 
 
 @register_command(PluginCommand.HDA_LIST_INSTALLED_HDAS)
@@ -445,6 +409,349 @@ def create_hda(
     }
 
 
+@register_command(PluginCommand.HDA_SET_HDA_INTERFACE)
+def set_hda_interface(
+    node_path: str,
+    parameters: list,
+    replace: bool = False,
+    dry_run: bool = False,
+) -> dict:
+    """Author an HDA's Type Properties interface — the definition, not spares."""
+
+    _get_node(node_path)  # a bad path is named before a bad spec
+    if not isinstance(parameters, (list, tuple)) or not parameters:
+        raise ValueError('parameters must be a non-empty list of specs.')
+    ops = [{'op': 'insert', 'spec': spec} for spec in parameters]
+    result = _edit_interface(node_path, ops, dry_run=dry_run, clear_first=bool(replace))
+    result['replaced'] = bool(replace)
+    return result
+
+
+@register_command(PluginCommand.HDA_EDIT_HDA_INTERFACE)
+def edit_hda_interface(node_path: str, ops: list, dry_run: bool = False) -> dict:
+    """Edit an HDA's existing Type Properties interface — atomically."""
+
+    _get_node(node_path)  # a bad path is named before bad ops
+    if not isinstance(ops, (list, tuple)) or not ops:
+        raise ValueError('ops must be a non-empty list of operation dicts.')
+    return _edit_interface(node_path, ops, dry_run=dry_run, clear_first=False)
+
+
+@register_command(PluginCommand.HDA_UPDATE_HDA)
+def update_hda(node_path: str) -> dict:
+    """Save the current node contents back to its HDA definition."""
+
+    node = _get_node(node_path)
+    definition = _get_definition(node)
+    library = definition.libraryFilePath()
+    embedded = _is_embedded(definition)
+
+    def _mtime() -> float | None:
+        if embedded:
+            return None
+        with contextlib.suppress(Exception):
+            return os.path.getmtime(library)
+        return None
+
+    before = _mtime()
+    try:
+        node.type().definition().updateFromNode(node)
+    except Exception as e:
+        raise ValueError(
+            f'Failed to update HDA definition: {error_helpers.readable_message(e)}'
+        ) from e
+    after = _mtime()
+
+    # updateFromNode() writes the library file itself (measured on 22.0.429:
+    # the mtime moves and a fresh instance carries the new contents). Saying
+    # so, with the file's mtime, spares a caller a second save() through
+    # execute_python "just in case". None means "could not tell", not "no".
+    saved = None if before is None or after is None else after != before
+    if embedded:
+        message = (
+            'HDA definition updated from node contents. It is embedded in the hip '
+            'file, so it is kept when the scene is saved.'
+        )
+    elif saved is False:
+        message = (
+            "HDA definition updated from node contents, but the library file's "
+            'modification time did not change; check the file.'
+        )
+    else:
+        message = (
+            'HDA definition updated from node contents and written to the library file.'
+        )
+    return {
+        'success': True,
+        'node_path': node.path(),
+        'type_name': definition.nodeTypeName(),
+        'library_file': library,
+        'library_file_mtime': after,
+        'saved_to_disk': saved,
+        'message': message,
+        'note': (
+            'To check the result with a fresh instance of the type: its children load '
+            "lazily, so cook it (or look one up with node.node('name')) before reading "
+            'children() -- an uncooked instance answers with an empty list.'
+        ),
+    }
+
+
+@register_command(PluginCommand.HDA_GET_HDA_SECTIONS)
+def get_hda_sections(node_path: str) -> dict:
+    """List all sections in an HDA definition."""
+
+    node = _get_node(node_path)
+    definition = _get_definition(node)
+
+    sections = definition.sections()
+    section_info = []
+
+    for name, section in sorted(sections.items()):
+        info = {'name': name}
+        try:
+            content = section.contents()
+            info['size_bytes'] = len(content) if content else 0
+        except Exception:
+            info['size_bytes'] = None
+        section_info.append(info)
+
+    return {
+        'node_path': node.path(),
+        'type_name': definition.nodeTypeName(),
+        'section_count': len(section_info),
+        'sections': section_info,
+    }
+
+
+@register_command(PluginCommand.HDA_GET_HDA_SECTION_CONTENT)
+def get_hda_section_content(node_path: str, section_name: str) -> dict:
+    """Read the content of a specific section in an HDA definition."""
+
+    node = _get_node(node_path)
+    definition = _get_definition(node)
+
+    sections = definition.sections()
+    if section_name not in sections:
+        available = sorted(sections.keys())
+        raise ValueError(
+            f"Section '{section_name}' not found in HDA '{definition.nodeTypeName()}'. "
+            f'Available sections: {available}'
+        )
+
+    try:
+        content = sections[section_name].contents()
+    except Exception as e:
+        raise ValueError(
+            f"Failed to read section '{section_name}': "
+            f'{error_helpers.readable_message(e)}'
+        ) from e
+
+    return {
+        'node_path': node.path(),
+        'type_name': definition.nodeTypeName(),
+        'section_name': section_name,
+        'content': content,
+        'size_bytes': len(content) if content else 0,
+    }
+
+
+@register_command(PluginCommand.HDA_SET_HDA_SECTION_CONTENT)
+def set_hda_section_content(
+    node_path: str,
+    section_name: str,
+    content: str,
+) -> dict:
+    """Write content to a specific section in an HDA definition."""
+
+    node = _get_node(node_path)
+    definition = _get_definition(node)
+
+    try:
+        definition.addSection(section_name, content)
+    except Exception as e:
+        raise ValueError(
+            f"Failed to write section '{section_name}': "
+            f'{error_helpers.readable_message(e)}'
+        ) from e
+
+    return {
+        'success': True,
+        'node_path': node.path(),
+        'type_name': definition.nodeTypeName(),
+        'section_name': section_name,
+        'size_bytes': len(content) if content else 0,
+        'message': f"Section '{section_name}' updated.",
+    }
+
+
+@register_command(PluginCommand.HDA_LIST_HDA_VERSIONS)
+def list_hda_versions(node_path: str) -> dict:
+    """Every installed definition of a node's HDA type, across versions and files."""
+
+    node = _get_node(node_path)
+    current = _get_definition(node)
+    node_type = node.type()
+    own = _type_name_components(node_type.name())
+    if own is None:
+        raise hou.OperationFailed(f"Cannot read the type name of '{node_type.name()}'")
+    scope, namespace, name, _ = own
+
+    # Houdini keeps a version in the type name (brick::1.1 is a different
+    # NodeType from brick), so allInstalledDefinitions() of one type never
+    # shows the family. Walk the category for every type sharing
+    # scope, namespace and name.
+    versions = []
+    for type_name, family_type in node_type.category().nodeTypes().items():
+        components = _type_name_components(type_name)
+        if components is None or components[:3] != (scope, namespace, name):
+            continue
+        for definition in family_type.allInstalledDefinitions():
+            versions.append(
+                {
+                    'type_name': type_name,
+                    'version': definition.version() or components[3] or None,
+                    'library_file': definition.libraryFilePath(),
+                    'is_current': definition.isCurrent(),
+                    'is_preferred': definition.isPreferred(),
+                    'is_instance_type': family_type == node_type,
+                }
+            )
+    versions.sort(key=lambda row: _version_key(row['version']))
+    return {
+        'node_path': node.path(),
+        'type_name': node_type.name(),
+        'family': {'scope': scope, 'namespace': namespace, 'name': name},
+        'current_version': current.version() or None,
+        'versions': versions,
+    }
+
+
+def _get_node(node_path: str) -> hou.Node:
+    """Return a node or raise if not found."""
+
+    node = hou.node(node_path)
+    if node is None:
+        raise ValueError(f'Node not found: {node_path}')
+    return node
+
+
+def _get_definition(node: hou.Node) -> hou.HDADefinition:
+    """Return the HDA definition for a node or raise."""
+
+    definition = node.type().definition()
+    if definition is None:
+        raise ValueError(
+            f'Node {node.path()} is not an HDA instance. Its type is '
+            f"'{node.type().name()}'."
+        )
+    return definition
+
+
+def _is_embedded(definition: hou.HDADefinition) -> bool:
+    """True for a definition stored in the hip file."""
+
+    return definition.libraryFilePath() == 'Embedded'
+
+
+def _section_text(sections: dict[str, hou.HDASection], name: str) -> str:
+    """Return the stripped text of an HDA section, or an empty string."""
+
+    section = sections.get(name)
+    if section is None:
+        return ''
+    with contextlib.suppress(Exception):
+        return section.contents().strip()
+    return ''
+
+
+def _section_lines(sections: dict[str, hou.HDASection], name: str) -> list[str]:
+    """Return the non-empty lines of an HDA section."""
+
+    return [
+        line.strip()
+        for line in _section_text(sections, name).splitlines()
+        if line.strip()
+    ]
+
+
+def _definition_to_dict(definition: hou.HDADefinition) -> dict:
+    """Convert an HDA definition to a plain dict."""
+
+    info = {
+        'type_name': definition.nodeTypeName(),
+        'description': definition.description(),
+        'icon': definition.icon(),
+        'library_file': definition.libraryFilePath(),
+    }
+
+    try:
+        info['version'] = definition.version()
+    except Exception:
+        info['version'] = None
+
+    try:
+        info['min_num_inputs'] = definition.minNumInputs()
+        info['max_num_inputs'] = definition.maxNumInputs()
+    except Exception:
+        info['min_num_inputs'] = None
+        info['max_num_inputs'] = None
+
+    try:
+        info['max_num_outputs'] = definition.maxNumOutputs()
+    except Exception:
+        info['max_num_outputs'] = None
+
+    sections: dict[str, hou.HDASection] = {}
+    with contextlib.suppress(Exception):
+        sections = definition.sections()
+
+    # Section names
+    info['sections'] = sorted(sections.keys())
+
+    # Compiled and black-boxed definitions ship without their contents.
+    info['is_editable'] = bool({'Contents', 'Contents.gz'} & set(info['sections']))
+
+    try:
+        info['embedded'] = _is_embedded(definition)
+    except Exception:
+        info['embedded'] = None
+
+    info['dive_target'] = _section_text(sections, 'DiveTarget') or None
+    info['editable_nodes'] = _section_lines(sections, 'EditableNodes')
+
+    return info
+
+
+def _parm_template_to_dict(pt: Any) -> dict:
+    """Convert a parm template to a plain dict."""
+
+    info = {
+        'name': pt.name(),
+        'label': pt.label(),
+        'type': str(pt.type()),
+    }
+    try:
+        info['default_value'] = list(pt.defaultValue())
+    except Exception:
+        try:
+            info['default_value'] = list(pt.defaultExpression())
+        except Exception:
+            info['default_value'] = None
+
+    try:
+        info['num_components'] = pt.numComponents()
+    except Exception:
+        info['num_components'] = 1
+
+    try:
+        info['is_hidden'] = pt.isHidden()
+    except Exception:
+        info['is_hidden'] = False
+
+    return info
+
+
 def _promote_spares_to_definition(node: hou.Node) -> list[str]:
     """Move a converted subnet's spare parameters into its asset definition."""
 
@@ -482,17 +789,6 @@ def _is_string(parm: hou.Parm) -> bool:
     return parm.parmTemplate().type() == hou.parmTemplateType.String
 
 
-_FOLDER_TYPES = {
-    'tabs': 'Tabs',
-    'simple': 'Simple',
-    'collapsible': 'Collapsible',
-    'radio': 'RadioButtons',
-    'radiobuttons': 'RadioButtons',
-    'import': 'ImportBlock',
-    'multiparm': 'MultiparmBlock',
-}
-
-
 def _menu_pairs(spec: dict) -> tuple:
     """Normalise menu_items into (values, labels)."""
 
@@ -519,17 +815,6 @@ def _menu_pairs(spec: dict) -> tuple:
             values.append(str(item))
             labels.append(str(item))
     return tuple(values), tuple(labels)
-
-
-# create_spare_parameters' spelling of the same fields, accepted here so one
-# spec works for both verbs.
-_SPEC_ALIASES = {
-    'parm_name': 'name',
-    'parm_type': 'type',
-    'default_value': 'default',
-    'min_val': 'min',
-    'max_val': 'max',
-}
 
 
 def _menu_default(spec: dict, values: tuple) -> int:
@@ -703,22 +988,6 @@ def _build_parm_template(spec: dict, seen: set) -> Any:
     return template
 
 
-_NAMING_SCHEMES = {
-    'base1': 'Base1',
-    'xyzw': 'XYZW',
-    'xyz': 'XYZW',
-    'rgba': 'RGBA',
-    'rgb': 'RGBA',
-    'uvw': 'UVW',
-    'uv': 'UVW',
-    'minmax': 'MinMax',
-    'maxmin': 'MaxMin',
-    'startend': 'StartEnd',
-    'beginend': 'BeginEnd',
-    'xywh': 'XYWH',
-}
-
-
 def _naming_scheme(spec: dict, default: Any) -> Any:
     """The hou.parmNamingScheme a spec asks for (`naming_scheme`), else *default*."""
 
@@ -843,36 +1112,6 @@ def _describe_template(template: Any) -> dict:
             _describe_template(child) for child in template.parmTemplates()
         ]
     return info
-
-
-@register_command(PluginCommand.HDA_SET_HDA_INTERFACE)
-def set_hda_interface(
-    node_path: str,
-    parameters: list,
-    replace: bool = False,
-    dry_run: bool = False,
-) -> dict:
-    """Author an HDA's Type Properties interface — the definition, not spares."""
-
-    _get_node(node_path)  # a bad path is named before a bad spec
-    if not isinstance(parameters, (list, tuple)) or not parameters:
-        raise ValueError('parameters must be a non-empty list of specs.')
-    ops = [{'op': 'insert', 'spec': spec} for spec in parameters]
-    result = _edit_interface(node_path, ops, dry_run=dry_run, clear_first=bool(replace))
-    result['replaced'] = bool(replace)
-    return result
-
-
-_COMPONENT_SUFFIXES = {
-    'XYZW': ['x', 'y', 'z', 'w'],
-    'RGBA': ['r', 'g', 'b', 'a'],
-    'UVW': ['u', 'v', 'w'],
-    'XYWH': ['x', 'y', 'w', 'h'],
-    'MinMax': ['min', 'max'],
-    'MaxMin': ['max', 'min'],
-    'StartEnd': ['start', 'end'],
-    'BeginEnd': ['begin', 'end'],
-}
 
 
 def _component_names(template: Any) -> list[str]:
@@ -1012,29 +1251,6 @@ def _place(group: Any, template: Any, op: dict) -> str:
     return 'end'
 
 
-_MODIFY_KEYS = (
-    'label',
-    'help',
-    'default',
-    'default_expression',
-    'default_expression_language',
-    'min',
-    'max',
-    'min_strict',
-    'max_strict',
-    'hide_when',
-    'disable_when',
-    'hidden',
-    'join_with_next',
-    'menu_items',
-    'callback',
-    'callback_language',
-    'naming_scheme',
-    'new_name',
-    'tags',
-)
-
-
 def _modify_template(template: Any, op: dict) -> list[str]:
     """Apply the `modify` fields of *op* to a cloned template; names what changed."""
 
@@ -1142,23 +1358,6 @@ def _modify_template(template: Any, op: dict) -> list[str]:
     return changed
 
 
-_OP_ALIASES = {
-    'add': 'insert',
-    'append': 'insert',
-    'add_button': 'insert',
-    'add_multiparm': 'insert',
-    'delete': 'remove',
-    'show': 'show',
-    'set': 'modify',
-    'set_conditional': 'modify',
-    'set_default': 'modify',
-    'set_default_expression': 'modify',
-    'set_label': 'modify',
-    'rename': 'modify',
-    'update': 'modify',
-}
-
-
 def _refuse_taken(names: set, existing: set, index: int, what: str) -> None:
     """Refuse names already in the interface, by name, before anything is written."""
 
@@ -1254,16 +1453,6 @@ def _apply_op(group: Any, op: dict, index: int, existing: set) -> dict:
         f'op #{index}: unknown op {raw_kind!r}. Use insert, remove, hide, show, '
         f'replace, modify (rename / set_conditional / set_default are aliases) or move.'
     )
-
-
-@register_command(PluginCommand.HDA_EDIT_HDA_INTERFACE)
-def edit_hda_interface(node_path: str, ops: list, dry_run: bool = False) -> dict:
-    """Edit an HDA's existing Type Properties interface — atomically."""
-
-    _get_node(node_path)  # a bad path is named before bad ops
-    if not isinstance(ops, (list, tuple)) or not ops:
-        raise ValueError('ops must be a non-empty list of operation dicts.')
-    return _edit_interface(node_path, ops, dry_run=dry_run, clear_first=False)
 
 
 def _edit_interface(
@@ -1495,196 +1684,6 @@ def _instance_expression_errors(node: Any, names: Any) -> list[dict]:
             if error:
                 failures.append({'parm': parm.name(), 'error': error})
     return failures
-
-
-@register_command(PluginCommand.HDA_UPDATE_HDA)
-def update_hda(node_path: str) -> dict:
-    """Save the current node contents back to its HDA definition."""
-
-    node = _get_node(node_path)
-    definition = _get_definition(node)
-    library = definition.libraryFilePath()
-    embedded = _is_embedded(definition)
-
-    def _mtime() -> float | None:
-        if embedded:
-            return None
-        with contextlib.suppress(Exception):
-            return os.path.getmtime(library)
-        return None
-
-    before = _mtime()
-    try:
-        node.type().definition().updateFromNode(node)
-    except Exception as e:
-        raise ValueError(
-            f'Failed to update HDA definition: {error_helpers.readable_message(e)}'
-        ) from e
-    after = _mtime()
-
-    # updateFromNode() writes the library file itself (measured on 22.0.429:
-    # the mtime moves and a fresh instance carries the new contents). Saying
-    # so, with the file's mtime, spares a caller a second save() through
-    # execute_python "just in case". None means "could not tell", not "no".
-    saved = None if before is None or after is None else after != before
-    if embedded:
-        message = (
-            'HDA definition updated from node contents. It is embedded in the hip '
-            'file, so it is kept when the scene is saved.'
-        )
-    elif saved is False:
-        message = (
-            "HDA definition updated from node contents, but the library file's "
-            'modification time did not change; check the file.'
-        )
-    else:
-        message = (
-            'HDA definition updated from node contents and written to the library file.'
-        )
-    return {
-        'success': True,
-        'node_path': node.path(),
-        'type_name': definition.nodeTypeName(),
-        'library_file': library,
-        'library_file_mtime': after,
-        'saved_to_disk': saved,
-        'message': message,
-        'note': (
-            'To check the result with a fresh instance of the type: its children load '
-            "lazily, so cook it (or look one up with node.node('name')) before reading "
-            'children() -- an uncooked instance answers with an empty list.'
-        ),
-    }
-
-
-@register_command(PluginCommand.HDA_GET_HDA_SECTIONS)
-def get_hda_sections(node_path: str) -> dict:
-    """List all sections in an HDA definition."""
-
-    node = _get_node(node_path)
-    definition = _get_definition(node)
-
-    sections = definition.sections()
-    section_info = []
-
-    for name, section in sorted(sections.items()):
-        info = {'name': name}
-        try:
-            content = section.contents()
-            info['size_bytes'] = len(content) if content else 0
-        except Exception:
-            info['size_bytes'] = None
-        section_info.append(info)
-
-    return {
-        'node_path': node.path(),
-        'type_name': definition.nodeTypeName(),
-        'section_count': len(section_info),
-        'sections': section_info,
-    }
-
-
-@register_command(PluginCommand.HDA_GET_HDA_SECTION_CONTENT)
-def get_hda_section_content(node_path: str, section_name: str) -> dict:
-    """Read the content of a specific section in an HDA definition."""
-
-    node = _get_node(node_path)
-    definition = _get_definition(node)
-
-    sections = definition.sections()
-    if section_name not in sections:
-        available = sorted(sections.keys())
-        raise ValueError(
-            f"Section '{section_name}' not found in HDA '{definition.nodeTypeName()}'. "
-            f'Available sections: {available}'
-        )
-
-    try:
-        content = sections[section_name].contents()
-    except Exception as e:
-        raise ValueError(
-            f"Failed to read section '{section_name}': "
-            f'{error_helpers.readable_message(e)}'
-        ) from e
-
-    return {
-        'node_path': node.path(),
-        'type_name': definition.nodeTypeName(),
-        'section_name': section_name,
-        'content': content,
-        'size_bytes': len(content) if content else 0,
-    }
-
-
-@register_command(PluginCommand.HDA_SET_HDA_SECTION_CONTENT)
-def set_hda_section_content(
-    node_path: str,
-    section_name: str,
-    content: str,
-) -> dict:
-    """Write content to a specific section in an HDA definition."""
-
-    node = _get_node(node_path)
-    definition = _get_definition(node)
-
-    try:
-        definition.addSection(section_name, content)
-    except Exception as e:
-        raise ValueError(
-            f"Failed to write section '{section_name}': "
-            f'{error_helpers.readable_message(e)}'
-        ) from e
-
-    return {
-        'success': True,
-        'node_path': node.path(),
-        'type_name': definition.nodeTypeName(),
-        'section_name': section_name,
-        'size_bytes': len(content) if content else 0,
-        'message': f"Section '{section_name}' updated.",
-    }
-
-
-@register_command(PluginCommand.HDA_LIST_HDA_VERSIONS)
-def list_hda_versions(node_path: str) -> dict:
-    """Every installed definition of a node's HDA type, across versions and files."""
-
-    node = _get_node(node_path)
-    current = _get_definition(node)
-    node_type = node.type()
-    own = _type_name_components(node_type.name())
-    if own is None:
-        raise hou.OperationFailed(f"Cannot read the type name of '{node_type.name()}'")
-    scope, namespace, name, _ = own
-
-    # Houdini keeps a version in the type name (brick::1.1 is a different
-    # NodeType from brick), so allInstalledDefinitions() of one type never
-    # shows the family. Walk the category for every type sharing
-    # scope, namespace and name.
-    versions = []
-    for type_name, family_type in node_type.category().nodeTypes().items():
-        components = _type_name_components(type_name)
-        if components is None or components[:3] != (scope, namespace, name):
-            continue
-        for definition in family_type.allInstalledDefinitions():
-            versions.append(
-                {
-                    'type_name': type_name,
-                    'version': definition.version() or components[3] or None,
-                    'library_file': definition.libraryFilePath(),
-                    'is_current': definition.isCurrent(),
-                    'is_preferred': definition.isPreferred(),
-                    'is_instance_type': family_type == node_type,
-                }
-            )
-    versions.sort(key=lambda row: _version_key(row['version']))
-    return {
-        'node_path': node.path(),
-        'type_name': node_type.name(),
-        'family': {'scope': scope, 'namespace': namespace, 'name': name},
-        'current_version': current.version() or None,
-        'versions': versions,
-    }
 
 
 def _type_name_components(type_name: str) -> tuple[str, str, str, str] | None:

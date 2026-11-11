@@ -57,167 +57,6 @@ _MULTIPARM_FOLDERS = tuple(
 )
 
 
-def _resolve_node_type(category: hou.NodeTypeCategory, type_name: str) -> Any:
-    """Resolve *type_name* in *category* the way createNode would."""
-
-    with contextlib.suppress(Exception):
-        preferred = hou.preferredNodeType(f'{category.name()}/{type_name}')
-        if preferred is not None:
-            return preferred
-    types = category.nodeTypes()
-    if type_name in types:
-        return types[type_name]
-    from ._helpers import _version_key
-
-    prefix = type_name + '::'
-    versioned = [key for key in types if key.startswith(prefix)]
-    if versioned:
-        # Numeric order, not string order: ::10.0 is newer than ::2.0.
-        return types[max(versioned, key=lambda key: _version_key(key[len(prefix) :]))]
-    return None
-
-
-def _instance_patterns(node_type: Any) -> list[re.Pattern]:
-    """Regexes matching the live names of a type's multiparm instances."""
-
-    patterns: list[re.Pattern] = []
-
-    def walk(templates: Any) -> None:
-        for template in templates:
-            if '#' in template.name():
-                body = re.escape(template.name()).replace(r'\#', r'\d+')
-                patterns.append(re.compile(rf'^{body}[xyzwrgba]?$'))
-            if template.type() == hou.parmTemplateType.Folder:
-                walk(template.parmTemplates())
-
-    walk(node_type.parmTemplateGroup().entries())
-    return patterns
-
-
-def _is_instance_parm(name: str, patterns: list[re.Pattern]) -> bool:
-    return any(p.match(name) for p in patterns)
-
-
-def _is_dynamic_menu(probe: hou.Node, parm: hou.Parm) -> bool:
-    """A menu whose items depend on state a fresh probe cannot have."""
-
-    try:
-        return parm.name() == 'signature' and probe.type().category().name() == 'Vop'
-    except Exception:
-        return False
-
-
-def _connectors_of(node: hou.Node) -> dict[str, list[dict[str, Any]]]:
-    """Input and output connectors of a live node, in order, with their names."""
-
-    outputs: list[dict[str, Any]] = []
-    names: list[str] = []
-    labels: list[str] = []
-    data_types: list[str] = []
-    with contextlib.suppress(Exception):
-        names = list(node.outputNames())
-    with contextlib.suppress(Exception):
-        labels = list(node.outputLabels())
-    with contextlib.suppress(Exception):
-        # A VOP's outputs are typed like its inputs: whether a multiply comes
-        # out float or int was answerable for the inputs only.
-        data_types = list(node.outputDataTypes())
-    for index, name in enumerate(names):
-        entry: dict[str, Any] = {'index': index, 'name': name}
-        if index < len(labels):
-            entry['label'] = labels[index]
-        if index < len(data_types):
-            entry['data_type'] = data_types[index]
-        outputs.append(entry)
-    return {'inputs': _input_table(node), 'outputs': outputs}
-
-
-def _probe_connectors(
-    scratch: hou.Node, node_type: Any, parms: dict | None = None
-) -> dict:
-    """Connectors of *node_type* created inside *scratch* with *parms* applied."""
-
-    with hou.undos.disabler():
-        probe = scratch.createNode(node_type.name())
-        try:
-            for name, value in (parms or {}).items():
-                with contextlib.suppress(Exception):
-                    _apply_parm(probe, name, value)
-            return _connectors_of(probe)
-        finally:
-            with contextlib.suppress(Exception):
-                probe.destroy()
-
-
-def _instance_menu_errors(
-    scratch: hou.Node, node_type: Any, parms: dict, patterns: list
-) -> list[str]:
-    """Menu errors on multiparm instance parms (a wedge's type1), found by probing."""
-
-    wanted = {
-        name: value
-        for name, value in parms.items()
-        if _is_instance_parm(name, patterns)
-        and isinstance(value, (str, int))
-        and not isinstance(value, bool)
-    }
-    if node_type is None or not wanted:
-        return []
-    problems = []
-    with hou.undos.disabler():
-        probe = scratch.createNode(node_type.name())
-        try:
-            for name, value in parms.items():
-                if name not in wanted and _expression_value(value) is None:
-                    with contextlib.suppress(Exception):
-                        _apply_parm(probe, name, value)
-            for name, value in wanted.items():
-                parm = probe.parm(name)
-                if parm is None or not _is_strict_menu(parm.parmTemplate()):
-                    continue
-                with contextlib.suppress(Exception):
-                    items, item_labels = menu_helpers.items_and_labels(parm)
-                    if problem := _menu_error(name, value, items):
-                        # These tokens are often bare numbers ('0'..'5'); the
-                        # labels are what says which one means "Integer".
-                        labels = dict(zip(items, item_labels, strict=False))
-                        problems.append(f'{problem} Labels: {labels}')
-        finally:
-            with contextlib.suppress(Exception):
-                probe.destroy()
-    return problems
-
-
-def _locked_on_build(scratch: hou.Node, node_type: Any, spec: dict) -> dict[str, str]:
-    """Parms of *spec* that will still be locked when the build writes them."""
-
-    found: dict[str, str] = {}
-    override = bool(spec.get('override_expression'))
-    callbacks = bool(spec.get('run_callbacks'))
-    with hou.undos.disabler():
-        probe = scratch.createNode(node_type.name())
-        try:
-            for name, value in (spec.get('parms') or {}).items():
-                if _expression_value(value) is not None:
-                    continue
-                try:
-                    _apply_parm(probe, name, value, override, callbacks)
-                except LockedParmError as exc:
-                    found[name] = str(exc)
-                except Exception:
-                    pass  # a bad value is reported by the rest of validation
-            for name in _spec_expressions(spec):
-                parm = probe.parm(name)
-                if parm is not None and name not in found:
-                    reason = locked_message(parm)
-                    if reason:
-                        found[name] = reason
-        finally:
-            with contextlib.suppress(Exception):
-                probe.destroy()
-    return found
-
-
 # OBJ-level container to probe each category's types in, where more than one
 # exists (geo and sopnet both hold SOPs). Any other category is found through
 # hou.NodeType.childTypeCategory(), so Cop2, Shop, VopNet and whatever SideFX
@@ -235,109 +74,11 @@ _PREFERRED_CONTAINERS = {
 }
 
 
-def _container_for(category_name: str) -> str | None:
-    """An OBJ-level type whose children are of *category_name*."""
-
-    object_types = hou.objNodeTypeCategory().nodeTypes()
-    preferred = _PREFERRED_CONTAINERS.get(category_name)
-    if preferred in object_types:
-        return preferred
-    fallback = None
-    for type_name in sorted(object_types):
-        with contextlib.suppress(Exception):
-            node_type = object_types[type_name]
-            child = node_type.childTypeCategory()
-            if child is None or child.name() != category_name:
-                continue
-            if not node_type.hidden():
-                return type_name
-            fallback = fallback or type_name
-    return fallback
-
-
 # Connectors per type for the session: probing creates a node, and a card is
 # read again and again. Keyed on the HDA definition's modification time too,
 # so a reinstalled asset is probed afresh. Each entry is (connectors,
 # generated menus): one probe answers both.
 _CONNECTOR_CACHE: dict[tuple, tuple[dict, dict]] = {}
-
-
-def _definition_stamp(node_type: Any) -> Any:
-    with contextlib.suppress(Exception):
-        definition = node_type.definition()
-        if definition is not None:
-            return (definition.libraryFilePath(), definition.modificationTime())
-    return None
-
-
-def _is_strict_menu(template: Any) -> bool:
-    """A menu whose value build_network checks against its tokens."""
-
-    if template.type() == hou.parmTemplateType.Menu:
-        return True
-    if template.type() != hou.parmTemplateType.String:
-        return False
-    if template.menuType() != hou.menuType.Normal:
-        return False
-    with contextlib.suppress(Exception):
-        if template.tags().get('editor') == '1':
-            return False
-    return True
-
-
-def _generated_menus_of(node: hou.Node) -> dict[str, dict[str, Any]]:
-    """Menus a live node computes that its type's templates do not carry."""
-
-    generated: dict[str, dict[str, Any]] = {}
-    with contextlib.suppress(Exception):
-        for parm in node.parms():
-            with contextlib.suppress(Exception):
-                template = parm.parmTemplate()
-                if list(template.menuItems()):
-                    continue  # a static menu: the template already has it
-                if not _is_strict_menu(template):
-                    # A group picker or a wrangle's snippet list: suggestions,
-                    # not tokens, and whole VEX snippets doubled the card.
-                    continue
-                script = ''
-                with contextlib.suppress(Exception):
-                    script = template.itemGeneratorScript() or ''
-                if not script:
-                    continue
-                entry: dict[str, Any] = {'generator': script}
-                try:
-                    items, labels = menu_helpers.items_and_labels(parm)
-                except menu_helpers.MenuScriptError as exc:
-                    # Read on the card's unwired probe: a script that needs
-                    # an input fails here and lists its items on a wired node.
-                    items, labels = [], []
-                    entry['script_error'] = str(exc).splitlines()[0]
-                if items:
-                    entry['items'] = items
-                    entry['labels'] = labels
-                generated[parm.name()] = entry
-    return generated
-
-
-def _radio_folder_sets_of(node: hou.Node) -> dict[str, dict[str, Any]]:
-    """Radio-button folder sets of a live node, as menus of their folders."""
-
-    sets: dict[str, dict[str, Any]] = {}
-    with contextlib.suppress(Exception):
-        for parm in node.parms():
-            with contextlib.suppress(Exception):
-                template = parm.parmTemplate()
-                if not isinstance(template, hou.FolderSetParmTemplate):
-                    continue
-                if template.folderType() != hou.folderType.RadioButtons:
-                    continue
-                labels = list(template.folderNames())
-                sets[parm.name()] = {
-                    'folder_set': 'RadioButtons',
-                    'items': [str(index) for index in range(len(labels))],
-                    'labels': labels,
-                }
-    return sets
 
 
 # Where a probe goes when the category's usual container refuses the type:
@@ -349,91 +90,6 @@ _FALLBACK_PROBE_PARENTS: dict[str, tuple[tuple[str, str], ...]] = {
 }
 
 
-def _connectors_for_type(
-    category_name: str,
-    node_type: Any,
-    generated_menus: dict | None = None,
-) -> tuple[dict | None, str | None]:
-    """Connector names/labels of *node_type*, probed on a throwaway instance."""
-
-    key = (category_name, node_type.name(), _definition_stamp(node_type))
-    if key in _CONNECTOR_CACHE:
-        connectors, menus = _CONNECTOR_CACHE[key]
-        if generated_menus is not None:
-            generated_menus.update(menus)
-        return connectors, None
-    container = _container_for(category_name)
-    if container is None:
-        return None, f'no network under /obj holds {category_name} nodes to probe in'
-    root = hou.node('/obj')
-    if root is None:
-        return None, '/obj does not exist'
-    first_error: Exception | None = None
-    for container_type, inner_type in (
-        (container, None),
-        *_FALLBACK_PROBE_PARENTS.get(category_name, ()),
-    ):
-        scratch = None
-        try:
-            with hou.undos.disabler():
-                scratch = root.createNode(container_type, 'houdini_mcp_card_probe')
-                parent = scratch.createNode(inner_type) if inner_type else scratch
-                probe = parent.createNode(node_type.name(), run_init_scripts=False)
-                menus = _generated_menus_of(probe)
-                menus.update(_radio_folder_sets_of(probe))
-                connectors = _connectors_of(probe)
-                # A hint on the card, never a reason to fail the probe.
-                with contextlib.suppress(Exception):
-                    _mark_parm_named_outputs(probe, connectors)
-            break
-        except Exception as exc:
-            first_error = first_error or exc
-        finally:
-            with contextlib.suppress(Exception):
-                if scratch is not None:
-                    with hou.undos.disabler():
-                        scratch.destroy()
-    else:
-        return (
-            None,
-            f'probing {node_type.name()} failed: '
-            f'{error_helpers.readable_message(first_error)}',
-        )
-    _CONNECTOR_CACHE[key] = (connectors, menus)
-    if generated_menus is not None:
-        generated_menus.update(menus)
-    return connectors, None
-
-
-def _mark_parm_named_outputs(probe: hou.Node, connectors: dict) -> None:
-    """Flag the outputs whose names follow the value of a string parm."""
-
-    outputs = connectors.get('outputs') or []
-    names = [entry.get('name') or '' for entry in outputs]
-    if not names:
-        return
-    for parm in probe.parms():
-        with contextlib.suppress(Exception):
-            if parm.parmTemplate().type() != hou.parmTemplateType.String:
-                continue
-            value = parm.evalAsString()
-            if (
-                not value
-                or not value.isidentifier()
-                or not any(value in n for n in names)
-            ):
-                continue
-            parm.set(_RENAME_SENTINEL)
-            try:
-                renamed = list(probe.outputNames())
-            finally:
-                parm.set(value)
-            # A parm that also adds or drops an output is read up to the shorter list.
-            for entry, before, after in zip(outputs, names, renamed, strict=False):
-                if before != after and 'named_by_parm' not in entry:
-                    entry['named_by_parm'] = parm.name()
-
-
 _RENAME_SENTINEL = 'houdini_mcp_probe'
 
 
@@ -442,203 +98,14 @@ _RENAME_SENTINEL = 'houdini_mcp_probe'
 _ON_CREATED_CACHE: dict[tuple, list] = {}
 
 
-def _on_created_templates(category_name: str, node_type: Any) -> list:
-    """Parm templates the type's OnCreated script adds to every new node."""
-
-    definition = None
-    with contextlib.suppress(Exception):
-        definition = node_type.definition()
-    if definition is None:
-        return []
-    with contextlib.suppress(Exception):
-        if not _factory_type(node_type):
-            return []
-    try:
-        if 'OnCreated' not in definition.sections():
-            return []
-    except Exception:
-        return []
-    key = (category_name, node_type.name(), _definition_stamp(node_type))
-    if key in _ON_CREATED_CACHE:
-        return _ON_CREATED_CACHE[key]
-    container = _container_for(category_name)
-    root = hou.node('/obj')
-    added: list = []
-    if container is not None and root is not None:
-        scratch = None
-        try:
-            with hou.undos.disabler():
-                scratch = root.createNode(container, 'houdini_mcp_card_probe')
-                probe = scratch.createNode(node_type.name())
-                known = {
-                    template.name()
-                    for template in (
-                        node_type.parmTemplateGroup().entriesWithoutFolders()
-                    )
-                }
-                added = [
-                    template
-                    for template in probe.parmTemplateGroup().entriesWithoutFolders()
-                    if template.name() not in known
-                ]
-        except Exception:
-            added = []
-        finally:
-            with contextlib.suppress(Exception):
-                if scratch is not None:
-                    with hou.undos.disabler():
-                        scratch.destroy()
-    _ON_CREATED_CACHE[key] = added
-    return added
-
-
 _SIGNATURE_LINE_RE = re.compile(
     r'^\s*signature\s+"([^"]*)"\s+(\S+)\s*\{([^}]*)\}', re.MULTILINE
 )
 
 
-def _vop_signatures(node_type: Any) -> list[dict[str, Any]]:
-    """Every signature a VOP type defines, read off its DialogScript."""
-
-    try:
-        definition = node_type.definition()
-        if definition is None:
-            return []
-        text = definition.sections()['DialogScript'].contents()
-    except Exception:
-        return []
-    signatures = []
-    for label, token, types in _SIGNATURE_LINE_RE.findall(text):
-        entry: dict[str, Any] = {'name': token, 'label': label}
-        if types.split():
-            entry['input_types'] = types.split()
-        signatures.append(entry)
-    return signatures
-
-
-def _parm_names_for_type(
-    scratch: hou.Node,
-    node_type: Any,
-    parm_types: dict | None = None,
-    factory_expressions: dict | None = None,
-    locked: dict | None = None,
-) -> tuple[set, set, dict, list, dict]:
-    """Instantiate a type once to learn its parm names, tuple names, menus and..."""
-
-    key = (node_type.category().name(), node_type.name(), _definition_stamp(node_type))
-    cached = _PARM_PROBE_CACHE.get(key)
-    if cached is not None:
-        result, types, expressions, shut_parms = cached
-        if parm_types is not None:
-            parm_types.update(types)
-        if factory_expressions is not None:
-            factory_expressions.update(copy.deepcopy(expressions))
-        if locked is not None:
-            locked.update(copy.deepcopy(shut_parms))
-        return copy.deepcopy(result)
-    parm_types = {} if parm_types is None else parm_types
-    factory_expressions = {} if factory_expressions is None else factory_expressions
-    locked = {} if locked is None else locked
-    scene_menus = False
-    probe = scratch.createNode(node_type.name())
-    connectors = _connectors_of(probe)
-    if parm_types is not None:
-        for parm in probe.parms():
-            with contextlib.suppress(Exception):
-                parm_types[parm.name()] = parm.parmTemplate().type().name()
-    if factory_expressions is not None:
-        for parm_tuple in probe.parmTuples():
-            found = {
-                parm.name(): expression
-                for parm in parm_tuple
-                if (expression := _expression_of(parm)) is not None
-            }
-            if found:
-                factory_expressions[parm_tuple.name()] = found
-                for component, expression in found.items():
-                    factory_expressions[component] = {component: expression}
-    if locked is not None:
-        for parm_tuple in probe.parmTuples():
-            shut = [p.name() for p in parm_tuple if _is_locked(p)]
-            if shut:
-                locked[parm_tuple.name()] = shut
-                for component in shut:
-                    locked[component] = [component]
-    parm_names = {p.name() for p in probe.parms()}
-    tuple_names = {pt.name() for pt in probe.parmTuples()}
-    menus: dict[str, list[str]] = {}
-    for parm in probe.parms():
-        if _is_dynamic_menu(probe, parm):
-            continue
-        with contextlib.suppress(Exception):
-            template = parm.parmTemplate()
-            # Only strict menus are checked, so only theirs are read: reading
-            # a menu runs its script, and a Python one that fails on the
-            # unwired probe (characterblendshapes' group) opened Houdini's
-            # modal error window and held every next command.
-            if not _is_strict_menu(template):
-                continue
-            items = menu_helpers.items(parm)
-            if items:
-                menus[parm.name()] = items
-                scene_menus = scene_menus or bool(template.itemGeneratorScript())
-    probe.destroy()
-    result = (parm_names, tuple_names, menus, _instance_patterns(node_type), connectors)
-    if not scene_menus:
-        _PARM_PROBE_CACHE[key] = (
-            copy.deepcopy(result),
-            dict(parm_types),
-            copy.deepcopy(factory_expressions),
-            copy.deepcopy(locked),
-        )
-    return result
-
-
 # (category, type, definition stamp) -> (probe result, parm types, factory
 # expressions, locked parms); see _parm_names_for_type.
 _PARM_PROBE_CACHE: dict[tuple, tuple] = {}
-
-
-def _menu_error(parm_name: str, value: Any, tokens: list[str]) -> str | None:
-    """Why `value` cannot be set on a strict menu parm, or None if it can."""
-
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        if 0 <= value < len(tokens):
-            return None
-        return (
-            f"parm '{parm_name}': menu index {value} is out of range "
-            f'(0-{len(tokens) - 1})'
-        )
-    if isinstance(value, str) and value not in tokens:
-        close = get_close_matches(value, tokens, n=3, cutoff=0.4)
-        hint = f' Did you mean: {close}?' if close else ''
-        shown = tokens[:15] + (['...'] if len(tokens) > 15 else [])
-        return (
-            f"parm '{parm_name}': '{value}' is not a menu item. Items: {shown}.{hint}"
-        )
-    return None
-
-
-def _expression_of(parm: hou.Parm) -> str | None:
-    """The expression *parm* holds, or None when it holds a plain value."""
-
-    try:
-        expression = parm.expression()
-    except Exception:
-        return None
-    return expression or None
-
-
-def _referenced_parm(parm: hou.Parm) -> str | None:
-    """Path of the parm a pure `ch()` reference points at, or None."""
-
-    with contextlib.suppress(Exception):
-        target = parm.getReferencedParm()
-        if target is not None and target.path() != parm.path():
-            return str(target.path())
-    return None
 
 
 # Everything a node spec may carry. An unknown key used to be dropped in
@@ -675,195 +142,6 @@ _EXPRESSION_LANGUAGES = {'hscript': 'Hscript', 'python': 'Python'}
 _FLAG_KEYS = frozenset({'display', 'render', 'bypass', 'template'})
 
 
-def _unknown_key_error(label: str, kind: str, key: str, known: frozenset) -> str:
-    """A did-you-mean refusal for a spec or input key build_network does not know."""
-
-    close = get_close_matches(str(key), sorted(known), n=3, cutoff=0.4)
-    hint = f' Did you mean: {close}?' if close else f' Known keys: {sorted(known)}.'
-    return f"node {label}: unknown {kind} key '{key}'.{hint}"
-
-
-def _is_numeric_text(value: str) -> bool:
-    """Whether a string is just a number written out ('3', '-1.5')."""
-
-    try:
-        float(value)
-    except (TypeError, ValueError):
-        return False
-    return True
-
-
-def _expression_value(value: Any) -> str | None:
-    """The expression inside a `{"expr": "..."}` parm value, or None."""
-
-    if isinstance(value, dict) and 'expr' in value:
-        return str(value['expr'])
-    return None
-
-
-def _expression_language(name: str) -> Any:
-    """hou.exprLanguage for "hscript" / "python"; raises on anything else."""
-
-    key = str(name).strip().lower()
-    if key not in _EXPRESSION_LANGUAGES:
-        raise ValueError(
-            f"expression language must be 'hscript' or 'python', got {name!r}"
-        )
-    return getattr(hou.exprLanguage, _EXPRESSION_LANGUAGES[key])
-
-
-def _spec_expressions(spec: dict) -> dict[str, str]:
-    """Every expression a spec asks for, from all three spellings."""
-
-    found: dict[str, str] = {}
-    for block in (spec.get('expressions'), spec.get('exprs')):
-        for name, expression in (block or {}).items():
-            found[name] = str(expression)
-    for name, value in (spec.get('parms') or {}).items():
-        wrapped = _expression_value(value)
-        if wrapped is not None:
-            found[name] = wrapped
-    return found
-
-
-def _apply_parm(
-    node: hou.Node,
-    name: str,
-    value: Any,
-    override_expression: bool = False,
-    run_callbacks: bool = False,
-) -> dict[str, dict[str, str]]:
-    """Set a parm or parm tuple, broadcasting scalars and coercing floats."""
-
-    parm = node.parm(name)
-    parm_tuple = node.parmTuple(name)
-    if isinstance(value, (list, tuple)) or parm is None:
-        components = list(parm_tuple) if parm_tuple is not None else []
-    else:
-        components = [parm]
-    for component in components:
-        reason = locked_message(component)
-        if reason:
-            raise LockedParmError(reason)
-    before = {p.name(): e for p in components if (e := _expression_of(p)) is not None}
-    report: dict[str, dict[str, str]] = {}
-    through: dict[str, str] = {}
-    if before and override_expression:
-        for component in components:
-            if component.name() in before:
-                _clear_expression(component)
-        report['expressions_removed'] = before
-    elif before:
-        through = {
-            p.name(): target
-            for p in components
-            if p.name() in before and (target := _referenced_parm(p)) is not None
-        }
-    wrapped = _set_parm_value(name, parm, parm_tuple, value)
-    callback = _run_callback(components[0]) if run_callbacks and components else None
-    if callback is not None:
-        # Keyed the way the other report kinds are: {parm: detail}.
-        if callback['run']:
-            report['callbacks_run'] = {name: True}  # ty: ignore[invalid-assignment]
-        else:
-            callbacks = {name: callback.get('error')}
-            report['callbacks_not_run'] = callbacks  # ty: ignore[invalid-assignment]
-    if before and not override_expression:
-        for component in components:
-            after = _expression_of(component)
-            if (
-                after is None
-                or component.name() not in before
-                or component.name() in wrapped
-            ):
-                continue
-            if component.name() in through:
-                report.setdefault('written_through', {})[component.name()] = through[
-                    component.name()
-                ]
-            else:
-                report.setdefault('expressions_kept', {})[component.name()] = after
-    return report
-
-
-def _set_parm_value(name: str, parm: Any, parm_tuple: Any, value: Any) -> set[str]:
-    """The plain write behind _apply_parm."""
-
-    if isinstance(value, (list, tuple)):
-        if parm_tuple is None:
-            raise ValueError(f"'{name}' is not a parm tuple")
-        if len(value) != len(parm_tuple):
-            raise ValueError(
-                f"'{name}' has {len(parm_tuple)} components, got {len(value)}"
-            )
-        wrapped = {
-            i: found for i, v in enumerate(value) if (found := _wrapped_expression(v))
-        }
-        if wrapped:
-            # One component as an expression, the rest literals: ParmTuple.set()
-            # took none of it and answered with its SWIG overload list.
-            for index, component in enumerate(parm_tuple):
-                if index in wrapped:
-                    set_whole_expression(component, *wrapped[index])
-                else:
-                    literal = value[index]
-                    is_number = isinstance(literal, (int, float))
-                    component.set(float(literal) if is_number else literal)
-            return {parm_tuple[index].name() for index in wrapped}
-        if all(isinstance(v, (int, float)) for v in value):
-            parm_tuple.set([float(v) for v in value])
-        else:
-            parm_tuple.set(list(value))
-    elif parm is not None and is_ramp_value(value):
-        parm.set(ramp_from_value(parm, value))
-    elif parm is not None:
-        parm.set(value)
-    elif parm_tuple is not None:
-        # Scalar onto a tuple: broadcast across components.
-        if isinstance(value, (int, float)):
-            parm_tuple.set([float(value)] * len(parm_tuple))
-        else:
-            parm_tuple.set([value] * len(parm_tuple))
-    else:
-        raise ValueError(f"parameter '{name}' not found")
-    return set()
-
-
-def _source_output(value: Any) -> int | str:
-    """An output index, or an output name to be resolved against the source."""
-
-    if isinstance(value, bool):
-        raise ValueError(
-            f'source_output must be an output index or name, got {value!r}'
-        )
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float) and value.is_integer():
-        return int(value)
-    text = str(value).strip()
-    return int(text) if text.lstrip('-').isdigit() else text
-
-
-def _parse_input_entry(entry: Any, position: int) -> dict[str, Any]:
-    """What one `inputs` entry of a build_network spec asks for."""
-
-    if not isinstance(entry, dict):
-        return {
-            'index': position,
-            'input_name': None,
-            'source': entry,
-            'indirect': None,
-            'source_output': 0,
-        }
-    return {
-        'index': int(entry.get('index', position)),
-        'input_name': entry.get('input_name'),
-        'source': entry.get('source'),
-        'indirect': entry.get('indirect_input'),
-        'source_output': _source_output(entry.get('source_output', 0)),
-    }
-
-
 # Attributes Houdini reads with a fixed number of components. attribrandomize
 # and attribcreate default to 3, so a "pscale" built with them is a vector that
 # copytopoints applies as a non-uniform scale, and nothing warns.
@@ -871,204 +149,14 @@ _ATTRIB_SIZES = {'pscale': 1, 'width': 1, 'Alpha': 1, 'N': 3, 'v': 3, 'Cd': 3, '
 _ATTRIB_SIZES.update(scale=3, orient=4, rot=4)
 
 
-def _misshapen_attribs(node: hou.Node) -> dict[tuple[str, str], int]:
-    """{("point", "pscale"): 3} for standard attributes with the wrong size."""
-
-    try:
-        if not hasattr(node, 'geometry') or node.needsToCook():
-            return {}
-        geo = node.geometry()
-    except Exception:
-        return {}
-    if geo is None:
-        return {}
-    found = {}
-    for kind, attribs in (('point', geo.pointAttribs()), ('prim', geo.primAttribs())):
-        for attrib in attribs:
-            want = _ATTRIB_SIZES.get(attrib.name())
-            if want is not None and attrib.size() != want:
-                found[(kind, attrib.name())] = attrib.size()
-    return found
-
-
-def _attrib_size_warnings(node: hou.Node) -> list[str]:
-    """Misshapen attributes this node introduced, not ones it inherited."""
-
-    found = _misshapen_attribs(node)
-    if not found:
-        return []
-    with contextlib.suppress(Exception):
-        upstream = node.inputs()[0] if node.inputs() else None
-        if upstream is not None:
-            for key in _misshapen_attribs(upstream):
-                found.pop(key, None)
-    return [
-        f"{kind} attribute '{name}' has {size} components where Houdini's standard "
-        f"is {_ATTRIB_SIZES[name]}; set the creating node's size to match"
-        for (kind, name), size in found.items()
-    ]
-
-
 _MESSAGE_LINES = 12
-
-
-def _condensed(message: str) -> str:
-    """A node message with repeated lines dropped and the rest capped."""
-
-    lines = list(
-        dict.fromkeys(line.strip() for line in message.splitlines() if line.strip())
-    )
-    if len(lines) > _MESSAGE_LINES:
-        lines = [
-            *lines[:_MESSAGE_LINES],
-            f'... {len(lines) - _MESSAGE_LINES} more distinct lines',
-        ]
-    return '\n'.join(lines)
-
-
-def _node_report(node: hou.Node) -> dict[str, Any]:
-    """Path and type, plus errors / warnings / bypassed only when there are any."""
-
-    report: dict[str, Any] = {'path': node.path(), 'type': node.type().name()}
-    # A dangling channel reference cooks clean in Houdini, so it is reported
-    # as an error here: otherwise a build reads healthy while it is broken.
-    # This scans every parm of every node; cache per verify if large
-    # networks get slow.
-    errors = [_condensed(e) for e in node.errors()] + [
-        e for p in node.parms() for e in broken_references(p)
-    ]
-    warnings = [_condensed(w) for w in node.warnings()] + _attrib_size_warnings(node)
-    if errors:
-        report['errors'] = errors
-    if warnings:
-        report['warnings'] = warnings
-    with contextlib.suppress(Exception):
-        if node.isBypassed():
-            report['bypassed'] = True
-    return report
 
 
 # Stages bigger than this are summarised from the first prims only.
 _STAGE_PRIM_CAP = 20000
 
 
-def _stage_summary(node: hou.Node) -> dict[str, Any] | None:
-    """Compact stage evidence for a LOP node: what a render of it would contain."""
-
-    try:
-        from pxr import UsdGeom, UsdShade  # ty: ignore[import-not-found]
-
-        stage = node.stage()
-    except Exception:
-        return None
-    if stage is None:
-        return None
-    counts: dict[str, int] = {}
-    meshes = []
-    for index, prim in enumerate(stage.Traverse()):
-        if index >= _STAGE_PRIM_CAP:
-            counts['(truncated)'] = 1
-            break
-        type_name = str(prim.GetTypeName()) or '(untyped)'
-        counts[type_name] = counts.get(type_name, 0) + 1
-        # Gprim, not Mesh: a Sphere or Cube LOP renders grey without a
-        # material just the same.
-        if prim.IsA(UsdGeom.Gprim):
-            meshes.append(prim)
-    summary: dict[str, Any] = {'prims_by_type': counts}
-    lights = sum(n for t, n in counts.items() if 'Light' in t)
-    summary['cameras'] = counts.get('Camera', 0)
-    summary['lights'] = lights
-    if meshes:
-        with contextlib.suppress(Exception):
-            materials, _ = UsdShade.MaterialBindingAPI.ComputeBoundMaterials(
-                meshes, UsdShade.Tokens.full
-            )
-            unbound = [
-                str(m.GetPath())
-                for m, mat in zip(meshes, materials, strict=False)
-                if not mat
-            ]
-            summary['gprims_without_material'] = len(unbound)
-            if unbound:
-                summary['unbound_examples'] = unbound[:5]
-    return summary
-
-
 _VOLUME_SUMMARY_KEYS = ('name', 'resolution', 'min_value', 'max_value')
-
-
-def _geometry_summary(node: hou.Node) -> dict[str, Any] | None:
-    """Compact cooked evidence: geometry for a SOP, the stage for a LOP, the image..."""
-
-    if hasattr(node, 'stage') and not hasattr(node, 'geometry'):
-        return _stage_summary(node)
-    is_cop = False
-    with contextlib.suppress(Exception):
-        is_cop = node.type().category().name() == 'Cop'
-    if is_cop:
-        with contextlib.suppress(Exception):
-            from ._helpers import _layer_summary
-
-            layer = node.layer()
-            if layer is not None:
-                return {'layer': _layer_summary(layer)}
-    if hasattr(node, 'tracks') and not hasattr(node, 'geometry'):
-        # A CHOP's evidence is its channels: that they exist, under the names
-        # an export will look for, and that they move.
-        with contextlib.suppress(Exception):
-            from ._helpers import _track_entry
-
-            tracks = node.tracks()
-            summary = {'channels': [_track_entry(track) for track in tracks[:12]]}
-            if len(tracks) > 12:
-                summary['channels_total'] = len(tracks)
-            return summary
-        return None
-    if not hasattr(node, 'geometry'):
-        return None
-    try:
-        geo = node.geometry()
-    except Exception:
-        return None
-    if geo is None:
-        return None
-    bbox = geo.boundingBox()
-    summary = {
-        'points': geo.intrinsicValue('pointcount'),
-        'prims': geo.intrinsicValue('primitivecount'),
-        'bbox_min': list(bbox.minvec()),
-        'bbox_max': list(bbox.maxvec()),
-        'point_attribs': [a.name() for a in geo.pointAttribs()][:30],
-    }
-    with contextlib.suppress(Exception):
-        from .geometry import prim_type_counts
-
-        if types := prim_type_counts(geo):
-            summary['prim_types'] = types
-    # A heightfield or a pyro source is volumes: "7 points, attrib P" said
-    # nothing about which layers exist or whether they hold anything.
-    with contextlib.suppress(Exception):
-        from .geometry import _volume_entry
-
-        volumes = list(geo.primsOfType(hou.primType.Volume)) + list(
-            geo.primsOfType(hou.primType.VDB)
-        )
-        if volumes:
-            summary['volumes'] = [
-                {
-                    k: v
-                    for k, v in _volume_entry(prim).items()
-                    if k in _VOLUME_SUMMARY_KEYS
-                }
-                for prim in volumes[:12]
-            ]
-            if len(volumes) > 12:
-                summary['volumes_total'] = len(volumes)
-    warning = config.update_mode_warning()
-    if warning:
-        summary['warning'] = warning
-    return summary
 
 
 # Tried in this order when a missing parent's container type is inferred from
@@ -1076,80 +164,37 @@ def _geometry_summary(node: hou.Node) -> dict[str, Any] | None:
 _INFERRED_CATEGORIES = ('Sop', 'Lop', 'Dop', 'Cop', 'Chop', 'Top', 'Driver', 'Vop')
 
 
-def _missing_parent_container(parent_path: str, nodes: Any) -> str | None:
-    """The type to create a missing *parent_path* as, or None."""
+_HELP_ZIP_INDEX: dict[str, str] | None = None
 
-    head, _, name = parent_path.rstrip('/').rpartition('/')
-    above = hou.node(head or '/')
-    if not name or above is None:
-        return None
-    holds = above.childTypeCategory().name() if above.childTypeCategory() else None
-    if holds not in ('Object', 'TopNet'):
-        return None
-    types = {spec.get('type') for spec in nodes or [] if isinstance(spec, dict)}
-    if not types or None in types:
-        return None
-    categories = hou.nodeTypeCategories()
-    for category_name in _INFERRED_CATEGORIES:
-        category = categories.get(category_name)
-        if category and all(_resolve_node_type(category, t) is not None for t in types):
-            if holds == 'TopNet':
-                return 'topnet' if category_name == 'Top' else None
-            return _container_for(category_name)
-    return None
+_CATEGORY_HELP_DIRS = {
+    'Sop': ['sop'],
+    'Object': ['obj'],
+    'Driver': ['out'],
+    'Dop': ['dop'],
+    'Lop': ['lop'],
+    'Cop': ['copernicus', 'cop'],
+    'Cop2': ['cop2'],
+    'Chop': ['chop'],
+    'Top': ['top'],
+    'Vop': ['vex', 'vop'],
+}
 
 
-def _dry_run_in_scratch(
-    above: Any, container: str, name: str, nodes: list, parent_path: str
-) -> dict:
-    """Validate *nodes* inside a throwaway container named like the real one."""
-
-    with hou.undos.disabler():
-        scratch = above.createNode(container, name)
-        try:
-            result = build_network(scratch.path(), nodes, dry_run=True)
-        finally:
-            scratch.destroy()
-    result['would_create_parent'] = {'path': parent_path, 'type': container}
-    return result
+# A sequential solver has to be cooked in order, one frame at a time, and the
+# only evidence that it is doing anything is how its output changes across those
+# frames. Doing that from the client costs one round trip per frame -- ~50ms
+# each before any work happens -- so a 100 frame check was 100 round trips, and
+# the alternative was execute_python. Six of thirteen execute_python calls in one
+# recorded session were this, every one of them explaining that no tool steps a
+# SOP-level solver. step_simulation does not: it requires a DOP network, never
+# cooks, and returns no measurements.
+_MAX_FRAMES = 480
+_FRAME_ATTRIB_CAP = 8
 
 
-def _upstream_with(
-    node: hou.Node, method: str, include_self: bool = False
-) -> hou.Node | None:
-    """*node* (when include_self) or the nearest node up its first inputs having..."""
-
-    current = node if include_self else (node.inputs() or (None,))[0]
-    seen = set()
-    while current is not None and current.path() not in seen:
-        if hasattr(current, method):
-            return current
-        seen.add(current.path())
-        current = (current.inputs() or (None,))[0]
-    return None
-
-
-def _build_in_new_container(
-    parent_path: str, container: str, nodes: list, dry_run: bool, layout: bool
-) -> dict:
-    """build_network into a parent created for the purpose; a failed build removes..."""
-
-    head, _, name = parent_path.rstrip('/').rpartition('/')
-    above = hou.node(head or '/')
-    if dry_run:
-        return _dry_run_in_scratch(above, container, name, nodes, parent_path)
-    parent = above.createNode(container, name)
-    config.place_new_node(parent)
-    try:
-        result = build_network(parent.path(), nodes, dry_run=False, layout=layout)
-    except Exception:
-        parent.destroy()
-        raise
-    if result.get('success'):
-        result['created_parent'] = {'path': parent.path(), 'type': container}
-    else:
-        parent.destroy()
-    return result
+# Rows returned when a range is long: 48 frames of a crowd were 15 KB of rows
+# that differed in the fourth digit, and 240 would have been 75 KB.
+_FRAME_ROWS_SHOWN = 25
 
 
 @register_command(PluginCommand.GRAPH_BUILD_NETWORK)
@@ -1804,18 +849,6 @@ def build_network(
     return result
 
 
-def _needs_to_cook(node: hou.Node) -> bool:
-    with contextlib.suppress(Exception):
-        return bool(node.needsToCook())
-    return False
-
-
-def _has_errors(node: hou.Node) -> bool:
-    with contextlib.suppress(Exception):
-        return bool(node.errors())
-    return False
-
-
 @register_command(PluginCommand.GRAPH_VERIFY_NETWORK)
 def verify_network(parent_path: str, force_cook: bool = False, **_: Any) -> dict:
     """Inspect every node in a network: the 'middle-click everything' pass."""
@@ -1888,59 +921,6 @@ def verify_network(parent_path: str, force_cook: bool = False, **_: Any) -> dict
             'call verify_network(force_cook=True) to recook them before judging.'
         )
     return result
-
-
-_HELP_ZIP_INDEX: dict[str, str] | None = None
-
-_CATEGORY_HELP_DIRS = {
-    'Sop': ['sop'],
-    'Object': ['obj'],
-    'Driver': ['out'],
-    'Dop': ['dop'],
-    'Lop': ['lop'],
-    'Cop': ['copernicus', 'cop'],
-    'Cop2': ['cop2'],
-    'Chop': ['chop'],
-    'Top': ['top'],
-    'Vop': ['vex', 'vop'],
-}
-
-
-def _help_text(node_type: Any, category_name: str) -> str | None:
-    """Houdini's own help for a node type, version-exact, headless-safe."""
-
-    global _HELP_ZIP_INDEX
-    # hou.text.expandString, not the deprecated hou.expandString.
-    zip_path = os.path.join(
-        hou.text.expandString('$HFS'), 'houdini', 'help', 'nodes.zip'
-    )
-    if _HELP_ZIP_INDEX is None:
-        _HELP_ZIP_INDEX = {}
-        if os.path.isfile(zip_path):
-            with zipfile.ZipFile(zip_path) as zf:
-                _HELP_ZIP_INDEX = {name.lower(): name for name in zf.namelist()}
-
-    # "copytopoints::2.0" -> base "copytopoints" (version stripped);
-    # "kinefx::rigpose" -> base "rigpose" (namespace stripped). Help files
-    # are stored unversioned (old versions get a trailing dash).
-    parts = node_type.name().split('::')
-    base = parts[-1]
-    if len(parts) > 1 and parts[-1][:1].isdigit():
-        base = parts[-2]
-    candidates = []
-    for help_dir in _CATEGORY_HELP_DIRS.get(category_name, [category_name.lower()]):
-        candidates += [
-            f'{help_dir}/{base}.txt',
-            f'{help_dir}/{base}-.txt',
-        ]
-    for candidate in candidates:
-        actual = _HELP_ZIP_INDEX.get(candidate.lower())
-        if actual:
-            with zipfile.ZipFile(zip_path) as zf:
-                return zf.read(actual).decode('utf-8', 'replace')
-
-    embedded = node_type.embeddedHelp()
-    return embedded or None
 
 
 @register_command(PluginCommand.GRAPH_GET_NODE_CARD)
@@ -2300,91 +1280,6 @@ def find_expensive_nodes(
     }
 
 
-# A sequential solver has to be cooked in order, one frame at a time, and the
-# only evidence that it is doing anything is how its output changes across those
-# frames. Doing that from the client costs one round trip per frame -- ~50ms
-# each before any work happens -- so a 100 frame check was 100 round trips, and
-# the alternative was execute_python. Six of thirteen execute_python calls in one
-# recorded session were this, every one of them explaining that no tool steps a
-# SOP-level solver. step_simulation does not: it requires a DOP network, never
-# cooks, and returns no measurements.
-_MAX_FRAMES = 480
-_FRAME_ATTRIB_CAP = 8
-
-
-def _frame_stats(entry: dict[str, Any]) -> dict[str, Any]:
-    """One attribute's aggregates for a frame row, per axis for a vector."""
-
-    row = {k: v for k, v in entry.items() if k in ('min', 'max', 'mean', 'sum')}
-    if entry.get('per_component'):
-        row['per_axis'] = [[c['min'], c['max']] for c in entry['per_component']]
-    return row
-
-
-def _frame_measurement(
-    node: hou.Node,
-    attribs: list[str] | None,
-    volumes: bool,
-) -> dict[str, Any]:
-    """What changed on this frame: counts, errors, and the asked-for aggregates."""
-
-    row: dict[str, Any] = {}
-    geo = node.geometry()
-    if geo is None:
-        row['points'] = row['prims'] = 0
-        return row
-    # Intrinsics, not len(iterPoints()): that builds a Python object per point,
-    # every frame, on exactly the heavy sims this tool is for.
-    row['points'] = geo.intrinsicValue('pointcount')
-    row['prims'] = geo.intrinsicValue('primitivecount')
-    # Counts stay flat while pieces fall or cloth drapes; the bounds are the
-    # cheap proof that anything moved.
-    bbox = geo.boundingBox()
-    row['bbox'] = [list(bbox.minvec()), list(bbox.maxvec())]
-
-    if attribs:
-        from .geometry import _get_attrib_stats
-
-        stats = _get_attrib_stats(
-            node_path=node.path(),
-            attribs=attribs[:_FRAME_ATTRIB_CAP],
-            attrib_class='point',
-        )
-        row['attribs'] = {
-            name: _frame_stats(entry) for name, entry in stats['stats'].items()
-        }
-        if stats['missing']:
-            row['missing_attribs'] = stats['missing']
-
-    if volumes:
-        from .geometry import _get_volume_info
-
-        info = _get_volume_info(node_path=node.path())
-        row['volumes'] = [
-            {
-                k: v
-                for k, v in entry.items()
-                if k
-                in ('name', 'resolution', 'active_voxels', 'min_value', 'max_value')
-            }
-            for entry in info['volumes']
-        ]
-    return row
-
-
-def _shape(row: dict[str, Any]) -> tuple:
-    return row.get('points'), row.get('prims'), json.dumps(row.get('bbox'))
-
-
-def _cook_was_interrupted(node: hou.Node) -> bool:
-    """Whether *node*'s last cook failed because the artist pressed Esc."""
-
-    try:
-        return any('cooking was interrupted' in e.lower() for e in node.errors())
-    except hou.OperationFailed:
-        return False
-
-
 @register_command(PluginCommand.GRAPH_COOK_FRAME_RANGE)
 def cook_frame_range(
     node_path: str,
@@ -2523,27 +1418,6 @@ def cook_frame_range(
     return result
 
 
-# Rows returned when a range is long: 48 frames of a crowd were 15 KB of rows
-# that differed in the fourth digit, and 240 would have been 75 KB.
-_FRAME_ROWS_SHOWN = 25
-
-
-def _thin_frame_rows(frames: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Evenly spaced rows (first and last included) plus every row with a problem."""
-
-    if len(frames) <= _FRAME_ROWS_SHOWN:
-        return frames
-    last = len(frames) - 1
-    keep = {round(i * last / (_FRAME_ROWS_SHOWN - 1)) for i in range(_FRAME_ROWS_SHOWN)}
-    flagged = [
-        i
-        for i, row in enumerate(frames)
-        if row.get('errors') or row.get('cook_error') or row.get('warnings')
-    ]
-    keep.update(flagged[:_FRAME_ROWS_SHOWN])
-    return [frames[i] for i in sorted(keep)]
-
-
 @register_command(PluginCommand.GRAPH_GET_COOK_STATUS)
 def get_cook_status(node_path: str = '/obj', **_: Any) -> dict:
     """Whether a node has cooked, how often, and whether it changes per frame."""
@@ -2571,3 +1445,1129 @@ def get_cook_status(node_path: str = '/obj', **_: Any) -> dict:
     with contextlib.suppress(Exception):
         result['hip_file'] = hou.hipFile.path()
     return result
+
+
+def _resolve_node_type(category: hou.NodeTypeCategory, type_name: str) -> Any:
+    """Resolve *type_name* in *category* the way createNode would."""
+
+    with contextlib.suppress(Exception):
+        preferred = hou.preferredNodeType(f'{category.name()}/{type_name}')
+        if preferred is not None:
+            return preferred
+    types = category.nodeTypes()
+    if type_name in types:
+        return types[type_name]
+    from ._helpers import _version_key
+
+    prefix = type_name + '::'
+    versioned = [key for key in types if key.startswith(prefix)]
+    if versioned:
+        # Numeric order, not string order: ::10.0 is newer than ::2.0.
+        return types[max(versioned, key=lambda key: _version_key(key[len(prefix) :]))]
+    return None
+
+
+def _instance_patterns(node_type: Any) -> list[re.Pattern]:
+    """Regexes matching the live names of a type's multiparm instances."""
+
+    patterns: list[re.Pattern] = []
+
+    def walk(templates: Any) -> None:
+        for template in templates:
+            if '#' in template.name():
+                body = re.escape(template.name()).replace(r'\#', r'\d+')
+                patterns.append(re.compile(rf'^{body}[xyzwrgba]?$'))
+            if template.type() == hou.parmTemplateType.Folder:
+                walk(template.parmTemplates())
+
+    walk(node_type.parmTemplateGroup().entries())
+    return patterns
+
+
+def _is_instance_parm(name: str, patterns: list[re.Pattern]) -> bool:
+    return any(p.match(name) for p in patterns)
+
+
+def _is_dynamic_menu(probe: hou.Node, parm: hou.Parm) -> bool:
+    """A menu whose items depend on state a fresh probe cannot have."""
+
+    try:
+        return parm.name() == 'signature' and probe.type().category().name() == 'Vop'
+    except Exception:
+        return False
+
+
+def _connectors_of(node: hou.Node) -> dict[str, list[dict[str, Any]]]:
+    """Input and output connectors of a live node, in order, with their names."""
+
+    outputs: list[dict[str, Any]] = []
+    names: list[str] = []
+    labels: list[str] = []
+    data_types: list[str] = []
+    with contextlib.suppress(Exception):
+        names = list(node.outputNames())
+    with contextlib.suppress(Exception):
+        labels = list(node.outputLabels())
+    with contextlib.suppress(Exception):
+        # A VOP's outputs are typed like its inputs: whether a multiply comes
+        # out float or int was answerable for the inputs only.
+        data_types = list(node.outputDataTypes())
+    for index, name in enumerate(names):
+        entry: dict[str, Any] = {'index': index, 'name': name}
+        if index < len(labels):
+            entry['label'] = labels[index]
+        if index < len(data_types):
+            entry['data_type'] = data_types[index]
+        outputs.append(entry)
+    return {'inputs': _input_table(node), 'outputs': outputs}
+
+
+def _probe_connectors(
+    scratch: hou.Node, node_type: Any, parms: dict | None = None
+) -> dict:
+    """Connectors of *node_type* created inside *scratch* with *parms* applied."""
+
+    with hou.undos.disabler():
+        probe = scratch.createNode(node_type.name())
+        try:
+            for name, value in (parms or {}).items():
+                with contextlib.suppress(Exception):
+                    _apply_parm(probe, name, value)
+            return _connectors_of(probe)
+        finally:
+            with contextlib.suppress(Exception):
+                probe.destroy()
+
+
+def _instance_menu_errors(
+    scratch: hou.Node, node_type: Any, parms: dict, patterns: list
+) -> list[str]:
+    """Menu errors on multiparm instance parms (a wedge's type1), found by probing."""
+
+    wanted = {
+        name: value
+        for name, value in parms.items()
+        if _is_instance_parm(name, patterns)
+        and isinstance(value, (str, int))
+        and not isinstance(value, bool)
+    }
+    if node_type is None or not wanted:
+        return []
+    problems = []
+    with hou.undos.disabler():
+        probe = scratch.createNode(node_type.name())
+        try:
+            for name, value in parms.items():
+                if name not in wanted and _expression_value(value) is None:
+                    with contextlib.suppress(Exception):
+                        _apply_parm(probe, name, value)
+            for name, value in wanted.items():
+                parm = probe.parm(name)
+                if parm is None or not _is_strict_menu(parm.parmTemplate()):
+                    continue
+                with contextlib.suppress(Exception):
+                    items, item_labels = menu_helpers.items_and_labels(parm)
+                    if problem := _menu_error(name, value, items):
+                        # These tokens are often bare numbers ('0'..'5'); the
+                        # labels are what says which one means "Integer".
+                        labels = dict(zip(items, item_labels, strict=False))
+                        problems.append(f'{problem} Labels: {labels}')
+        finally:
+            with contextlib.suppress(Exception):
+                probe.destroy()
+    return problems
+
+
+def _locked_on_build(scratch: hou.Node, node_type: Any, spec: dict) -> dict[str, str]:
+    """Parms of *spec* that will still be locked when the build writes them."""
+
+    found: dict[str, str] = {}
+    override = bool(spec.get('override_expression'))
+    callbacks = bool(spec.get('run_callbacks'))
+    with hou.undos.disabler():
+        probe = scratch.createNode(node_type.name())
+        try:
+            for name, value in (spec.get('parms') or {}).items():
+                if _expression_value(value) is not None:
+                    continue
+                try:
+                    _apply_parm(probe, name, value, override, callbacks)
+                except LockedParmError as exc:
+                    found[name] = str(exc)
+                except Exception:
+                    pass  # a bad value is reported by the rest of validation
+            for name in _spec_expressions(spec):
+                parm = probe.parm(name)
+                if parm is not None and name not in found:
+                    reason = locked_message(parm)
+                    if reason:
+                        found[name] = reason
+        finally:
+            with contextlib.suppress(Exception):
+                probe.destroy()
+    return found
+
+
+def _container_for(category_name: str) -> str | None:
+    """An OBJ-level type whose children are of *category_name*."""
+
+    object_types = hou.objNodeTypeCategory().nodeTypes()
+    preferred = _PREFERRED_CONTAINERS.get(category_name)
+    if preferred in object_types:
+        return preferred
+    fallback = None
+    for type_name in sorted(object_types):
+        with contextlib.suppress(Exception):
+            node_type = object_types[type_name]
+            child = node_type.childTypeCategory()
+            if child is None or child.name() != category_name:
+                continue
+            if not node_type.hidden():
+                return type_name
+            fallback = fallback or type_name
+    return fallback
+
+
+def _definition_stamp(node_type: Any) -> Any:
+    with contextlib.suppress(Exception):
+        definition = node_type.definition()
+        if definition is not None:
+            return (definition.libraryFilePath(), definition.modificationTime())
+    return None
+
+
+def _is_strict_menu(template: Any) -> bool:
+    """A menu whose value build_network checks against its tokens."""
+
+    if template.type() == hou.parmTemplateType.Menu:
+        return True
+    if template.type() != hou.parmTemplateType.String:
+        return False
+    if template.menuType() != hou.menuType.Normal:
+        return False
+    with contextlib.suppress(Exception):
+        if template.tags().get('editor') == '1':
+            return False
+    return True
+
+
+def _generated_menus_of(node: hou.Node) -> dict[str, dict[str, Any]]:
+    """Menus a live node computes that its type's templates do not carry."""
+
+    generated: dict[str, dict[str, Any]] = {}
+    with contextlib.suppress(Exception):
+        for parm in node.parms():
+            with contextlib.suppress(Exception):
+                template = parm.parmTemplate()
+                if list(template.menuItems()):
+                    continue  # a static menu: the template already has it
+                if not _is_strict_menu(template):
+                    # A group picker or a wrangle's snippet list: suggestions,
+                    # not tokens, and whole VEX snippets doubled the card.
+                    continue
+                script = ''
+                with contextlib.suppress(Exception):
+                    script = template.itemGeneratorScript() or ''
+                if not script:
+                    continue
+                entry: dict[str, Any] = {'generator': script}
+                try:
+                    items, labels = menu_helpers.items_and_labels(parm)
+                except menu_helpers.MenuScriptError as exc:
+                    # Read on the card's unwired probe: a script that needs
+                    # an input fails here and lists its items on a wired node.
+                    items, labels = [], []
+                    entry['script_error'] = str(exc).splitlines()[0]
+                if items:
+                    entry['items'] = items
+                    entry['labels'] = labels
+                generated[parm.name()] = entry
+    return generated
+
+
+def _radio_folder_sets_of(node: hou.Node) -> dict[str, dict[str, Any]]:
+    """Radio-button folder sets of a live node, as menus of their folders."""
+
+    sets: dict[str, dict[str, Any]] = {}
+    with contextlib.suppress(Exception):
+        for parm in node.parms():
+            with contextlib.suppress(Exception):
+                template = parm.parmTemplate()
+                if not isinstance(template, hou.FolderSetParmTemplate):
+                    continue
+                if template.folderType() != hou.folderType.RadioButtons:
+                    continue
+                labels = list(template.folderNames())
+                sets[parm.name()] = {
+                    'folder_set': 'RadioButtons',
+                    'items': [str(index) for index in range(len(labels))],
+                    'labels': labels,
+                }
+    return sets
+
+
+def _connectors_for_type(
+    category_name: str,
+    node_type: Any,
+    generated_menus: dict | None = None,
+) -> tuple[dict | None, str | None]:
+    """Connector names/labels of *node_type*, probed on a throwaway instance."""
+
+    key = (category_name, node_type.name(), _definition_stamp(node_type))
+    if key in _CONNECTOR_CACHE:
+        connectors, menus = _CONNECTOR_CACHE[key]
+        if generated_menus is not None:
+            generated_menus.update(menus)
+        return connectors, None
+    container = _container_for(category_name)
+    if container is None:
+        return None, f'no network under /obj holds {category_name} nodes to probe in'
+    root = hou.node('/obj')
+    if root is None:
+        return None, '/obj does not exist'
+    first_error: Exception | None = None
+    for container_type, inner_type in (
+        (container, None),
+        *_FALLBACK_PROBE_PARENTS.get(category_name, ()),
+    ):
+        scratch = None
+        try:
+            with hou.undos.disabler():
+                scratch = root.createNode(container_type, 'houdini_mcp_card_probe')
+                parent = scratch.createNode(inner_type) if inner_type else scratch
+                probe = parent.createNode(node_type.name(), run_init_scripts=False)
+                menus = _generated_menus_of(probe)
+                menus.update(_radio_folder_sets_of(probe))
+                connectors = _connectors_of(probe)
+                # A hint on the card, never a reason to fail the probe.
+                with contextlib.suppress(Exception):
+                    _mark_parm_named_outputs(probe, connectors)
+            break
+        except Exception as exc:
+            first_error = first_error or exc
+        finally:
+            with contextlib.suppress(Exception):
+                if scratch is not None:
+                    with hou.undos.disabler():
+                        scratch.destroy()
+    else:
+        return (
+            None,
+            f'probing {node_type.name()} failed: '
+            f'{error_helpers.readable_message(first_error)}',
+        )
+    _CONNECTOR_CACHE[key] = (connectors, menus)
+    if generated_menus is not None:
+        generated_menus.update(menus)
+    return connectors, None
+
+
+def _mark_parm_named_outputs(probe: hou.Node, connectors: dict) -> None:
+    """Flag the outputs whose names follow the value of a string parm."""
+
+    outputs = connectors.get('outputs') or []
+    names = [entry.get('name') or '' for entry in outputs]
+    if not names:
+        return
+    for parm in probe.parms():
+        with contextlib.suppress(Exception):
+            if parm.parmTemplate().type() != hou.parmTemplateType.String:
+                continue
+            value = parm.evalAsString()
+            if (
+                not value
+                or not value.isidentifier()
+                or not any(value in n for n in names)
+            ):
+                continue
+            parm.set(_RENAME_SENTINEL)
+            try:
+                renamed = list(probe.outputNames())
+            finally:
+                parm.set(value)
+            # A parm that also adds or drops an output is read up to the shorter list.
+            for entry, before, after in zip(outputs, names, renamed, strict=False):
+                if before != after and 'named_by_parm' not in entry:
+                    entry['named_by_parm'] = parm.name()
+
+
+def _on_created_templates(category_name: str, node_type: Any) -> list:
+    """Parm templates the type's OnCreated script adds to every new node."""
+
+    definition = None
+    with contextlib.suppress(Exception):
+        definition = node_type.definition()
+    if definition is None:
+        return []
+    with contextlib.suppress(Exception):
+        if not _factory_type(node_type):
+            return []
+    try:
+        if 'OnCreated' not in definition.sections():
+            return []
+    except Exception:
+        return []
+    key = (category_name, node_type.name(), _definition_stamp(node_type))
+    if key in _ON_CREATED_CACHE:
+        return _ON_CREATED_CACHE[key]
+    container = _container_for(category_name)
+    root = hou.node('/obj')
+    added: list = []
+    if container is not None and root is not None:
+        scratch = None
+        try:
+            with hou.undos.disabler():
+                scratch = root.createNode(container, 'houdini_mcp_card_probe')
+                probe = scratch.createNode(node_type.name())
+                known = {
+                    template.name()
+                    for template in (
+                        node_type.parmTemplateGroup().entriesWithoutFolders()
+                    )
+                }
+                added = [
+                    template
+                    for template in probe.parmTemplateGroup().entriesWithoutFolders()
+                    if template.name() not in known
+                ]
+        except Exception:
+            added = []
+        finally:
+            with contextlib.suppress(Exception):
+                if scratch is not None:
+                    with hou.undos.disabler():
+                        scratch.destroy()
+    _ON_CREATED_CACHE[key] = added
+    return added
+
+
+def _vop_signatures(node_type: Any) -> list[dict[str, Any]]:
+    """Every signature a VOP type defines, read off its DialogScript."""
+
+    try:
+        definition = node_type.definition()
+        if definition is None:
+            return []
+        text = definition.sections()['DialogScript'].contents()
+    except Exception:
+        return []
+    signatures = []
+    for label, token, types in _SIGNATURE_LINE_RE.findall(text):
+        entry: dict[str, Any] = {'name': token, 'label': label}
+        if types.split():
+            entry['input_types'] = types.split()
+        signatures.append(entry)
+    return signatures
+
+
+def _parm_names_for_type(
+    scratch: hou.Node,
+    node_type: Any,
+    parm_types: dict | None = None,
+    factory_expressions: dict | None = None,
+    locked: dict | None = None,
+) -> tuple[set, set, dict, list, dict]:
+    """Instantiate a type once to learn its parm names, tuple names, menus and..."""
+
+    key = (node_type.category().name(), node_type.name(), _definition_stamp(node_type))
+    cached = _PARM_PROBE_CACHE.get(key)
+    if cached is not None:
+        result, types, expressions, shut_parms = cached
+        if parm_types is not None:
+            parm_types.update(types)
+        if factory_expressions is not None:
+            factory_expressions.update(copy.deepcopy(expressions))
+        if locked is not None:
+            locked.update(copy.deepcopy(shut_parms))
+        return copy.deepcopy(result)
+    parm_types = {} if parm_types is None else parm_types
+    factory_expressions = {} if factory_expressions is None else factory_expressions
+    locked = {} if locked is None else locked
+    scene_menus = False
+    probe = scratch.createNode(node_type.name())
+    connectors = _connectors_of(probe)
+    if parm_types is not None:
+        for parm in probe.parms():
+            with contextlib.suppress(Exception):
+                parm_types[parm.name()] = parm.parmTemplate().type().name()
+    if factory_expressions is not None:
+        for parm_tuple in probe.parmTuples():
+            found = {
+                parm.name(): expression
+                for parm in parm_tuple
+                if (expression := _expression_of(parm)) is not None
+            }
+            if found:
+                factory_expressions[parm_tuple.name()] = found
+                for component, expression in found.items():
+                    factory_expressions[component] = {component: expression}
+    if locked is not None:
+        for parm_tuple in probe.parmTuples():
+            shut = [p.name() for p in parm_tuple if _is_locked(p)]
+            if shut:
+                locked[parm_tuple.name()] = shut
+                for component in shut:
+                    locked[component] = [component]
+    parm_names = {p.name() for p in probe.parms()}
+    tuple_names = {pt.name() for pt in probe.parmTuples()}
+    menus: dict[str, list[str]] = {}
+    for parm in probe.parms():
+        if _is_dynamic_menu(probe, parm):
+            continue
+        with contextlib.suppress(Exception):
+            template = parm.parmTemplate()
+            # Only strict menus are checked, so only theirs are read: reading
+            # a menu runs its script, and a Python one that fails on the
+            # unwired probe (characterblendshapes' group) opened Houdini's
+            # modal error window and held every next command.
+            if not _is_strict_menu(template):
+                continue
+            items = menu_helpers.items(parm)
+            if items:
+                menus[parm.name()] = items
+                scene_menus = scene_menus or bool(template.itemGeneratorScript())
+    probe.destroy()
+    result = (parm_names, tuple_names, menus, _instance_patterns(node_type), connectors)
+    if not scene_menus:
+        _PARM_PROBE_CACHE[key] = (
+            copy.deepcopy(result),
+            dict(parm_types),
+            copy.deepcopy(factory_expressions),
+            copy.deepcopy(locked),
+        )
+    return result
+
+
+def _menu_error(parm_name: str, value: Any, tokens: list[str]) -> str | None:
+    """Why `value` cannot be set on a strict menu parm, or None if it can."""
+
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        if 0 <= value < len(tokens):
+            return None
+        return (
+            f"parm '{parm_name}': menu index {value} is out of range "
+            f'(0-{len(tokens) - 1})'
+        )
+    if isinstance(value, str) and value not in tokens:
+        close = get_close_matches(value, tokens, n=3, cutoff=0.4)
+        hint = f' Did you mean: {close}?' if close else ''
+        shown = tokens[:15] + (['...'] if len(tokens) > 15 else [])
+        return (
+            f"parm '{parm_name}': '{value}' is not a menu item. Items: {shown}.{hint}"
+        )
+    return None
+
+
+def _expression_of(parm: hou.Parm) -> str | None:
+    """The expression *parm* holds, or None when it holds a plain value."""
+
+    try:
+        expression = parm.expression()
+    except Exception:
+        return None
+    return expression or None
+
+
+def _referenced_parm(parm: hou.Parm) -> str | None:
+    """Path of the parm a pure `ch()` reference points at, or None."""
+
+    with contextlib.suppress(Exception):
+        target = parm.getReferencedParm()
+        if target is not None and target.path() != parm.path():
+            return str(target.path())
+    return None
+
+
+def _unknown_key_error(label: str, kind: str, key: str, known: frozenset) -> str:
+    """A did-you-mean refusal for a spec or input key build_network does not know."""
+
+    close = get_close_matches(str(key), sorted(known), n=3, cutoff=0.4)
+    hint = f' Did you mean: {close}?' if close else f' Known keys: {sorted(known)}.'
+    return f"node {label}: unknown {kind} key '{key}'.{hint}"
+
+
+def _is_numeric_text(value: str) -> bool:
+    """Whether a string is just a number written out ('3', '-1.5')."""
+
+    try:
+        float(value)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def _expression_value(value: Any) -> str | None:
+    """The expression inside a `{"expr": "..."}` parm value, or None."""
+
+    if isinstance(value, dict) and 'expr' in value:
+        return str(value['expr'])
+    return None
+
+
+def _expression_language(name: str) -> Any:
+    """hou.exprLanguage for "hscript" / "python"; raises on anything else."""
+
+    key = str(name).strip().lower()
+    if key not in _EXPRESSION_LANGUAGES:
+        raise ValueError(
+            f"expression language must be 'hscript' or 'python', got {name!r}"
+        )
+    return getattr(hou.exprLanguage, _EXPRESSION_LANGUAGES[key])
+
+
+def _spec_expressions(spec: dict) -> dict[str, str]:
+    """Every expression a spec asks for, from all three spellings."""
+
+    found: dict[str, str] = {}
+    for block in (spec.get('expressions'), spec.get('exprs')):
+        for name, expression in (block or {}).items():
+            found[name] = str(expression)
+    for name, value in (spec.get('parms') or {}).items():
+        wrapped = _expression_value(value)
+        if wrapped is not None:
+            found[name] = wrapped
+    return found
+
+
+def _apply_parm(
+    node: hou.Node,
+    name: str,
+    value: Any,
+    override_expression: bool = False,
+    run_callbacks: bool = False,
+) -> dict[str, dict[str, str]]:
+    """Set a parm or parm tuple, broadcasting scalars and coercing floats."""
+
+    parm = node.parm(name)
+    parm_tuple = node.parmTuple(name)
+    if isinstance(value, (list, tuple)) or parm is None:
+        components = list(parm_tuple) if parm_tuple is not None else []
+    else:
+        components = [parm]
+    for component in components:
+        reason = locked_message(component)
+        if reason:
+            raise LockedParmError(reason)
+    before = {p.name(): e for p in components if (e := _expression_of(p)) is not None}
+    report: dict[str, dict[str, str]] = {}
+    through: dict[str, str] = {}
+    if before and override_expression:
+        for component in components:
+            if component.name() in before:
+                _clear_expression(component)
+        report['expressions_removed'] = before
+    elif before:
+        through = {
+            p.name(): target
+            for p in components
+            if p.name() in before and (target := _referenced_parm(p)) is not None
+        }
+    wrapped = _set_parm_value(name, parm, parm_tuple, value)
+    callback = _run_callback(components[0]) if run_callbacks and components else None
+    if callback is not None:
+        # Keyed the way the other report kinds are: {parm: detail}.
+        if callback['run']:
+            report['callbacks_run'] = {name: True}  # ty: ignore[invalid-assignment]
+        else:
+            callbacks = {name: callback.get('error')}
+            report['callbacks_not_run'] = callbacks  # ty: ignore[invalid-assignment]
+    if before and not override_expression:
+        for component in components:
+            after = _expression_of(component)
+            if (
+                after is None
+                or component.name() not in before
+                or component.name() in wrapped
+            ):
+                continue
+            if component.name() in through:
+                report.setdefault('written_through', {})[component.name()] = through[
+                    component.name()
+                ]
+            else:
+                report.setdefault('expressions_kept', {})[component.name()] = after
+    return report
+
+
+def _set_parm_value(name: str, parm: Any, parm_tuple: Any, value: Any) -> set[str]:
+    """The plain write behind _apply_parm."""
+
+    if isinstance(value, (list, tuple)):
+        if parm_tuple is None:
+            raise ValueError(f"'{name}' is not a parm tuple")
+        if len(value) != len(parm_tuple):
+            raise ValueError(
+                f"'{name}' has {len(parm_tuple)} components, got {len(value)}"
+            )
+        wrapped = {
+            i: found for i, v in enumerate(value) if (found := _wrapped_expression(v))
+        }
+        if wrapped:
+            # One component as an expression, the rest literals: ParmTuple.set()
+            # took none of it and answered with its SWIG overload list.
+            for index, component in enumerate(parm_tuple):
+                if index in wrapped:
+                    set_whole_expression(component, *wrapped[index])
+                else:
+                    literal = value[index]
+                    is_number = isinstance(literal, (int, float))
+                    component.set(float(literal) if is_number else literal)
+            return {parm_tuple[index].name() for index in wrapped}
+        if all(isinstance(v, (int, float)) for v in value):
+            parm_tuple.set([float(v) for v in value])
+        else:
+            parm_tuple.set(list(value))
+    elif parm is not None and is_ramp_value(value):
+        parm.set(ramp_from_value(parm, value))
+    elif parm is not None:
+        parm.set(value)
+    elif parm_tuple is not None:
+        # Scalar onto a tuple: broadcast across components.
+        if isinstance(value, (int, float)):
+            parm_tuple.set([float(value)] * len(parm_tuple))
+        else:
+            parm_tuple.set([value] * len(parm_tuple))
+    else:
+        raise ValueError(f"parameter '{name}' not found")
+    return set()
+
+
+def _source_output(value: Any) -> int | str:
+    """An output index, or an output name to be resolved against the source."""
+
+    if isinstance(value, bool):
+        raise ValueError(
+            f'source_output must be an output index or name, got {value!r}'
+        )
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    text = str(value).strip()
+    return int(text) if text.lstrip('-').isdigit() else text
+
+
+def _parse_input_entry(entry: Any, position: int) -> dict[str, Any]:
+    """What one `inputs` entry of a build_network spec asks for."""
+
+    if not isinstance(entry, dict):
+        return {
+            'index': position,
+            'input_name': None,
+            'source': entry,
+            'indirect': None,
+            'source_output': 0,
+        }
+    return {
+        'index': int(entry.get('index', position)),
+        'input_name': entry.get('input_name'),
+        'source': entry.get('source'),
+        'indirect': entry.get('indirect_input'),
+        'source_output': _source_output(entry.get('source_output', 0)),
+    }
+
+
+def _misshapen_attribs(node: hou.Node) -> dict[tuple[str, str], int]:
+    """{("point", "pscale"): 3} for standard attributes with the wrong size."""
+
+    try:
+        if not hasattr(node, 'geometry') or node.needsToCook():
+            return {}
+        geo = node.geometry()
+    except Exception:
+        return {}
+    if geo is None:
+        return {}
+    found = {}
+    for kind, attribs in (('point', geo.pointAttribs()), ('prim', geo.primAttribs())):
+        for attrib in attribs:
+            want = _ATTRIB_SIZES.get(attrib.name())
+            if want is not None and attrib.size() != want:
+                found[(kind, attrib.name())] = attrib.size()
+    return found
+
+
+def _attrib_size_warnings(node: hou.Node) -> list[str]:
+    """Misshapen attributes this node introduced, not ones it inherited."""
+
+    found = _misshapen_attribs(node)
+    if not found:
+        return []
+    with contextlib.suppress(Exception):
+        upstream = node.inputs()[0] if node.inputs() else None
+        if upstream is not None:
+            for key in _misshapen_attribs(upstream):
+                found.pop(key, None)
+    return [
+        f"{kind} attribute '{name}' has {size} components where Houdini's standard "
+        f"is {_ATTRIB_SIZES[name]}; set the creating node's size to match"
+        for (kind, name), size in found.items()
+    ]
+
+
+def _condensed(message: str) -> str:
+    """A node message with repeated lines dropped and the rest capped."""
+
+    lines = list(
+        dict.fromkeys(line.strip() for line in message.splitlines() if line.strip())
+    )
+    if len(lines) > _MESSAGE_LINES:
+        lines = [
+            *lines[:_MESSAGE_LINES],
+            f'... {len(lines) - _MESSAGE_LINES} more distinct lines',
+        ]
+    return '\n'.join(lines)
+
+
+def _node_report(node: hou.Node) -> dict[str, Any]:
+    """Path and type, plus errors / warnings / bypassed only when there are any."""
+
+    report: dict[str, Any] = {'path': node.path(), 'type': node.type().name()}
+    # A dangling channel reference cooks clean in Houdini, so it is reported
+    # as an error here: otherwise a build reads healthy while it is broken.
+    # This scans every parm of every node; cache per verify if large
+    # networks get slow.
+    errors = [_condensed(e) for e in node.errors()] + [
+        e for p in node.parms() for e in broken_references(p)
+    ]
+    warnings = [_condensed(w) for w in node.warnings()] + _attrib_size_warnings(node)
+    if errors:
+        report['errors'] = errors
+    if warnings:
+        report['warnings'] = warnings
+    with contextlib.suppress(Exception):
+        if node.isBypassed():
+            report['bypassed'] = True
+    return report
+
+
+def _stage_summary(node: hou.Node) -> dict[str, Any] | None:
+    """Compact stage evidence for a LOP node: what a render of it would contain."""
+
+    try:
+        from pxr import UsdGeom, UsdShade  # ty: ignore[import-not-found]
+
+        stage = node.stage()
+    except Exception:
+        return None
+    if stage is None:
+        return None
+    counts: dict[str, int] = {}
+    meshes = []
+    for index, prim in enumerate(stage.Traverse()):
+        if index >= _STAGE_PRIM_CAP:
+            counts['(truncated)'] = 1
+            break
+        type_name = str(prim.GetTypeName()) or '(untyped)'
+        counts[type_name] = counts.get(type_name, 0) + 1
+        # Gprim, not Mesh: a Sphere or Cube LOP renders grey without a
+        # material just the same.
+        if prim.IsA(UsdGeom.Gprim):
+            meshes.append(prim)
+    summary: dict[str, Any] = {'prims_by_type': counts}
+    lights = sum(n for t, n in counts.items() if 'Light' in t)
+    summary['cameras'] = counts.get('Camera', 0)
+    summary['lights'] = lights
+    if meshes:
+        with contextlib.suppress(Exception):
+            materials, _ = UsdShade.MaterialBindingAPI.ComputeBoundMaterials(
+                meshes, UsdShade.Tokens.full
+            )
+            unbound = [
+                str(m.GetPath())
+                for m, mat in zip(meshes, materials, strict=False)
+                if not mat
+            ]
+            summary['gprims_without_material'] = len(unbound)
+            if unbound:
+                summary['unbound_examples'] = unbound[:5]
+    return summary
+
+
+def _geometry_summary(node: hou.Node) -> dict[str, Any] | None:
+    """Compact cooked evidence: geometry for a SOP, the stage for a LOP, the image..."""
+
+    if hasattr(node, 'stage') and not hasattr(node, 'geometry'):
+        return _stage_summary(node)
+    is_cop = False
+    with contextlib.suppress(Exception):
+        is_cop = node.type().category().name() == 'Cop'
+    if is_cop:
+        with contextlib.suppress(Exception):
+            from ._helpers import _layer_summary
+
+            layer = node.layer()
+            if layer is not None:
+                return {'layer': _layer_summary(layer)}
+    if hasattr(node, 'tracks') and not hasattr(node, 'geometry'):
+        # A CHOP's evidence is its channels: that they exist, under the names
+        # an export will look for, and that they move.
+        with contextlib.suppress(Exception):
+            from ._helpers import _track_entry
+
+            tracks = node.tracks()
+            summary = {'channels': [_track_entry(track) for track in tracks[:12]]}
+            if len(tracks) > 12:
+                summary['channels_total'] = len(tracks)
+            return summary
+        return None
+    if not hasattr(node, 'geometry'):
+        return None
+    try:
+        geo = node.geometry()
+    except Exception:
+        return None
+    if geo is None:
+        return None
+    bbox = geo.boundingBox()
+    summary = {
+        'points': geo.intrinsicValue('pointcount'),
+        'prims': geo.intrinsicValue('primitivecount'),
+        'bbox_min': list(bbox.minvec()),
+        'bbox_max': list(bbox.maxvec()),
+        'point_attribs': [a.name() for a in geo.pointAttribs()][:30],
+    }
+    with contextlib.suppress(Exception):
+        from .geometry import prim_type_counts
+
+        if types := prim_type_counts(geo):
+            summary['prim_types'] = types
+    # A heightfield or a pyro source is volumes: "7 points, attrib P" said
+    # nothing about which layers exist or whether they hold anything.
+    with contextlib.suppress(Exception):
+        from .geometry import _volume_entry
+
+        volumes = list(geo.primsOfType(hou.primType.Volume)) + list(
+            geo.primsOfType(hou.primType.VDB)
+        )
+        if volumes:
+            summary['volumes'] = [
+                {
+                    k: v
+                    for k, v in _volume_entry(prim).items()
+                    if k in _VOLUME_SUMMARY_KEYS
+                }
+                for prim in volumes[:12]
+            ]
+            if len(volumes) > 12:
+                summary['volumes_total'] = len(volumes)
+    warning = config.update_mode_warning()
+    if warning:
+        summary['warning'] = warning
+    return summary
+
+
+def _missing_parent_container(parent_path: str, nodes: Any) -> str | None:
+    """The type to create a missing *parent_path* as, or None."""
+
+    head, _, name = parent_path.rstrip('/').rpartition('/')
+    above = hou.node(head or '/')
+    if not name or above is None:
+        return None
+    holds = above.childTypeCategory().name() if above.childTypeCategory() else None
+    if holds not in ('Object', 'TopNet'):
+        return None
+    types = {spec.get('type') for spec in nodes or [] if isinstance(spec, dict)}
+    if not types or None in types:
+        return None
+    categories = hou.nodeTypeCategories()
+    for category_name in _INFERRED_CATEGORIES:
+        category = categories.get(category_name)
+        if category and all(_resolve_node_type(category, t) is not None for t in types):
+            if holds == 'TopNet':
+                return 'topnet' if category_name == 'Top' else None
+            return _container_for(category_name)
+    return None
+
+
+def _dry_run_in_scratch(
+    above: Any, container: str, name: str, nodes: list, parent_path: str
+) -> dict:
+    """Validate *nodes* inside a throwaway container named like the real one."""
+
+    with hou.undos.disabler():
+        scratch = above.createNode(container, name)
+        try:
+            result = build_network(scratch.path(), nodes, dry_run=True)
+        finally:
+            scratch.destroy()
+    result['would_create_parent'] = {'path': parent_path, 'type': container}
+    return result
+
+
+def _upstream_with(
+    node: hou.Node, method: str, include_self: bool = False
+) -> hou.Node | None:
+    """*node* (when include_self) or the nearest node up its first inputs having..."""
+
+    current = node if include_self else (node.inputs() or (None,))[0]
+    seen = set()
+    while current is not None and current.path() not in seen:
+        if hasattr(current, method):
+            return current
+        seen.add(current.path())
+        current = (current.inputs() or (None,))[0]
+    return None
+
+
+def _build_in_new_container(
+    parent_path: str, container: str, nodes: list, dry_run: bool, layout: bool
+) -> dict:
+    """build_network into a parent created for the purpose; a failed build removes..."""
+
+    head, _, name = parent_path.rstrip('/').rpartition('/')
+    above = hou.node(head or '/')
+    if dry_run:
+        return _dry_run_in_scratch(above, container, name, nodes, parent_path)
+    parent = above.createNode(container, name)
+    config.place_new_node(parent)
+    try:
+        result = build_network(parent.path(), nodes, dry_run=False, layout=layout)
+    except Exception:
+        parent.destroy()
+        raise
+    if result.get('success'):
+        result['created_parent'] = {'path': parent.path(), 'type': container}
+    else:
+        parent.destroy()
+    return result
+
+
+def _needs_to_cook(node: hou.Node) -> bool:
+    with contextlib.suppress(Exception):
+        return bool(node.needsToCook())
+    return False
+
+
+def _has_errors(node: hou.Node) -> bool:
+    with contextlib.suppress(Exception):
+        return bool(node.errors())
+    return False
+
+
+def _help_text(node_type: Any, category_name: str) -> str | None:
+    """Houdini's own help for a node type, version-exact, headless-safe."""
+
+    global _HELP_ZIP_INDEX
+    # hou.text.expandString, not the deprecated hou.expandString.
+    zip_path = os.path.join(
+        hou.text.expandString('$HFS'), 'houdini', 'help', 'nodes.zip'
+    )
+    if _HELP_ZIP_INDEX is None:
+        _HELP_ZIP_INDEX = {}
+        if os.path.isfile(zip_path):
+            with zipfile.ZipFile(zip_path) as zf:
+                _HELP_ZIP_INDEX = {name.lower(): name for name in zf.namelist()}
+
+    # "copytopoints::2.0" -> base "copytopoints" (version stripped);
+    # "kinefx::rigpose" -> base "rigpose" (namespace stripped). Help files
+    # are stored unversioned (old versions get a trailing dash).
+    parts = node_type.name().split('::')
+    base = parts[-1]
+    if len(parts) > 1 and parts[-1][:1].isdigit():
+        base = parts[-2]
+    candidates = []
+    for help_dir in _CATEGORY_HELP_DIRS.get(category_name, [category_name.lower()]):
+        candidates += [
+            f'{help_dir}/{base}.txt',
+            f'{help_dir}/{base}-.txt',
+        ]
+    for candidate in candidates:
+        actual = _HELP_ZIP_INDEX.get(candidate.lower())
+        if actual:
+            with zipfile.ZipFile(zip_path) as zf:
+                return zf.read(actual).decode('utf-8', 'replace')
+
+    embedded = node_type.embeddedHelp()
+    return embedded or None
+
+
+def _frame_stats(entry: dict[str, Any]) -> dict[str, Any]:
+    """One attribute's aggregates for a frame row, per axis for a vector."""
+
+    row = {k: v for k, v in entry.items() if k in ('min', 'max', 'mean', 'sum')}
+    if entry.get('per_component'):
+        row['per_axis'] = [[c['min'], c['max']] for c in entry['per_component']]
+    return row
+
+
+def _frame_measurement(
+    node: hou.Node,
+    attribs: list[str] | None,
+    volumes: bool,
+) -> dict[str, Any]:
+    """What changed on this frame: counts, errors, and the asked-for aggregates."""
+
+    row: dict[str, Any] = {}
+    geo = node.geometry()
+    if geo is None:
+        row['points'] = row['prims'] = 0
+        return row
+    # Intrinsics, not len(iterPoints()): that builds a Python object per point,
+    # every frame, on exactly the heavy sims this tool is for.
+    row['points'] = geo.intrinsicValue('pointcount')
+    row['prims'] = geo.intrinsicValue('primitivecount')
+    # Counts stay flat while pieces fall or cloth drapes; the bounds are the
+    # cheap proof that anything moved.
+    bbox = geo.boundingBox()
+    row['bbox'] = [list(bbox.minvec()), list(bbox.maxvec())]
+
+    if attribs:
+        from .geometry import get_attrib_stats
+
+        stats = get_attrib_stats(
+            node_path=node.path(),
+            attribs=attribs[:_FRAME_ATTRIB_CAP],
+            attrib_class='point',
+        )
+        row['attribs'] = {
+            name: _frame_stats(entry) for name, entry in stats['stats'].items()
+        }
+        if stats['missing']:
+            row['missing_attribs'] = stats['missing']
+
+    if volumes:
+        from .geometry import get_volume_info
+
+        info = get_volume_info(node_path=node.path())
+        row['volumes'] = [
+            {
+                k: v
+                for k, v in entry.items()
+                if k
+                in ('name', 'resolution', 'active_voxels', 'min_value', 'max_value')
+            }
+            for entry in info['volumes']
+        ]
+    return row
+
+
+def _shape(row: dict[str, Any]) -> tuple:
+    return row.get('points'), row.get('prims'), json.dumps(row.get('bbox'))
+
+
+def _cook_was_interrupted(node: hou.Node) -> bool:
+    """Whether *node*'s last cook failed because the artist pressed Esc."""
+
+    try:
+        return any('cooking was interrupted' in e.lower() for e in node.errors())
+    except hou.OperationFailed:
+        return False
+
+
+def _thin_frame_rows(frames: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Evenly spaced rows (first and last included) plus every row with a problem."""
+
+    if len(frames) <= _FRAME_ROWS_SHOWN:
+        return frames
+    last = len(frames) - 1
+    keep = {round(i * last / (_FRAME_ROWS_SHOWN - 1)) for i in range(_FRAME_ROWS_SHOWN)}
+    flagged = [
+        i
+        for i, row in enumerate(frames)
+        if row.get('errors') or row.get('cook_error') or row.get('warnings')
+    ]
+    keep.update(flagged[:_FRAME_ROWS_SHOWN])
+    return [frames[i] for i in sorted(keep)]

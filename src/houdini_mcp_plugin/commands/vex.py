@@ -13,97 +13,8 @@ from ..host import register_command
 from ..runtime import errors as error_helpers
 from ..runtime import ui
 
-
-def _get_node(node_path: str) -> hou.Node:
-    """Return a node or raise if not found."""
-
-    node = hou.node(node_path)
-    if node is None:
-        raise ValueError(f'Node not found: {node_path}')
-    return node
-
-
-def _validate_vex_quick(node: hou.Node) -> dict:
-    """Cook a wrangle node and return any VEX errors/warnings."""
-
-    with contextlib.suppress(hou.OperationFailed):
-        node.cook(
-            force=False
-        )  # the new code already dirtied it; force only redid the work
-
-    errors = []
-    warnings = []
-    with contextlib.suppress(Exception):
-        errors = list(node.errors() or [])
-    with contextlib.suppress(Exception):
-        warnings = list(node.warnings() or [])
-
-    return {
-        'vex_valid': len(errors) == 0,
-        'vex_errors': errors,
-        'vex_warnings': warnings,
-    }
-
-
-def _resolve_class_value(node: hou.Node, run_over: str) -> int:
-    """Resolve a run_over string to the correct menu index on this node."""
-
-    class_parm = node.parm('class')
-    if class_parm is None:
-        raise ValueError(
-            f"Node {node.path()} has no 'class' parameter — is it an Attribute Wrangle?"
-        )
-
-    template = class_parm.parmTemplate()
-    labels = list(template.menuLabels())
-    items = list(template.menuItems())
-
-    # Try exact match first (case-insensitive), then substring match
-    target = run_over.strip().lower()
-    for idx, label in enumerate(labels):
-        if label.lower() == target:
-            return int(items[idx]) if items[idx].isdigit() else idx
-    for idx, label in enumerate(labels):
-        if target in label.lower():
-            return int(items[idx]) if items[idx].isdigit() else idx
-
-    raise ValueError(
-        f"Invalid run_over value '{run_over}'. Available options: {labels}"
-    )
-
-
-def _reverse_class_label(node: hou.Node) -> str | None:
-    """Return the human-readable label for the current class value."""
-
-    class_parm = node.parm('class')
-    if class_parm is None:
-        return None
-    value = class_parm.eval()
-    template = class_parm.parmTemplate()
-    labels = list(template.menuLabels())
-    items = list(template.menuItems())
-    for idx, item in enumerate(items):
-        if (item.isdigit() and int(item) == value) or idx == value:
-            return labels[idx] if idx < len(labels) else str(value)
-    return str(value)
-
-
 # Regex pattern for detecting absolute channel paths in VEX code
 _RE_ABS_CH = re.compile(r'ch[sfiv]?\s*\(\s*["\']/')
-
-
-def _check_channel_paths(vex_code: str) -> list[str]:
-    """Return warnings if the VEX code contains absolute channel refs."""
-
-    warnings = []
-    if _RE_ABS_CH.search(vex_code):
-        warnings.append(
-            'VEX contains absolute channel path (ch("/...")). '
-            'Prefer relative paths — use ../parm_name to reach the '
-            'immediate parent, ../../parm_name for two levels up, etc. '
-            'Absolute paths break when nodes are renamed or moved.'
-        )
-    return warnings
 
 
 @register_command(PluginCommand.VEX_CREATE_WRANGLE)
@@ -350,3 +261,91 @@ def validate_vex(node_path: str) -> dict:
         result['message'] = f'VEX code has {len(errors)} error(s).'
 
     return result
+
+
+def _get_node(node_path: str) -> hou.Node:
+    """Return a node or raise if not found."""
+
+    node = hou.node(node_path)
+    if node is None:
+        raise ValueError(f'Node not found: {node_path}')
+    return node
+
+
+def _validate_vex_quick(node: hou.Node) -> dict:
+    """Cook a wrangle node and return any VEX errors/warnings."""
+
+    with contextlib.suppress(hou.OperationFailed):
+        node.cook(
+            force=False
+        )  # the new code already dirtied it; force only redid the work
+
+    errors = []
+    warnings = []
+    with contextlib.suppress(Exception):
+        errors = list(node.errors() or [])
+    with contextlib.suppress(Exception):
+        warnings = list(node.warnings() or [])
+
+    return {
+        'vex_valid': len(errors) == 0,
+        'vex_errors': errors,
+        'vex_warnings': warnings,
+    }
+
+
+def _resolve_class_value(node: hou.Node, run_over: str) -> int:
+    """Resolve a run_over string to the correct menu index on this node."""
+
+    class_parm = node.parm('class')
+    if class_parm is None:
+        raise ValueError(
+            f"Node {node.path()} has no 'class' parameter — is it an Attribute Wrangle?"
+        )
+
+    template = class_parm.parmTemplate()
+    labels = list(template.menuLabels())
+    items = list(template.menuItems())
+
+    # Try exact match first (case-insensitive), then substring match
+    target = run_over.strip().lower()
+    for idx, label in enumerate(labels):
+        if label.lower() == target:
+            return int(items[idx]) if items[idx].isdigit() else idx
+    for idx, label in enumerate(labels):
+        if target in label.lower():
+            return int(items[idx]) if items[idx].isdigit() else idx
+
+    raise ValueError(
+        f"Invalid run_over value '{run_over}'. Available options: {labels}"
+    )
+
+
+def _reverse_class_label(node: hou.Node) -> str | None:
+    """Return the human-readable label for the current class value."""
+
+    class_parm = node.parm('class')
+    if class_parm is None:
+        return None
+    value = class_parm.eval()
+    template = class_parm.parmTemplate()
+    labels = list(template.menuLabels())
+    items = list(template.menuItems())
+    for idx, item in enumerate(items):
+        if (item.isdigit() and int(item) == value) or idx == value:
+            return labels[idx] if idx < len(labels) else str(value)
+    return str(value)
+
+
+def _check_channel_paths(vex_code: str) -> list[str]:
+    """Return warnings if the VEX code contains absolute channel refs."""
+
+    warnings = []
+    if _RE_ABS_CH.search(vex_code):
+        warnings.append(
+            'VEX contains absolute channel path (ch("/...")). '
+            'Prefer relative paths — use ../parm_name to reach the '
+            'immediate parent, ../../parm_name for two levels up, etc. '
+            'Absolute paths break when nodes are renamed or moved.'
+        )
+    return warnings

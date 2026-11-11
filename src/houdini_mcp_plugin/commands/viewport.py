@@ -17,114 +17,24 @@ from ..runtime import ui
 logger = logging.getLogger(__name__)
 
 
-def _no_mplay(settings: Any) -> None:
-    """Keep a flipbook from launching MPlay."""
-
-    with contextlib.suppress(Exception):
-        settings.outputToMPlay(False)
-
-
-def _capture_pane_tab_qt(pane_tab: Any, output_path: str) -> None:
-    """Capture a pane tab screenshot via Qt."""
-
-    pixmap = None
-
-    if hasattr(pane_tab, 'qtParentWidget'):
-        try:
-            widget = pane_tab.qtParentWidget()
-        except Exception:
-            widget = None
-        if widget is not None:
-            pixmap = widget.grab()
-
-    if pixmap is None and hasattr(pane_tab, 'qtScreenGeometry'):
-        rect = pane_tab.qtScreenGeometry()
-        try:
-            from PySide6 import QtCore, QtGui  # ty: ignore[import-not-found]
-        except ImportError:
-            from PySide2 import QtCore, QtGui  # ty: ignore[import-not-found]
-        # Render the pane's region from Houdini's own window. A screen grab
-        # returns whatever is on top of Houdini at that moment: a terminal, a
-        # browser, a white dialog (the blank capture in #38).
-        window = None
-        with contextlib.suppress(Exception):
-            panel = pane_tab.pane().floatingPanel()
-            window = hou.qt.floatingPanelWindow(panel) if panel else hou.qt.mainWindow()
-        if window is not None:
-            local = QtCore.QRect(window.mapFromGlobal(rect.topLeft()), rect.size())
-            pixmap = window.grab(local)
-
-    if pixmap is None and hasattr(pane_tab, 'qtScreenGeometry'):
-        screens = QtGui.QGuiApplication.screens()
-        screen = QtGui.QGuiApplication.primaryScreen()
-        for candidate in screens:
-            if candidate.geometry().contains(rect.center()):
-                screen = candidate
-                break
-        geometry = screen.geometry()
-        pixmap = screen.grabWindow(
-            0,
-            rect.x() - geometry.x(),
-            rect.y() - geometry.y(),
-            rect.width(),
-            rect.height(),
-        )
-
-    if pixmap is None:
-        raise RuntimeError(
-            f"Cannot capture pane '{pane_tab.name()}': no Qt capture API "
-            f'available in this Houdini build.'
-        )
-
-    if not pixmap.save(output_path):
-        raise RuntimeError(
-            f"Failed to save screenshot to '{output_path}'. "
-            f'Ensure the path is writable and the format is supported (e.g. .png, '
-            f'.jpg).'
-        )
+# color_scheme's spellings, mapped to hou.viewportColorScheme names.
+_COLOR_SCHEMES = {
+    'dark': 'Dark',
+    'darkgrey': 'DarkGrey',
+    'dark_grey': 'DarkGrey',
+    'grey': 'Grey',
+    'gray': 'Grey',
+    'light': 'Light',
+}
 
 
-def _viewer_stage(scene_viewer: Any) -> Any:
-    """The USD stage a Solaris viewer is displaying, or None."""
-
-    candidates = []
-    with contextlib.suppress(Exception):
-        candidates.append(scene_viewer.currentNode())
-    with contextlib.suppress(Exception):
-        candidates.append(scene_viewer.pwd())
-    with contextlib.suppress(Exception):
-        candidates.append(scene_viewer.pwd().displayNode())
-    for node in candidates:
-        if node is None or not hasattr(node, 'stage'):
-            continue
-        with contextlib.suppress(Exception):
-            stage = node.stage()
-            if stage is not None:
-                return stage
-    return None
+# Network units of context around the framed node, each side: enough for its
+# immediate neighbours to show, few enough that the node is still readable.
+_FRAME_PAD_X = 5.0
+_FRAME_PAD_Y = 3.0
 
 
-def _camera_prims(stage: Any, limit: int = 12) -> list[str]:
-    """Camera prim paths on a stage, for error messages worth reading."""
-
-    found: list[str] = []
-    with contextlib.suppress(Exception):
-        for prim in stage.Traverse():
-            if str(prim.GetTypeName()) == 'Camera':
-                found.append(str(prim.GetPath()))
-                if len(found) >= limit:
-                    break
-    return found
-
-
-def _is_scene_graph_view(scene_viewer: Any) -> bool:
-    """Whether Hydra delegates apply at all."""
-
-    try:
-        scene_viewer.hydraRenderers()
-    except Exception:
-        return False
-    return True
+_ERROR_NODE_CAP = 50
 
 
 @register_command(PluginCommand.VIEWPORT_LIST_PANES)
@@ -328,17 +238,6 @@ def set_viewport_camera(
     }
 
 
-# color_scheme's spellings, mapped to hou.viewportColorScheme names.
-_COLOR_SCHEMES = {
-    'dark': 'Dark',
-    'darkgrey': 'DarkGrey',
-    'dark_grey': 'DarkGrey',
-    'grey': 'Grey',
-    'gray': 'Grey',
-    'light': 'Light',
-}
-
-
 @register_command(PluginCommand.VIEWPORT_SET_VIEWPORT_DISPLAY)
 def set_viewport_display(
     display_mode: str | None = None,
@@ -458,28 +357,6 @@ def set_viewport_display(
         result['color_scheme'] = schemes
 
     return result
-
-
-def _vector3(value: Any, name: str) -> tuple:
-    """Three floats from *value*, or a ValueError naming *name*."""
-
-    try:
-        numbers = tuple(float(v) for v in value)
-    except (TypeError, ValueError):
-        numbers = ()
-    if len(numbers) != 3:
-        raise ValueError(f'{name} must be three numbers, got {value!r}')
-    return numbers
-
-
-def _looked_through(viewport: Any) -> tuple[str | None, bool]:
-    """(camera the viewport looks through, whether it is a USD prim), or (None,..."""
-
-    bound = viewport.camera()
-    if bound is not None:
-        return bound.path(), False
-    path = viewport.cameraPath() or None
-    return path, path is not None
 
 
 @register_command(PluginCommand.VIEWPORT_SET_VIEWPORT_DIRECTION)
@@ -720,37 +597,6 @@ def frame_selection(pane_name: str | None = None) -> dict:
     }
 
 
-def _world_bounds(node: hou.Node) -> list | None:
-    """[xmin, ymin, zmin, xmax, ymax, zmax] of what *node* shows, in world space."""
-
-    owner, target = node, node
-    if isinstance(node, hou.ObjNode):
-        target = node.displayNode()
-    else:
-        while owner is not None and not isinstance(owner, hou.ObjNode):
-            owner = owner.parent()
-    try:
-        box = target.geometry().boundingBox()
-    except Exception:
-        return None
-    if not box.isValid():
-        return None
-    low, high = box.minvec(), box.maxvec()
-    corners = [
-        (x, y, z)
-        for x in (low[0], high[0])
-        for y in (low[1], high[1])
-        for z in (low[2], high[2])
-    ]
-    if owner is not None:
-        transform = owner.worldTransform()
-        corners = [tuple(hou.Vector3(*corner) * transform) for corner in corners]
-    return [
-        *(min(corner[i] for corner in corners) for i in range(3)),
-        *(max(corner[i] for corner in corners) for i in range(3)),
-    ]
-
-
 @register_command(PluginCommand.VIEWPORT_FRAME_ALL)
 def frame_all(
     pane_name: str | None = None,
@@ -877,41 +723,6 @@ def capture_screenshot(
         'file_exists': os.path.isfile(actual_path),
         **viewer,
     }
-
-
-# Network units of context around the framed node, each side: enough for its
-# immediate neighbours to show, few enough that the node is still readable.
-_FRAME_PAD_X = 5.0
-_FRAME_PAD_Y = 3.0
-
-
-def _bounds_list(bounds: Any) -> list | None:
-    """``hou.BoundingRect`` -> ``[xmin, ymin, xmax, ymax]``, rounded."""
-
-    try:
-        return [round(v, 3) for v in (*bounds.min(), *bounds.max())]
-    except Exception:
-        return None
-
-
-def _frame_node(network_editor: Any, node: Any) -> list:
-    """Put *node* in the middle of the editor at once, not after a flight."""
-
-    pos = node.position()
-    size = node.size()
-    xmin, ymin = pos[0], pos[1]
-    xmax, ymax = xmin + size[0], ymin + size[1]
-    network_editor.setVisibleBounds(
-        hou.BoundingRect(
-            xmin - _FRAME_PAD_X,
-            ymin - _FRAME_PAD_Y,
-            xmax + _FRAME_PAD_X,
-            ymax + _FRAME_PAD_Y,
-        ),
-        transition_time=0.0,
-        set_center_when_scale_rejected=True,
-    )
-    return [round(v, 3) for v in (xmin, ymin, xmax, ymax)]
 
 
 @register_command(PluginCommand.VIEWPORT_CAPTURE_NETWORK_EDITOR)
@@ -1047,9 +858,6 @@ def set_current_network(network_path: str, other_objects: str | None = 'hide') -
     return reply
 
 
-_ERROR_NODE_CAP = 50
-
-
 @register_command(PluginCommand.VIEWPORT_FIND_ERROR_NODES)
 def find_error_nodes(root_path: str = '/') -> dict:
     """Find all nodes with errors or warnings, recursively from a root path."""
@@ -1107,43 +915,6 @@ def find_error_nodes(root_path: str = '/') -> dict:
     }
 
 
-def _find_scene_viewer(pane_name: str | None = None) -> Any:
-    """Find a Scene Viewer pane tab by name, or the first one available."""
-
-    ui.require_ui(
-        'find a Scene Viewer',
-        alternative=(
-            'Geometry can still be inspected with get_geometry_info and '
-            'sample_geometry.'
-        ),
-    )
-    if pane_name is not None:
-        pane_tab = _find_pane_by_name(pane_name)
-        if pane_tab.type() != hou.paneTabType.SceneViewer:
-            raise ValueError(
-                f"Pane '{pane_name}' is a {pane_tab.type().name()}, not a Scene Viewer."
-            )
-        return pane_tab
-
-    for pane_tab in hou.ui.paneTabs():
-        if pane_tab.type() == hou.paneTabType.SceneViewer:
-            return pane_tab
-
-    raise RuntimeError('no Scene Viewer pane found.')
-
-
-def _find_pane_by_name(pane_name: str) -> Any:
-    """Find a pane tab by its name."""
-
-    ui.require_ui(f'find the pane {pane_name!r}')
-    for pane_tab in hou.ui.paneTabs():
-        if pane_tab.name() == pane_name:
-            return pane_tab
-
-    available = [pt.name() for pt in hou.ui.paneTabs()]
-    raise ValueError(f"Pane tab not found: '{pane_name}'. Available panes: {available}")
-
-
 @register_command(PluginCommand.VIEWPORT_LOG_STATUS)
 def log_status(message: str, severity: str = 'message') -> dict:
     """Display a status message in Houdini's status bar."""
@@ -1199,3 +970,232 @@ def set_viewer_context(
         current = scene_viewer.currentNode()
         result['current_node'] = current.path() if current else None
     return result
+
+
+def _no_mplay(settings: Any) -> None:
+    """Keep a flipbook from launching MPlay."""
+
+    with contextlib.suppress(Exception):
+        settings.outputToMPlay(False)
+
+
+def _capture_pane_tab_qt(pane_tab: Any, output_path: str) -> None:
+    """Capture a pane tab screenshot via Qt."""
+
+    pixmap = None
+
+    if hasattr(pane_tab, 'qtParentWidget'):
+        try:
+            widget = pane_tab.qtParentWidget()
+        except Exception:
+            widget = None
+        if widget is not None:
+            pixmap = widget.grab()
+
+    if pixmap is None and hasattr(pane_tab, 'qtScreenGeometry'):
+        rect = pane_tab.qtScreenGeometry()
+        try:
+            from PySide6 import QtCore, QtGui  # ty: ignore[import-not-found]
+        except ImportError:
+            from PySide2 import QtCore, QtGui  # ty: ignore[import-not-found]
+        # Render the pane's region from Houdini's own window. A screen grab
+        # returns whatever is on top of Houdini at that moment: a terminal, a
+        # browser, a white dialog (the blank capture in #38).
+        window = None
+        with contextlib.suppress(Exception):
+            panel = pane_tab.pane().floatingPanel()
+            window = hou.qt.floatingPanelWindow(panel) if panel else hou.qt.mainWindow()
+        if window is not None:
+            local = QtCore.QRect(window.mapFromGlobal(rect.topLeft()), rect.size())
+            pixmap = window.grab(local)
+
+    if pixmap is None and hasattr(pane_tab, 'qtScreenGeometry'):
+        screens = QtGui.QGuiApplication.screens()
+        screen = QtGui.QGuiApplication.primaryScreen()
+        for candidate in screens:
+            if candidate.geometry().contains(rect.center()):
+                screen = candidate
+                break
+        geometry = screen.geometry()
+        pixmap = screen.grabWindow(
+            0,
+            rect.x() - geometry.x(),
+            rect.y() - geometry.y(),
+            rect.width(),
+            rect.height(),
+        )
+
+    if pixmap is None:
+        raise RuntimeError(
+            f"Cannot capture pane '{pane_tab.name()}': no Qt capture API "
+            f'available in this Houdini build.'
+        )
+
+    if not pixmap.save(output_path):
+        raise RuntimeError(
+            f"Failed to save screenshot to '{output_path}'. "
+            f'Ensure the path is writable and the format is supported (e.g. .png, '
+            f'.jpg).'
+        )
+
+
+def _viewer_stage(scene_viewer: Any) -> Any:
+    """The USD stage a Solaris viewer is displaying, or None."""
+
+    candidates = []
+    with contextlib.suppress(Exception):
+        candidates.append(scene_viewer.currentNode())
+    with contextlib.suppress(Exception):
+        candidates.append(scene_viewer.pwd())
+    with contextlib.suppress(Exception):
+        candidates.append(scene_viewer.pwd().displayNode())
+    for node in candidates:
+        if node is None or not hasattr(node, 'stage'):
+            continue
+        with contextlib.suppress(Exception):
+            stage = node.stage()
+            if stage is not None:
+                return stage
+    return None
+
+
+def _camera_prims(stage: Any, limit: int = 12) -> list[str]:
+    """Camera prim paths on a stage, for error messages worth reading."""
+
+    found: list[str] = []
+    with contextlib.suppress(Exception):
+        for prim in stage.Traverse():
+            if str(prim.GetTypeName()) == 'Camera':
+                found.append(str(prim.GetPath()))
+                if len(found) >= limit:
+                    break
+    return found
+
+
+def _is_scene_graph_view(scene_viewer: Any) -> bool:
+    """Whether Hydra delegates apply at all."""
+
+    try:
+        scene_viewer.hydraRenderers()
+    except Exception:
+        return False
+    return True
+
+
+def _vector3(value: Any, name: str) -> tuple:
+    """Three floats from *value*, or a ValueError naming *name*."""
+
+    try:
+        numbers = tuple(float(v) for v in value)
+    except (TypeError, ValueError):
+        numbers = ()
+    if len(numbers) != 3:
+        raise ValueError(f'{name} must be three numbers, got {value!r}')
+    return numbers
+
+
+def _looked_through(viewport: Any) -> tuple[str | None, bool]:
+    """(camera the viewport looks through, whether it is a USD prim), or (None,..."""
+
+    bound = viewport.camera()
+    if bound is not None:
+        return bound.path(), False
+    path = viewport.cameraPath() or None
+    return path, path is not None
+
+
+def _world_bounds(node: hou.Node) -> list | None:
+    """[xmin, ymin, zmin, xmax, ymax, zmax] of what *node* shows, in world space."""
+
+    owner, target = node, node
+    if isinstance(node, hou.ObjNode):
+        target = node.displayNode()
+    else:
+        while owner is not None and not isinstance(owner, hou.ObjNode):
+            owner = owner.parent()
+    try:
+        box = target.geometry().boundingBox()
+    except Exception:
+        return None
+    if not box.isValid():
+        return None
+    low, high = box.minvec(), box.maxvec()
+    corners = [
+        (x, y, z)
+        for x in (low[0], high[0])
+        for y in (low[1], high[1])
+        for z in (low[2], high[2])
+    ]
+    if owner is not None:
+        transform = owner.worldTransform()
+        corners = [tuple(hou.Vector3(*corner) * transform) for corner in corners]
+    return [
+        *(min(corner[i] for corner in corners) for i in range(3)),
+        *(max(corner[i] for corner in corners) for i in range(3)),
+    ]
+
+
+def _bounds_list(bounds: Any) -> list | None:
+    """``hou.BoundingRect`` -> ``[xmin, ymin, xmax, ymax]``, rounded."""
+
+    try:
+        return [round(v, 3) for v in (*bounds.min(), *bounds.max())]
+    except Exception:
+        return None
+
+
+def _frame_node(network_editor: Any, node: Any) -> list:
+    """Put *node* in the middle of the editor at once, not after a flight."""
+
+    pos = node.position()
+    size = node.size()
+    xmin, ymin = pos[0], pos[1]
+    xmax, ymax = xmin + size[0], ymin + size[1]
+    network_editor.setVisibleBounds(
+        hou.BoundingRect(
+            xmin - _FRAME_PAD_X,
+            ymin - _FRAME_PAD_Y,
+            xmax + _FRAME_PAD_X,
+            ymax + _FRAME_PAD_Y,
+        ),
+        transition_time=0.0,
+        set_center_when_scale_rejected=True,
+    )
+    return [round(v, 3) for v in (xmin, ymin, xmax, ymax)]
+
+
+def _find_scene_viewer(pane_name: str | None = None) -> Any:
+    """Find a Scene Viewer pane tab by name, or the first one available."""
+
+    ui.require_ui(
+        'find a Scene Viewer',
+        alternative=(
+            'Geometry can still be inspected with get_geometry_info and '
+            'sample_geometry.'
+        ),
+    )
+    if pane_name is not None:
+        pane_tab = _find_pane_by_name(pane_name)
+        if pane_tab.type() != hou.paneTabType.SceneViewer:
+            raise ValueError(
+                f"Pane '{pane_name}' is a {pane_tab.type().name()}, not a Scene Viewer."
+            )
+        return pane_tab
+
+    for pane_tab in hou.ui.paneTabs():
+        if pane_tab.type() == hou.paneTabType.SceneViewer:
+            return pane_tab
+
+    raise RuntimeError('no Scene Viewer pane found.')
+
+
+def _find_pane_by_name(pane_name: str) -> Any:
+    """Find a pane tab by its name."""
+
+    ui.require_ui(f'find the pane {pane_name!r}')
+    for pane_tab in hou.ui.paneTabs():
+        if pane_tab.name() == pane_name:
+            return pane_tab
+
+    available = [pt.name() for pt in hou.ui.paneTabs()]
+    raise ValueError(f"Pane tab not found: '{pane_name}'. Available panes: {available}")

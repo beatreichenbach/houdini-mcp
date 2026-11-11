@@ -11,54 +11,8 @@ from houdini_mcp_protocol import PluginCommand
 from ..host import register_command
 
 
-def _get_parm(node_path: str, parm_name: str) -> hou.Parm:
-    """Return a parameter object or raise if the node/parm is not found."""
-
-    node = hou.node(node_path)
-    if node is None:
-        raise hou.NodeError(f'Node not found: {node_path}')
-    parm = node.parm(parm_name)
-    if parm is None:
-        raise hou.OperationFailed(
-            f"Parameter '{parm_name}' not found on node '{node_path}'. "
-            f'Available parameters: {[p.name() for p in node.parms()[:30]]}'
-        )
-    return parm
-
-
-def _keyframe_to_dict(key: hou.Keyframe) -> dict:
-    """Convert a hou.Keyframe to a plain Python dict."""
-
-    result = {
-        'frame': key.frame(),
-        'value': key.value(),
-    }
-    try:
-        result['slope'] = key.slope()
-    except Exception:
-        result['slope'] = None
-    try:
-        result['accel'] = key.accel()
-    except Exception:
-        result['accel'] = None
-    try:
-        expr = key.expression()
-        result['expression'] = expr if expr else None
-    except Exception:
-        result['expression'] = None
-    try:
-        result['in_slope'] = key.inSlope()
-    except Exception:
-        result['in_slope'] = None
-    try:
-        result['in_accel'] = key.inAccel()
-    except Exception:
-        result['in_accel'] = None
-    return result
-
-
 @register_command(PluginCommand.ANIMATION_SET_KEYFRAME)
-def _set_keyframe(
+def set_keyframe(
     node_path: str,
     parm_name: str,
     frame: float,
@@ -92,7 +46,7 @@ def _set_keyframe(
 
 
 @register_command(PluginCommand.ANIMATION_SET_KEYFRAMES)
-def _set_keyframes(
+def set_keyframes(
     node_path: str,
     parm_name: str,
     keyframes: list,
@@ -137,7 +91,7 @@ def _set_keyframes(
 
 
 @register_command(PluginCommand.ANIMATION_DELETE_KEYFRAME)
-def _delete_keyframe(
+def delete_keyframe(
     node_path: str,
     parm_name: str,
     frame: float,
@@ -171,7 +125,7 @@ def _delete_keyframe(
 
 
 @register_command(PluginCommand.ANIMATION_GET_KEYFRAMES)
-def _get_keyframes(
+def get_keyframes(
     node_path: str,
     parm_name: str,
 ) -> dict:
@@ -191,7 +145,7 @@ def _get_keyframes(
 
 
 @register_command(PluginCommand.ANIMATION_SET_FRAME)
-def _set_frame(frame: float) -> dict:
+def set_frame(frame: float) -> dict:
     """Set the current frame."""
 
     try:
@@ -208,7 +162,7 @@ def _set_frame(frame: float) -> dict:
 
 
 @register_command(PluginCommand.ANIMATION_GET_FRAME)
-def _get_frame() -> dict:
+def get_frame() -> dict:
     """Get the current frame."""
 
     return {
@@ -218,7 +172,7 @@ def _get_frame() -> dict:
 
 
 @register_command(PluginCommand.ANIMATION_SET_FRAME_RANGE)
-def _set_frame_range(start: float, end: float) -> dict:
+def set_frame_range(start: float, end: float) -> dict:
     """Set the global frame range."""
 
     if start >= end:
@@ -235,7 +189,7 @@ def _set_frame_range(start: float, end: float) -> dict:
 
 
 @register_command(PluginCommand.ANIMATION_SET_PLAYBACK_RANGE)
-def _set_playback_range(start: float, end: float) -> dict:
+def set_playback_range(start: float, end: float) -> dict:
     """Set the playback range, widening the global range when Houdini clamps it."""
 
     if not (math.isfinite(start) and math.isfinite(end)):
@@ -271,7 +225,7 @@ def _set_playback_range(start: float, end: float) -> dict:
 
 
 @register_command(PluginCommand.ANIMATION_PLAYBAR_CONTROL)
-def _playbar_control(
+def playbar_control(
     action: str,
     real_time: bool | None = None,
     fps: float | None = None,
@@ -309,3 +263,49 @@ def _playbar_control(
         'fps': hou.fps(),
         'status': 'playbar_action_executed',
     }
+
+
+def _get_parm(node_path: str, parm_name: str) -> hou.Parm:
+    """Return a parameter object or raise if the node/parm is not found."""
+
+    node = hou.node(node_path)
+    if node is None:
+        raise hou.NodeError(f'Node not found: {node_path}')
+    parm = node.parm(parm_name)
+    if parm is None:
+        raise hou.OperationFailed(
+            f"Parameter '{parm_name}' not found on node '{node_path}'. "
+            f'Available parameters: {[p.name() for p in node.parms()[:30]]}'
+        )
+    return parm
+
+
+def _keyframe_to_dict(key: hou.Keyframe) -> dict:
+    """Convert a hou.Keyframe to a plain Python dict."""
+
+    result = {
+        'frame': key.frame(),
+        'value': key.value(),
+    }
+    try:
+        result['slope'] = key.slope()
+    except Exception:
+        result['slope'] = None
+    try:
+        result['accel'] = key.accel()
+    except Exception:
+        result['accel'] = None
+    try:
+        expr = key.expression()
+        result['expression'] = expr if expr else None
+    except Exception:
+        result['expression'] = None
+    try:
+        result['in_slope'] = key.inSlope()
+    except Exception:
+        result['in_slope'] = None
+    try:
+        result['in_accel'] = key.inAccel()
+    except Exception:
+        result['in_accel'] = None
+    return result

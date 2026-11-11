@@ -18,25 +18,6 @@ from .nodes import _refuse_taken_name
 logger = logging.getLogger(__name__)
 
 
-def _get_cop_node(node_path: str) -> hou.Node:
-    """Return a COP node, or say why the given node is not one."""
-
-    node = hou.node(node_path)
-    if node is None:
-        raise ValueError(f'Node not found: {node_path}')
-    category = node.type().category().name()
-    if category == 'Cop':
-        return node
-    # A COP network container is accepted: some callers pass the copnet.
-    children = node.childTypeCategory()
-    if children is not None and children.name() == 'Cop':
-        return node
-    raise ValueError(
-        f'{node_path} is a {category} node ({node.type().name()}), not a COP. '
-        f'COP tools work on nodes inside a copnet or /img.'
-    )
-
-
 @register_command(PluginCommand.COPS_GET_COP_INFO)
 def get_cop_info(node_path: str) -> dict:
     """Return information about a COP node."""
@@ -245,35 +226,6 @@ def get_cop_layer(node_path: str, output_index: int = 0) -> dict:
     return result
 
 
-def _layer_summary(layer: Any) -> dict:
-    """Resolution, channels and per-channel value range of a Copernicus layer."""
-
-    summary: dict = {'available': True}
-    with contextlib.suppress(Exception):
-        summary['resolution'] = list(layer.bufferResolution())
-    with contextlib.suppress(Exception):
-        summary['storage'] = str(layer.storageType()).rsplit('.', 1)[-1]
-    with contextlib.suppress(Exception):
-        summary['is_constant'] = bool(layer.isConstant())
-    channels = 0
-    with contextlib.suppress(Exception):
-        channels = int(layer.channelCount())
-    summary['channels'] = channels
-    ranges = []
-    for channel in range(min(channels, 4)):
-        with contextlib.suppress(Exception):
-            ranges.append(
-                {
-                    'min': layer.computeMin(channel),
-                    'max': layer.computeMax(channel),
-                    'mean': layer.computeAverage(channel),
-                }
-            )
-    if ranges:
-        summary['channel_ranges'] = ranges
-    return summary
-
-
 @register_command(PluginCommand.COPS_CREATE_COP_NODE)
 def create_cop_node(
     parent_path: str,
@@ -478,3 +430,51 @@ def get_cop_vdb(node_path: str, output_index: int = 0) -> dict:
         'vdb_count': len(vdb_prims),
         'vdb_primitives': vdb_prims,
     }
+
+
+def _get_cop_node(node_path: str) -> hou.Node:
+    """Return a COP node, or say why the given node is not one."""
+
+    node = hou.node(node_path)
+    if node is None:
+        raise ValueError(f'Node not found: {node_path}')
+    category = node.type().category().name()
+    if category == 'Cop':
+        return node
+    # A COP network container is accepted: some callers pass the copnet.
+    children = node.childTypeCategory()
+    if children is not None and children.name() == 'Cop':
+        return node
+    raise ValueError(
+        f'{node_path} is a {category} node ({node.type().name()}), not a COP. '
+        f'COP tools work on nodes inside a copnet or /img.'
+    )
+
+
+def _layer_summary(layer: Any) -> dict:
+    """Resolution, channels and per-channel value range of a Copernicus layer."""
+
+    summary: dict = {'available': True}
+    with contextlib.suppress(Exception):
+        summary['resolution'] = list(layer.bufferResolution())
+    with contextlib.suppress(Exception):
+        summary['storage'] = str(layer.storageType()).rsplit('.', 1)[-1]
+    with contextlib.suppress(Exception):
+        summary['is_constant'] = bool(layer.isConstant())
+    channels = 0
+    with contextlib.suppress(Exception):
+        channels = int(layer.channelCount())
+    summary['channels'] = channels
+    ranges = []
+    for channel in range(min(channels, 4)):
+        with contextlib.suppress(Exception):
+            ranges.append(
+                {
+                    'min': layer.computeMin(channel),
+                    'max': layer.computeMax(channel),
+                    'mean': layer.computeAverage(channel),
+                }
+            )
+    if ranges:
+        summary['channel_ranges'] = ranges
+    return summary

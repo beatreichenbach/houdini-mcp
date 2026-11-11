@@ -35,140 +35,7 @@ _NON_DOC_DIRS = frozenset({'files', 'images', 'videos', 'licenses', 'licensing'}
 _CACHE: dict[str, dict[str, tuple[str, str]]] = {}
 
 
-def _help_dir() -> str:
-    """Help root of the running Houdini (separate function for tests)."""
-
-    # hou.text.expandString, not hou.expandString: the latter is deprecated and
-    # emits a DeprecationWarning on every call. Present since well before 20.5.
-    return os.path.join(hou.text.expandString('$HFS'), 'houdini', 'help')
-
-
-def _available_scopes() -> list[str]:
-    """Every documentation corpus the install ships, zipped or loose."""
-
-    root = _help_dir()
-    if not os.path.isdir(root):
-        return []
-    scopes = set()
-    for name in os.listdir(root):
-        path = os.path.join(root, name)
-        if name.endswith('.zip') and os.path.isfile(path):
-            scopes.add(name[:-4])
-        # Only count a directory if it actually holds pages; several hold images
-        # only, and an empty scope in the error message is just noise.
-        elif (
-            os.path.isdir(path)
-            and name not in _NON_DOC_DIRS
-            and any(
-                file.endswith('.txt') for _, _, files in os.walk(path) for file in files
-            )
-        ):
-            scopes.add(name)
-    return sorted(scopes)
-
-
-def _require_help() -> list[str]:
-    scopes = _available_scopes()
-    if not scopes:
-        raise hou.OperationFailed(
-            'This Houdini build ships no local help '
-            f'({_help_dir()} contains no help archives). Use '
-            'get_node_card for live node introspection, or consult '
-            'https://www.sidefx.com/docs/houdini/ directly.'
-        )
-    return scopes
-
-
-def _read_zip(zip_path: str) -> dict[str, tuple[str, str]]:
-    pages: dict[str, tuple[str, str]] = {}
-    with zipfile.ZipFile(zip_path) as archive:
-        for name in archive.namelist():
-            if not name.endswith('.txt'):
-                continue
-            text = archive.read(name).decode('utf-8', 'replace')
-            pages[name[:-4]] = (text, text.lower())
-    return pages
-
-
-def _read_dir(root: str) -> dict[str, tuple[str, str]]:
-    """Same shape as _read_zip, for corpora that ship unzipped."""
-
-    pages: dict[str, tuple[str, str]] = {}
-    for dirpath, _, files in os.walk(root):
-        for name in files:
-            if not name.endswith('.txt'):
-                continue
-            full = os.path.join(dirpath, name)
-            # Keys must match the zip convention: forward slashes, relative to
-            # the corpus root, no extension. Otherwise a path from search_help
-            # would not round-trip through get_help_page on Windows.
-            entry = os.path.relpath(full, root).replace(os.sep, '/')[:-4]
-            try:
-                with open(full, 'rb') as handle:
-                    text = handle.read().decode('utf-8', 'replace')
-            except OSError:
-                continue
-            pages[entry] = (text, text.lower())
-    return pages
-
-
-def _load_scope(scope: str) -> dict[str, tuple[str, str]]:
-    if scope in _CACHE:
-        return _CACHE[scope]
-    root = _help_dir()
-    zip_path = os.path.join(root, f'{scope}.zip')
-    dir_path = os.path.join(root, scope)
-    if os.path.isfile(zip_path):
-        pages = _read_zip(zip_path)
-    elif os.path.isdir(dir_path):
-        pages = _read_dir(dir_path)
-    else:
-        pages = {}
-    _CACHE[scope] = pages
-    return pages
-
-
-def _title_of(text: str) -> str:
-    # A node page opens with #type/#context/#internal/#icon/#since lines, so
-    # its "= Pyro Solver =" is the seventh line: the first five came back "".
-    for line in text.splitlines()[:20]:
-        stripped = line.strip()
-        if (
-            stripped.startswith('=')
-            and stripped.endswith('=')
-            and not stripped.startswith('==')
-        ):
-            return stripped.strip('= ').strip()
-    return ''
-
-
 _PAGE_CAP = 20_000
-
-
-def _sections_of(text: str) -> list[dict]:
-    """Each "== Section ==" (level 1) and "~~ Subsection ~~" (level 2) with its..."""
-
-    sections = []
-    offset = 0
-    for line in text.splitlines(keepends=True):
-        stripped = line.strip()
-        for mark, level in (('==', 1), ('~~', 2)):
-            if stripped.startswith(mark) and not stripped.startswith(mark + mark[0]):
-                # "== Sourcing == (sourcing)" carries an anchor after the heading.
-                title = stripped[2:].split(mark)[0].strip()
-                if title:
-                    sections.append({'title': title, 'level': level, 'offset': offset})
-        offset += len(line)
-    return sections
-
-
-def _excerpt(text: str, lower: str, token: str, width: int = 220) -> str:
-    index = lower.find(token)
-    if index < 0:
-        index = 0
-    start = max(0, index - width // 3)
-    snippet = text[start : start + width].replace('\n', ' ').strip()
-    return ('...' if start else '') + snippet
 
 
 @register_command(PluginCommand.HELP_SEARCH_HELP)
@@ -286,3 +153,136 @@ def get_help_page(
     if len(text) > _PAGE_CAP:
         reply['sections'] = sections
     return reply
+
+
+def _help_dir() -> str:
+    """Help root of the running Houdini (separate function for tests)."""
+
+    # hou.text.expandString, not hou.expandString: the latter is deprecated and
+    # emits a DeprecationWarning on every call. Present since well before 20.5.
+    return os.path.join(hou.text.expandString('$HFS'), 'houdini', 'help')
+
+
+def _available_scopes() -> list[str]:
+    """Every documentation corpus the install ships, zipped or loose."""
+
+    root = _help_dir()
+    if not os.path.isdir(root):
+        return []
+    scopes = set()
+    for name in os.listdir(root):
+        path = os.path.join(root, name)
+        if name.endswith('.zip') and os.path.isfile(path):
+            scopes.add(name[:-4])
+        # Only count a directory if it actually holds pages; several hold images
+        # only, and an empty scope in the error message is just noise.
+        elif (
+            os.path.isdir(path)
+            and name not in _NON_DOC_DIRS
+            and any(
+                file.endswith('.txt') for _, _, files in os.walk(path) for file in files
+            )
+        ):
+            scopes.add(name)
+    return sorted(scopes)
+
+
+def _require_help() -> list[str]:
+    scopes = _available_scopes()
+    if not scopes:
+        raise hou.OperationFailed(
+            'This Houdini build ships no local help '
+            f'({_help_dir()} contains no help archives). Use '
+            'get_node_card for live node introspection, or consult '
+            'https://www.sidefx.com/docs/houdini/ directly.'
+        )
+    return scopes
+
+
+def _read_zip(zip_path: str) -> dict[str, tuple[str, str]]:
+    pages: dict[str, tuple[str, str]] = {}
+    with zipfile.ZipFile(zip_path) as archive:
+        for name in archive.namelist():
+            if not name.endswith('.txt'):
+                continue
+            text = archive.read(name).decode('utf-8', 'replace')
+            pages[name[:-4]] = (text, text.lower())
+    return pages
+
+
+def _read_dir(root: str) -> dict[str, tuple[str, str]]:
+    """Same shape as _read_zip, for corpora that ship unzipped."""
+
+    pages: dict[str, tuple[str, str]] = {}
+    for dirpath, _, files in os.walk(root):
+        for name in files:
+            if not name.endswith('.txt'):
+                continue
+            full = os.path.join(dirpath, name)
+            # Keys must match the zip convention: forward slashes, relative to
+            # the corpus root, no extension. Otherwise a path from search_help
+            # would not round-trip through get_help_page on Windows.
+            entry = os.path.relpath(full, root).replace(os.sep, '/')[:-4]
+            try:
+                with open(full, 'rb') as handle:
+                    text = handle.read().decode('utf-8', 'replace')
+            except OSError:
+                continue
+            pages[entry] = (text, text.lower())
+    return pages
+
+
+def _load_scope(scope: str) -> dict[str, tuple[str, str]]:
+    if scope in _CACHE:
+        return _CACHE[scope]
+    root = _help_dir()
+    zip_path = os.path.join(root, f'{scope}.zip')
+    dir_path = os.path.join(root, scope)
+    if os.path.isfile(zip_path):
+        pages = _read_zip(zip_path)
+    elif os.path.isdir(dir_path):
+        pages = _read_dir(dir_path)
+    else:
+        pages = {}
+    _CACHE[scope] = pages
+    return pages
+
+
+def _title_of(text: str) -> str:
+    # A node page opens with #type/#context/#internal/#icon/#since lines, so
+    # its "= Pyro Solver =" is the seventh line: the first five came back "".
+    for line in text.splitlines()[:20]:
+        stripped = line.strip()
+        if (
+            stripped.startswith('=')
+            and stripped.endswith('=')
+            and not stripped.startswith('==')
+        ):
+            return stripped.strip('= ').strip()
+    return ''
+
+
+def _sections_of(text: str) -> list[dict]:
+    """Each "== Section ==" (level 1) and "~~ Subsection ~~" (level 2) with its..."""
+
+    sections = []
+    offset = 0
+    for line in text.splitlines(keepends=True):
+        stripped = line.strip()
+        for mark, level in (('==', 1), ('~~', 2)):
+            if stripped.startswith(mark) and not stripped.startswith(mark + mark[0]):
+                # "== Sourcing == (sourcing)" carries an anchor after the heading.
+                title = stripped[2:].split(mark)[0].strip()
+                if title:
+                    sections.append({'title': title, 'level': level, 'offset': offset})
+        offset += len(line)
+    return sections
+
+
+def _excerpt(text: str, lower: str, token: str, width: int = 220) -> str:
+    index = lower.find(token)
+    if index < 0:
+        index = 0
+    start = max(0, index - width // 3)
+    snippet = text[start : start + width].replace('\n', ' ').strip()
+    return ('...' if start else '') + snippet

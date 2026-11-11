@@ -28,14 +28,14 @@ _COMPOUND_EXTENSIONS = (
 )
 
 
-def _split_sequence_extension(file_path: str) -> tuple[str, str]:
-    """Split a path so a frame number can go where Houdini expects it."""
+# Characters that make a node path a pattern. merge's node_pattern would
+# honour them, but the per-path report could not say what each one brought.
+_PATTERN_CHARS = frozenset('*?^[] ')
 
-    lowered = file_path.lower()
-    for compound in _COMPOUND_EXTENSIONS:
-        if lowered.endswith(compound):
-            return file_path[: -len(compound)], file_path[-len(compound) :]
-    return os.path.splitext(file_path)
+
+# Globals a merged file may change: the time variables follow the playbar
+# and ACTIVETAKE the takes, not the file; _HIP_* are the file's save stamps.
+_MERGE_GLOBALS_KEPT = frozenset({'F', 'FF', 'T', 'oldFF', 'ACTIVETAKE'})
 
 
 @register_command(PluginCommand.SCENE_GET_SCENE_INFO)
@@ -103,231 +103,6 @@ def save_scene(file_path: str | None = None) -> dict:
         'success': True,
         'hip_file': hou.hipFile.path(),
     }
-
-
-# Characters that make a node path a pattern. merge's node_pattern would
-# honour them, but the per-path report could not say what each one brought.
-_PATTERN_CHARS = frozenset('*?^[] ')
-
-
-def _warning_lines(warning: Exception) -> list[str]:
-    return [line.strip() for line in str(warning).splitlines() if line.strip()]
-
-
-def _children_of(paths: Any) -> dict[str, set]:
-    """Child paths of each watched network, keyed by its path."""
-
-    snapshot: dict[str, set] = {}
-    for path in paths:
-        node = hou.node(path)
-        snapshot[path] = set()
-        if node is not None:
-            with contextlib.suppress(Exception):
-                snapshot[path] = {child.path() for child in node.children()}
-    return snapshot
-
-
-def _base_name(name: str) -> str:
-    """null12 -> null: the stem Houdini renumbers when a name is taken."""
-
-    return name.rstrip('0123456789')
-
-
-# Globals a merged file may change: the time variables follow the playbar
-# and ACTIVETAKE the takes, not the file; _HIP_* are the file's save stamps.
-_MERGE_GLOBALS_KEPT = frozenset({'F', 'FF', 'T', 'oldFF', 'ACTIVETAKE'})
-
-
-def _hip_globals() -> dict[str, str]:
-    """The scene's `set -g` variables, by name."""
-
-    found: dict[str, str] = {}
-    with contextlib.suppress(Exception):
-        text = hou.hscript('set -g')[0]
-        for line in text.splitlines():
-            name, sep, value = line.partition('\t= ')
-            if sep and name.strip():
-                found[name.strip()] = value
-    return found
-
-
-def _hscript_quoted(value: str) -> str:
-    """Quote a value for `set -g` so hscript does not expand it."""
-
-    if "'" not in value:
-        return f"'{value}'"
-    # Double quotes expand $ and backticks; a backslash is kept as written.
-    for char in ('"', '$', '`'):
-        value = value.replace(char, '\\' + char)
-    return f'"{value}"'
-
-
-def _restore_globals(before: dict[str, str]) -> tuple[dict[str, dict], dict[str, str]]:
-    """Put back the scene globals a merge changed; name the ones it added."""
-
-    after = _hip_globals()
-    restored: dict[str, dict] = {}
-    for name, value in before.items():
-        if name in _MERGE_GLOBALS_KEPT or name.startswith('_HIP_'):
-            continue
-        if after.get(name, value) != value:
-            with contextlib.suppress(Exception):
-                hou.hscript(f'set -g {name} = {_hscript_quoted(value)}')
-            restored[name] = {'from_file': after[name], 'kept': value}
-    added = {
-        name: value
-        for name, value in after.items()
-        if name not in before
-        and name not in _MERGE_GLOBALS_KEPT
-        and not name.startswith('_HIP_')
-    }
-    return restored, added
-
-
-def _merge(
-    file_path: str, node_paths: list | None, overwrite_on_conflict: bool
-) -> dict:
-    if node_paths is not None and not isinstance(node_paths, (list, tuple)):
-        raise ValueError('node_paths must be a list of absolute node paths.')
-    requested = [str(p).rstrip('/') for p in (node_paths or [])]
-    for path in requested:
-        if not path.startswith('/'):
-            raise ValueError(
-                f"node_paths must be absolute (got {path!r}); e.g. '/obj/{path}'."
-            )
-        pattern_chars = sorted(set(path) & _PATTERN_CHARS)
-        if pattern_chars:
-            raise ValueError(
-                f'node_paths are node paths, not patterns: {path!r} contains '
-                f'{pattern_chars}. List each node, or omit node_paths to merge '
-                f'everything.'
-            )
-    if node_paths is not None and not requested:
-        return {
-            'success': True,
-            'file_path': file_path,
-            'merged_nodes': [],
-            'merged_count': 0,
-            'message': (
-                'node_paths is empty: nothing was merged. Omit it to merge everything.'
-            ),
-        }
-
-    # A container named alone comes without its children, so each path is
-    # sent with its contents.
-    pattern = ' '.join(f'{path} {path}/*' for path in requested) if requested else '*'
-    if requested:
-        watched = sorted({path.rpartition('/')[0] for path in requested})
-    else:
-        watched = [context.path() for context in hou.node('/').children()]
-    colliding: set = set()
-    with contextlib.suppress(Exception):
-        colliding = {
-            node.path()
-            for node in hou.hipFile.collisionNodesIfMerged(
-                file_path, node_pattern=pattern
-            )
-        }
-    before = _children_of(watched)
-    globals_before = _hip_globals()
-    warnings: list[str] = []
-    try:
-        hou.hipFile.merge(
-            file_path,
-            node_pattern=pattern,
-            overwrite_on_conflict=bool(overwrite_on_conflict),
-            ignore_load_warnings=False,
-        )
-    except hou.LoadWarning as warning:
-        warnings = _warning_lines(warning)
-    finally:
-        # A merge that fails halfway has already run the file's `set -g`.
-        globals_restored, globals_added = _restore_globals(globals_before)
-    after = _children_of(watched)
-    arrived = set()
-    for network, paths in after.items():
-        arrived |= paths - before.get(network, set())
-
-    # Attribute what arrived to what was asked for. A colliding node was
-    # either overwritten in place or renumbered (null1 -> null2) next to it.
-    subjects = requested or sorted(
-        path for path in colliding if path.rpartition('/')[0] in before
-    )
-    claimed: set = set()
-    overwritten: list[str] = []
-    conflicts: list[dict] = []
-    missing: list[str] = []
-    for path in subjects:
-        parent, _, name = path.rpartition('/')
-        if path in colliding and overwrite_on_conflict:
-            overwritten.append(path)
-            conflicts.append({'requested': path, 'outcome': 'overwritten in place'})
-            continue
-        if path in colliding:
-            candidates = sorted(
-                (
-                    p
-                    for p in arrived - claimed
-                    if p.rpartition('/')[0] == parent
-                    and p not in requested
-                    and _base_name(p.rpartition('/')[2]) == _base_name(name)
-                ),
-                key=lambda p: (len(p), p),
-            )
-            if candidates:
-                claimed.add(candidates[0])
-                conflicts.append(
-                    {
-                        'requested': path,
-                        'outcome': 'merged under a new name',
-                        'merged_as': candidates[0],
-                    }
-                )
-                continue
-        elif path in arrived:
-            claimed.add(path)
-            continue
-        if requested:
-            missing.append(path)
-
-    merged = sorted(arrived | set(overwritten))
-    descendants = 0
-    for path in merged:
-        with contextlib.suppress(Exception):
-            descendants += len(hou.node(path).allSubChildren())
-    result = {
-        # Asking for nodes and getting none is a failed merge, whatever the
-        # reason (not in the file, a missing parent, an unreadable file).
-        'success': bool(merged) or (not requested and not warnings),
-        'file_path': file_path,
-        'node_pattern': pattern,
-        'merged_nodes': merged,
-        'merged_count': len(merged),
-        'merged_descendant_count': descendants,
-        'conflicts': conflicts,
-        'not_found_in_file': missing,
-        'warnings': warnings,
-        'hip_file': hou.hipFile.path(),
-        'has_unsaved_changes': hou.hipFile.hasUnsavedChanges(),
-        'message': (
-            f'Merged {len(merged)} node(s) from {file_path} into the current scene'
-            + (f' with {len(warnings)} load warning(s).' if warnings else '.')
-        ),
-    }
-    if missing:
-        result['note'] = (
-            'Paths in not_found_in_file brought nothing: check they are absolute '
-            'paths that exist in the file, under a parent that exists in this scene.'
-        )
-    if globals_restored:
-        result['globals_restored'] = globals_restored
-        result['globals_note'] = (
-            "The file's `set -g` lines changed these scene variables; they were put "
-            "back. The file's values are in from_file."
-        )
-    if globals_added:
-        result['globals_added'] = globals_added
-    return result
 
 
 @register_command(PluginCommand.SCENE_LOAD_SCENE)
@@ -626,14 +401,6 @@ def get_context_info(context: str) -> dict:
     }
 
 
-def _undo_available() -> None:
-    if not hou.undos.areEnabled():
-        raise RuntimeError(
-            'undo is not available in this session (hython and batch mode keep no '
-            'undo history). Undo needs a graphical Houdini.'
-        )
-
-
 @register_command(PluginCommand.SCENE_UNDO)
 def undo(steps: int = 1) -> dict:
     """Undo the most recent change(s)."""
@@ -740,6 +507,239 @@ def get_node(path: str = '/') -> dict[str, Any]:
         'is_bypassed': _flag(node, 'isBypassed'),
         'is_locked': _flag(node, 'isLocked'),
     }
+
+
+def _split_sequence_extension(file_path: str) -> tuple[str, str]:
+    """Split a path so a frame number can go where Houdini expects it."""
+
+    lowered = file_path.lower()
+    for compound in _COMPOUND_EXTENSIONS:
+        if lowered.endswith(compound):
+            return file_path[: -len(compound)], file_path[-len(compound) :]
+    return os.path.splitext(file_path)
+
+
+def _warning_lines(warning: Exception) -> list[str]:
+    return [line.strip() for line in str(warning).splitlines() if line.strip()]
+
+
+def _children_of(paths: Any) -> dict[str, set]:
+    """Child paths of each watched network, keyed by its path."""
+
+    snapshot: dict[str, set] = {}
+    for path in paths:
+        node = hou.node(path)
+        snapshot[path] = set()
+        if node is not None:
+            with contextlib.suppress(Exception):
+                snapshot[path] = {child.path() for child in node.children()}
+    return snapshot
+
+
+def _base_name(name: str) -> str:
+    """null12 -> null: the stem Houdini renumbers when a name is taken."""
+
+    return name.rstrip('0123456789')
+
+
+def _hip_globals() -> dict[str, str]:
+    """The scene's `set -g` variables, by name."""
+
+    found: dict[str, str] = {}
+    with contextlib.suppress(Exception):
+        text = hou.hscript('set -g')[0]
+        for line in text.splitlines():
+            name, sep, value = line.partition('\t= ')
+            if sep and name.strip():
+                found[name.strip()] = value
+    return found
+
+
+def _hscript_quoted(value: str) -> str:
+    """Quote a value for `set -g` so hscript does not expand it."""
+
+    if "'" not in value:
+        return f"'{value}'"
+    # Double quotes expand $ and backticks; a backslash is kept as written.
+    for char in ('"', '$', '`'):
+        value = value.replace(char, '\\' + char)
+    return f'"{value}"'
+
+
+def _restore_globals(before: dict[str, str]) -> tuple[dict[str, dict], dict[str, str]]:
+    """Put back the scene globals a merge changed; name the ones it added."""
+
+    after = _hip_globals()
+    restored: dict[str, dict] = {}
+    for name, value in before.items():
+        if name in _MERGE_GLOBALS_KEPT or name.startswith('_HIP_'):
+            continue
+        if after.get(name, value) != value:
+            with contextlib.suppress(Exception):
+                hou.hscript(f'set -g {name} = {_hscript_quoted(value)}')
+            restored[name] = {'from_file': after[name], 'kept': value}
+    added = {
+        name: value
+        for name, value in after.items()
+        if name not in before
+        and name not in _MERGE_GLOBALS_KEPT
+        and not name.startswith('_HIP_')
+    }
+    return restored, added
+
+
+def _merge(
+    file_path: str, node_paths: list | None, overwrite_on_conflict: bool
+) -> dict:
+    if node_paths is not None and not isinstance(node_paths, (list, tuple)):
+        raise ValueError('node_paths must be a list of absolute node paths.')
+    requested = [str(p).rstrip('/') for p in (node_paths or [])]
+    for path in requested:
+        if not path.startswith('/'):
+            raise ValueError(
+                f"node_paths must be absolute (got {path!r}); e.g. '/obj/{path}'."
+            )
+        pattern_chars = sorted(set(path) & _PATTERN_CHARS)
+        if pattern_chars:
+            raise ValueError(
+                f'node_paths are node paths, not patterns: {path!r} contains '
+                f'{pattern_chars}. List each node, or omit node_paths to merge '
+                f'everything.'
+            )
+    if node_paths is not None and not requested:
+        return {
+            'success': True,
+            'file_path': file_path,
+            'merged_nodes': [],
+            'merged_count': 0,
+            'message': (
+                'node_paths is empty: nothing was merged. Omit it to merge everything.'
+            ),
+        }
+
+    # A container named alone comes without its children, so each path is
+    # sent with its contents.
+    pattern = ' '.join(f'{path} {path}/*' for path in requested) if requested else '*'
+    if requested:
+        watched = sorted({path.rpartition('/')[0] for path in requested})
+    else:
+        watched = [context.path() for context in hou.node('/').children()]
+    colliding: set = set()
+    with contextlib.suppress(Exception):
+        colliding = {
+            node.path()
+            for node in hou.hipFile.collisionNodesIfMerged(
+                file_path, node_pattern=pattern
+            )
+        }
+    before = _children_of(watched)
+    globals_before = _hip_globals()
+    warnings: list[str] = []
+    try:
+        hou.hipFile.merge(
+            file_path,
+            node_pattern=pattern,
+            overwrite_on_conflict=bool(overwrite_on_conflict),
+            ignore_load_warnings=False,
+        )
+    except hou.LoadWarning as warning:
+        warnings = _warning_lines(warning)
+    finally:
+        # A merge that fails halfway has already run the file's `set -g`.
+        globals_restored, globals_added = _restore_globals(globals_before)
+    after = _children_of(watched)
+    arrived = set()
+    for network, paths in after.items():
+        arrived |= paths - before.get(network, set())
+
+    # Attribute what arrived to what was asked for. A colliding node was
+    # either overwritten in place or renumbered (null1 -> null2) next to it.
+    subjects = requested or sorted(
+        path for path in colliding if path.rpartition('/')[0] in before
+    )
+    claimed: set = set()
+    overwritten: list[str] = []
+    conflicts: list[dict] = []
+    missing: list[str] = []
+    for path in subjects:
+        parent, _, name = path.rpartition('/')
+        if path in colliding and overwrite_on_conflict:
+            overwritten.append(path)
+            conflicts.append({'requested': path, 'outcome': 'overwritten in place'})
+            continue
+        if path in colliding:
+            candidates = sorted(
+                (
+                    p
+                    for p in arrived - claimed
+                    if p.rpartition('/')[0] == parent
+                    and p not in requested
+                    and _base_name(p.rpartition('/')[2]) == _base_name(name)
+                ),
+                key=lambda p: (len(p), p),
+            )
+            if candidates:
+                claimed.add(candidates[0])
+                conflicts.append(
+                    {
+                        'requested': path,
+                        'outcome': 'merged under a new name',
+                        'merged_as': candidates[0],
+                    }
+                )
+                continue
+        elif path in arrived:
+            claimed.add(path)
+            continue
+        if requested:
+            missing.append(path)
+
+    merged = sorted(arrived | set(overwritten))
+    descendants = 0
+    for path in merged:
+        with contextlib.suppress(Exception):
+            descendants += len(hou.node(path).allSubChildren())
+    result = {
+        # Asking for nodes and getting none is a failed merge, whatever the
+        # reason (not in the file, a missing parent, an unreadable file).
+        'success': bool(merged) or (not requested and not warnings),
+        'file_path': file_path,
+        'node_pattern': pattern,
+        'merged_nodes': merged,
+        'merged_count': len(merged),
+        'merged_descendant_count': descendants,
+        'conflicts': conflicts,
+        'not_found_in_file': missing,
+        'warnings': warnings,
+        'hip_file': hou.hipFile.path(),
+        'has_unsaved_changes': hou.hipFile.hasUnsavedChanges(),
+        'message': (
+            f'Merged {len(merged)} node(s) from {file_path} into the current scene'
+            + (f' with {len(warnings)} load warning(s).' if warnings else '.')
+        ),
+    }
+    if missing:
+        result['note'] = (
+            'Paths in not_found_in_file brought nothing: check they are absolute '
+            'paths that exist in the file, under a parent that exists in this scene.'
+        )
+    if globals_restored:
+        result['globals_restored'] = globals_restored
+        result['globals_note'] = (
+            "The file's `set -g` lines changed these scene variables; they were put "
+            "back. The file's values are in from_file."
+        )
+    if globals_added:
+        result['globals_added'] = globals_added
+    return result
+
+
+def _undo_available() -> None:
+    if not hou.undos.areEnabled():
+        raise RuntimeError(
+            'undo is not available in this session (hython and batch mode keep no '
+            'undo history). Undo needs a graphical Houdini.'
+        )
 
 
 def _node_summary(node: hou.Node) -> dict[str, Any]:

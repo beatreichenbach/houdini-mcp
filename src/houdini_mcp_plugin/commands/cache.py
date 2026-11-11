@@ -16,45 +16,6 @@ from ..host import register_command
 from ..runtime import callbacks as callback_helpers
 from ..runtime import outputs as output_helpers
 
-
-def _menu_index_by_label(parm: hou.Parm, label_substring: str) -> int | None:
-    """Find a menu parameter's index whose label contains *label_substring*."""
-
-    template = parm.parmTemplate()
-    labels = list(template.menuLabels())
-    items = list(template.menuItems())
-    target = label_substring.lower()
-    for idx, label in enumerate(labels):
-        if target in label.lower():
-            return int(items[idx]) if items[idx].isdigit() else idx
-    return None
-
-
-def _get_node(node_path: str) -> hou.Node:
-    """Resolve a node path and raise a clear error if it does not exist."""
-
-    node = hou.node(node_path)
-    if node is None:
-        raise ValueError(f'Node not found: {node_path}')
-    return node
-
-
-def _is_cache_node(node: hou.Node) -> bool:
-    """Check if a node is a cache-type node (filecache, the sim I/O nodes, ROPs)."""
-
-    # Versions stripped: rbdio and vellumio are ::2.0 in 22.0, and the RBD and
-    # Vellum setups cache with them rather than a filecache.
-    base = node.type().name().split('::')[0]
-    return base in (
-        'filecache',
-        'rbdio',
-        'vellumio',
-        'rop_geometry',
-        'rop_alembic',
-        'file',
-    )
-
-
 # The write path first. On File Cache 2.0 `sopoutput` is where frames go and
 # `file` is the load path, which in the default "constructed" mode is an
 # unversioned pattern no frame is ever written to; reading it reported an
@@ -62,80 +23,8 @@ def _is_cache_node(node: hou.Node) -> bool:
 _OUTPUT_PARMS = ('sopoutput', 'file', 'filename', 'filepath')
 
 
-def _frame_glob(node: hou.Node) -> str | None:
-    """A glob for every frame a cache node writes, from evaluated paths."""
-
-    for parm_name in _OUTPUT_PARMS:
-        parm = node.parm(parm_name)
-        if parm is None:
-            continue
-        # Not evalAtFrame(): File Cache's sopoutput is a Python expression
-        # whose chs() calls read the current frame, so evalAtFrame(2) returned
-        # the frame-1 path. Move the playbar for real, and put it back.
-        try:
-            with output_helpers.at_frame(1):
-                at_1 = parm.eval()
-            with output_helpers.at_frame(2):
-                at_2 = parm.eval()
-        except Exception:
-            continue
-        if not at_1:
-            continue
-        if at_1 == at_2:
-            return at_1
-        i = 0
-        while i < min(len(at_1), len(at_2)) and at_1[i] == at_2[i]:
-            i += 1
-        j = 0
-        while j < min(len(at_1), len(at_2)) - i and at_1[-1 - j] == at_2[-1 - j]:
-            j += 1
-        # Widen the changed span over the digit run on either side.
-        while i > 0 and at_1[i - 1].isdigit():
-            i -= 1
-        while j > 0 and at_1[-j].isdigit():
-            j -= 1
-        return at_1[:i] + '*' + (at_1[-j:] if j else '')
-    return None
-
-
-def _get_file_pattern(node: hou.Node) -> str | None:
-    """Extract the file path pattern from a cache node."""
-
-    for parm_name in _OUTPUT_PARMS:
-        parm = node.parm(parm_name)
-        if parm is not None:
-            try:
-                return parm.eval()
-            except Exception:
-                return parm.rawValue()
-    return None
-
-
-def _get_file_pattern_raw(node: hou.Node) -> str | None:
-    """Extract the raw (unexpanded) file path pattern from a cache node."""
-
-    for parm_name in _OUTPUT_PARMS:
-        parm = node.parm(parm_name)
-        if parm is not None:
-            return parm.rawValue()
-    return None
-
-
-def _expand_frame_pattern(pattern: str) -> str:
-    """Convert a Houdini frame pattern ($F4, $F, etc.) to a glob pattern."""
-
-    import re
-
-    # Replace $F4, $F3, $F with wildcard
-    result = re.sub(r'\$F\d*', '*', pattern)
-    # Replace `$HIP`, `$JOB` etc. with their expanded values
-    with contextlib.suppress(Exception):
-        result = hou.text.expandString(result)
-    return result
-
-
 @register_command(PluginCommand.CACHE_LIST_CACHES)
-def _list_caches(*, root_path: str = '/', **_: Any) -> dict[str, Any]:
+def list_caches(*, root_path: str = '/', **_: Any) -> dict[str, Any]:
     """Recursively find all cache-type nodes under the given root."""
 
     root = _get_node(root_path)
@@ -192,7 +81,7 @@ def _list_caches(*, root_path: str = '/', **_: Any) -> dict[str, Any]:
 
 
 @register_command(PluginCommand.CACHE_GET_CACHE_STATUS)
-def _get_cache_status(*, node_path: str, **_: Any) -> dict[str, Any]:
+def get_cache_status(*, node_path: str, **_: Any) -> dict[str, Any]:
     """Get the status of a specific cache node."""
 
     node = _get_node(node_path)
@@ -281,7 +170,7 @@ def _get_cache_status(*, node_path: str, **_: Any) -> dict[str, Any]:
 
 
 @register_command(PluginCommand.CACHE_CLEAR_CACHE)
-def _clear_cache(
+def clear_cache(
     *,
     node_path: str,
     frame_range: list[int] | None = None,
@@ -357,19 +246,8 @@ def _clear_cache(
     return result
 
 
-def _set_frame_parm(node: hou.Node, name: str, value: float) -> None:
-    """Set f1/f2, removing the $FSTART/$FEND keyframe a fresh cache node ships with."""
-
-    parm = node.parm(name)
-    if parm is None:
-        return
-    if parm.keyframes():
-        parm.deleteAllKeyframes()
-    parm.set(value)
-
-
 @register_command(PluginCommand.CACHE_WRITE_CACHE)
-def _write_cache(
+def write_cache(
     *,
     node_path: str,
     frame_range: list[int] | None = None,
@@ -502,3 +380,124 @@ def _write_cache(
         ),
         **verdict,
     }
+
+
+def _menu_index_by_label(parm: hou.Parm, label_substring: str) -> int | None:
+    """Find a menu parameter's index whose label contains *label_substring*."""
+
+    template = parm.parmTemplate()
+    labels = list(template.menuLabels())
+    items = list(template.menuItems())
+    target = label_substring.lower()
+    for idx, label in enumerate(labels):
+        if target in label.lower():
+            return int(items[idx]) if items[idx].isdigit() else idx
+    return None
+
+
+def _get_node(node_path: str) -> hou.Node:
+    """Resolve a node path and raise a clear error if it does not exist."""
+
+    node = hou.node(node_path)
+    if node is None:
+        raise ValueError(f'Node not found: {node_path}')
+    return node
+
+
+def _is_cache_node(node: hou.Node) -> bool:
+    """Check if a node is a cache-type node (filecache, the sim I/O nodes, ROPs)."""
+
+    # Versions stripped: rbdio and vellumio are ::2.0 in 22.0, and the RBD and
+    # Vellum setups cache with them rather than a filecache.
+    base = node.type().name().split('::')[0]
+    return base in (
+        'filecache',
+        'rbdio',
+        'vellumio',
+        'rop_geometry',
+        'rop_alembic',
+        'file',
+    )
+
+
+def _frame_glob(node: hou.Node) -> str | None:
+    """A glob for every frame a cache node writes, from evaluated paths."""
+
+    for parm_name in _OUTPUT_PARMS:
+        parm = node.parm(parm_name)
+        if parm is None:
+            continue
+        # Not evalAtFrame(): File Cache's sopoutput is a Python expression
+        # whose chs() calls read the current frame, so evalAtFrame(2) returned
+        # the frame-1 path. Move the playbar for real, and put it back.
+        try:
+            with output_helpers.at_frame(1):
+                at_1 = parm.eval()
+            with output_helpers.at_frame(2):
+                at_2 = parm.eval()
+        except Exception:
+            continue
+        if not at_1:
+            continue
+        if at_1 == at_2:
+            return at_1
+        i = 0
+        while i < min(len(at_1), len(at_2)) and at_1[i] == at_2[i]:
+            i += 1
+        j = 0
+        while j < min(len(at_1), len(at_2)) - i and at_1[-1 - j] == at_2[-1 - j]:
+            j += 1
+        # Widen the changed span over the digit run on either side.
+        while i > 0 and at_1[i - 1].isdigit():
+            i -= 1
+        while j > 0 and at_1[-j].isdigit():
+            j -= 1
+        return at_1[:i] + '*' + (at_1[-j:] if j else '')
+    return None
+
+
+def _get_file_pattern(node: hou.Node) -> str | None:
+    """Extract the file path pattern from a cache node."""
+
+    for parm_name in _OUTPUT_PARMS:
+        parm = node.parm(parm_name)
+        if parm is not None:
+            try:
+                return parm.eval()
+            except Exception:
+                return parm.rawValue()
+    return None
+
+
+def _get_file_pattern_raw(node: hou.Node) -> str | None:
+    """Extract the raw (unexpanded) file path pattern from a cache node."""
+
+    for parm_name in _OUTPUT_PARMS:
+        parm = node.parm(parm_name)
+        if parm is not None:
+            return parm.rawValue()
+    return None
+
+
+def _expand_frame_pattern(pattern: str) -> str:
+    """Convert a Houdini frame pattern ($F4, $F, etc.) to a glob pattern."""
+
+    import re
+
+    # Replace $F4, $F3, $F with wildcard
+    result = re.sub(r'\$F\d*', '*', pattern)
+    # Replace `$HIP`, `$JOB` etc. with their expanded values
+    with contextlib.suppress(Exception):
+        result = hou.text.expandString(result)
+    return result
+
+
+def _set_frame_parm(node: hou.Node, name: str, value: float) -> None:
+    """Set f1/f2, removing the $FSTART/$FEND keyframe a fresh cache node ships with."""
+
+    parm = node.parm(name)
+    if parm is None:
+        return
+    if parm.keyframes():
+        parm.deleteAllKeyframes()
+    parm.set(value)

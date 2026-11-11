@@ -24,42 +24,54 @@ from .viewport import _no_mplay
 logger = logging.getLogger(__name__)
 
 
-def _find_flipbook_output(output_path: str, frame: float) -> str:
-    """Find the actual output file after flipbook, handling frame number insertion."""
-
-    if os.path.isfile(output_path):
-        return output_path
-
-    # Try common frame-number patterns
-    base, ext = os.path.splitext(output_path)
-    frame_int = int(frame)
-    candidates = [
-        f'{base}.{frame_int:04d}{ext}',
-        f'{base}.{frame_int:03d}{ext}',
-        f'{base}.{frame_int}{ext}',
-        f'{base}_{frame_int:04d}{ext}',
-    ]
-    for candidate in candidates:
-        if os.path.isfile(candidate):
-            # Rename to the originally requested path
-            try:
-                os.rename(candidate, output_path)
-                return output_path
-            except OSError:
-                return candidate
-
-    return output_path
+# Where ROP-style nodes keep their frame range.
+_RANGE_PARMS = ('f1', 'f2', 'f3')
 
 
-def _size_flipbook(settings: Any, resolution: list | None) -> None:
-    """Write *resolution* if one is asked for, else the viewport as it is."""
+# node_path -> the background render launched for it. One per node: a second
+# launch on the same node replaces the record (the earlier process keeps going).
+_BACKGROUND_RENDERS: dict[str, dict[str, Any]] = {}
 
-    if resolution is not None:
-        settings.useResolution(True)
-        settings.resolution(tuple(resolution))
+_BACKGROUND_SCRIPT = """
+import sys, hou
+hip, path, has_range, start, end, inc = sys.argv[1:7]
+hou.hipFile.load(hip, suppress_save_prompt=True, ignore_load_warnings=True)
+node = hou.node(path)
+if node is None:
+    raise SystemExit("node not found after load: " + path)
+if hasattr(node, "render"):
+    if has_range == "1":
+        node.render(
+            frame_range=(float(start), float(end), float(inc)),
+            verbose=True,
+            output_progress=True,
+        )
     else:
-        settings.useResolution(False)
-    settings.outputZoom(100)
+        node.render(verbose=True, output_progress=True)
+else:
+    # A button-pressed node (File Cache) takes its range from trange/f1..f3,
+    # which this branch never set: the whole playbar range was written.
+    if has_range == "1":
+        if node.parm("trange") is not None:
+            node.parm("trange").set(1)
+        for name, value in zip(("f1", "f2", "f3"), (start, end, inc)):
+            parm = node.parm(name)
+            if parm is not None:
+                if parm.keyframes():
+                    parm.deleteAllKeyframes()
+                parm.set(float(value))
+    node.parm("execute").pressButton()
+errors = list(node.errors())
+if errors:
+    sys.stderr.write("\\n".join(errors) + "\\n")
+    raise SystemExit(1)
+"""
+
+
+#: "Wait for Render to Complete" on a Karma LOP / usdrender ROP. Off on a fresh
+#: Karma LOP (22.0.429): execute returns while husk is still rendering, and a
+#: foreground render is judged before its file exists.
+_FOREGROUND_PARM = 'soho_foreground'
 
 
 @register_command(PluginCommand.RENDERING_RENDER_VIEWPORT)
@@ -337,7 +349,7 @@ def set_render_settings(node_path: str, settings: dict) -> dict:
     """Set render parameters on a ROP node."""
 
     node, _, _ = _renderable(node_path)
-    from .parameters import _set_parameters
+    from .parameters import set_parameters
 
     # A frame range on a ROP is $FSTART/$FEND keyframes: a raw set() kept
     # them, the range did not change, and this still listed it as applied.
@@ -347,7 +359,7 @@ def set_render_settings(node_path: str, settings: dict) -> dict:
             parm.deleteAllKeyframes()
     # The same writer as set_parameters, which reads back and names any
     # expression that kept a value from taking.
-    reply = _set_parameters(node_path=node.path(), params=settings)
+    reply = set_parameters(node_path=node.path(), params=settings)
     errors = {entry['parm_name']: entry['error'] for entry in reply['errors']}
     result = {
         'success': not errors and not reply.get('expressions_kept'),
@@ -450,266 +462,6 @@ def create_render_node(
     }
 
 
-# Where ROP-style nodes keep their frame range.
-_RANGE_PARMS = ('f1', 'f2', 'f3')
-
-
-def _apply_frame_range_parms(node: hou.Node, frame_range: list) -> None:
-    """Set trange/f1..f3 on a node whose execution is a button press."""
-
-    trange = node.parm('trange')
-    if trange is not None:
-        # 1 is "Render Frame Range" on every stock ROP-style node.
-        trange.set(1)
-    values = [float(frame_range[0]), float(frame_range[1])]
-    values.append(float(frame_range[2]) if len(frame_range) > 2 else 1.0)
-    for name, value in zip(_RANGE_PARMS, values, strict=False):
-        parm = node.parm(name)
-        if parm is not None:
-            # A File Cache's f1/f2 are $FSTART/$FEND keyframes, and set() under
-            # an expression keeps the expression: [10, 20] rendered the whole
-            # playbar range. Same fix as cache_handlers._set_frame_parm.
-            if parm.keyframes():
-                parm.deleteAllKeyframes()
-            parm.set(value)
-
-
-def _renderable(node_path: str) -> tuple[hou.Node, str, bool]:
-    """The node, its category, and whether it has render() (else an execute button)."""
-
-    node = hou.node(node_path)
-    if node is None:
-        raise ValueError(f'Node not found: {node_path}')
-    category = node.type().category().name()
-    can_render = hasattr(node, 'render')
-    if not can_render and node.parm('execute') is None:
-        buttons = [
-            p.name()
-            for p in node.parms()
-            if p.parmTemplate().type() == hou.parmTemplateType.Button
-        ]
-        raise ValueError(
-            f"{node_path} ({category}) has neither render() nor an 'execute' "
-            f'button, so there is nothing to trigger.'
-            + (f' Buttons it does have: {buttons[:6]}' if buttons else '')
-        )
-    return node, category, can_render
-
-
-# node_path -> the background render launched for it. One per node: a second
-# launch on the same node replaces the record (the earlier process keeps going).
-_BACKGROUND_RENDERS: dict[str, dict[str, Any]] = {}
-
-_BACKGROUND_SCRIPT = """
-import sys, hou
-hip, path, has_range, start, end, inc = sys.argv[1:7]
-hou.hipFile.load(hip, suppress_save_prompt=True, ignore_load_warnings=True)
-node = hou.node(path)
-if node is None:
-    raise SystemExit("node not found after load: " + path)
-if hasattr(node, "render"):
-    if has_range == "1":
-        node.render(
-            frame_range=(float(start), float(end), float(inc)),
-            verbose=True,
-            output_progress=True,
-        )
-    else:
-        node.render(verbose=True, output_progress=True)
-else:
-    # A button-pressed node (File Cache) takes its range from trange/f1..f3,
-    # which this branch never set: the whole playbar range was written.
-    if has_range == "1":
-        if node.parm("trange") is not None:
-            node.parm("trange").set(1)
-        for name, value in zip(("f1", "f2", "f3"), (start, end, inc)):
-            parm = node.parm(name)
-            if parm is not None:
-                if parm.keyframes():
-                    parm.deleteAllKeyframes()
-                parm.set(float(value))
-    node.parm("execute").pressButton()
-errors = list(node.errors())
-if errors:
-    sys.stderr.write("\\n".join(errors) + "\\n")
-    raise SystemExit(1)
-"""
-
-
-def _launch_background_render(
-    node: hou.Node, frame_range: list | None
-) -> dict[str, Any]:
-    """Render from a fresh hython on the saved hip, like Houdini's own "Render in..."""
-
-    if hou.hipFile.isNewFile():
-        raise ValueError(
-            'save the hip first (save_scene): a background render loads it from disk'
-        )
-    hou.hipFile.save()
-    hfs = hou.getenv('HFS') or ''
-    hython = os.path.join(hfs, 'bin', 'hython.exe' if os.name == 'nt' else 'hython')
-    if not os.path.exists(hython):
-        raise ValueError(
-            f'hython not found at {hython}; cannot render in the background'
-        )
-    fd, log_path = tempfile.mkstemp(prefix='houdini_mcp_render_', suffix='.log')
-    log = os.fdopen(fd, 'w')
-    args = [hython, '-c', _BACKGROUND_SCRIPT, hou.hipFile.path(), node.path()]
-    if frame_range is not None:
-        inc = frame_range[2] if len(frame_range) > 2 else 1
-        args += ['1', str(frame_range[0]), str(frame_range[1]), str(inc)]
-    else:
-        args += ['0', '0', '0', '1']
-    env = dict(os.environ)
-    # Houdini 21 hython segfaults on the bundled OpenFX plugins; harmless elsewhere.
-    env.setdefault('HOUDINI_DISABLE_OPENFX_DEFAULT_PATH', '1')
-    proc = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, env=env)
-    record = {
-        'pid': proc.pid,
-        'proc': proc,
-        'log': log_path,
-        'started': time.time(),
-        'frame_range': frame_range,
-    }
-    _BACKGROUND_RENDERS[node.path()] = record
-    return record
-
-
-def _background_status(node_path: str) -> dict[str, Any] | None:
-    record = _BACKGROUND_RENDERS.get(node_path)
-    if record is None:
-        return None
-    proc = record['proc']
-    code = proc.poll()
-    tail = ''
-    with (
-        contextlib.suppress(OSError),
-        open(record['log'], encoding='utf-8', errors='replace') as fh,
-    ):
-        tail = ''.join(fh.readlines()[-8:])
-    return {
-        'pid': record['pid'],
-        'running': code is None,
-        'exit_code': code,
-        'elapsed_seconds': round(time.time() - record['started'], 1),
-        'frame_range': record['frame_range'],
-        'log': record['log'],
-        'log_tail': tail,
-    }
-
-
-#: "Wait for Render to Complete" on a Karma LOP / usdrender ROP. Off on a fresh
-#: Karma LOP (22.0.429): execute returns while husk is still rendering, and a
-#: foreground render is judged before its file exists.
-_FOREGROUND_PARM = 'soho_foreground'
-
-
-def _override_targets(
-    node: hou.Node, overrides: dict
-) -> list[tuple[str, hou.Parm, Any]]:
-    """(name, parm, value) for every override, all resolved before anything is set."""
-
-    if not isinstance(overrides, dict) or not overrides:
-        raise ValueError('overrides must be a non-empty {parm_name: value} dict.')
-    targets: list[tuple[str, hou.Parm, Any]] = []
-    missing: list[str] = []
-    for name, value in overrides.items():
-        parm = node.parm(name)
-        if parm is not None:
-            targets.append((name, parm, value))
-            continue
-        parm_tuple = node.parmTuple(name)
-        if parm_tuple is None:
-            missing.append(name)
-            continue
-        if not isinstance(value, (list, tuple)) or len(value) != len(parm_tuple):
-            raise ValueError(
-                f"Override '{name}' on {node.path()} has {len(parm_tuple)} components; "
-                f'pass a list of {len(parm_tuple)} values.'
-            )
-        targets.extend(
-            (f'{name}[{i}]', component, v)
-            for i, (component, v) in enumerate(zip(parm_tuple, value, strict=True))
-        )
-    if missing:
-        from .parameters import parm_labels, suggest_parms
-
-        labels = parm_labels(node)
-        hints = {
-            name: close for name in missing if (close := suggest_parms(name, labels))
-        }
-        hint = f' Did you mean: {hints}?' if hints else ''
-        raise ValueError(
-            f'No parameter(s) {missing} on {node.path()} to override; nothing was '
-            f'set.{hint}'
-        )
-    return targets
-
-
-def _snapshot(parm: hou.Parm) -> dict[str, Any]:
-    """What putting *parm* back needs: its keyframes (an expression is one), else..."""
-
-    keys = tuple(parm.keyframes())
-    if keys:
-        return {'keyframes': keys}
-    if parm.parmTemplate().type() == hou.parmTemplateType.String:
-        # "$HIP/render/$F4.exr" comes back as written, not as today's expansion.
-        return {'value': parm.unexpandedString()}
-    return {'value': parm.eval()}
-
-
-def _restore_overrides(
-    applied: list[tuple[str, hou.Parm, dict[str, Any]]],
-) -> tuple[list[str], list[dict[str, str]]]:
-    """Put every overridden parm back, expressions and keyframes included."""
-
-    restored: list[str] = []
-    failed: list[dict[str, str]] = []
-    for name, parm, state in reversed(applied):
-        try:
-            with contextlib.suppress(Exception):
-                parm.deleteAllKeyframes()
-            if 'keyframes' in state:
-                for key in state['keyframes']:
-                    parm.setKeyframe(key)
-            else:
-                parm.set(state['value'])
-            restored.append(name)
-        except Exception as e:  # keep restoring the rest
-            failed.append({'parm': name, 'error': error_helpers.readable_message(e)})
-    return restored, failed
-
-
-def _apply_overrides(
-    targets: list[tuple[str, hou.Parm, Any]],
-    applied: list[tuple[str, hou.Parm, dict[str, Any]]],
-) -> None:
-    """Set each override, adding it to *applied* with what puts it back."""
-
-    for name, parm, value in targets:
-        state = _snapshot(parm)
-        try:
-            if state.get('keyframes'):
-                parm.deleteAllKeyframes()
-            parm.set(value)
-        except (hou.Error, TypeError) as e:
-            # The refused parm is put back quietly: a write refused as locked
-            # refuses the restore just the same, having changed nothing.
-            _restore_overrides([(name, parm, state)])
-            _, failed = _restore_overrides(applied)
-            applied.clear()
-            after = (
-                f' These could not be put back: {failed}.'
-                if failed
-                else ' The overrides set before it were put back.'
-            )
-            raise ValueError(
-                f"Override '{name}' on {parm.node().path()} could not be set: "
-                f'{error_helpers.readable_message(e)}. Nothing was rendered.{after}'
-            ) from e
-        applied.append((name, parm, state))
-
-
 @register_command(PluginCommand.RENDERING_START_RENDER)
 def start_render(
     node_path: str,
@@ -782,74 +534,6 @@ def start_render(
             'render and is off again.'
         )
     return result
-
-
-def _render_in_foreground(
-    node: hou.Node,
-    node_path: str,
-    category: str,
-    can_render: bool,
-    frame_range: list | None,
-) -> dict:
-    """Render *node* in this Houdini and judge what it wrote."""
-
-    execute_parm = node.parm('execute')
-    # Snapshot the outputs so "did this write anything" is answerable afterwards
-    # rather than inferred from a call that did not raise. Evaluated at the first
-    # frame of the range: at the playbar's frame a render of 41-43 read as
-    # "nothing was written".
-    first_frame = float(frame_range[0]) if frame_range else None
-    with output_helpers.at_frame(first_frame):
-        before = output_helpers.reported_outputs(node)
-
-    method = None
-    try:
-        if can_render:
-            method = 'render()'
-            if frame_range is not None:
-                start = float(frame_range[0])
-                end = float(frame_range[1])
-                inc = float(frame_range[2]) if len(frame_range) > 2 else 1.0
-                # RopNode.render takes the increment as the third element of
-                # frame_range; there is no frame_increment keyword.
-                node.render(frame_range=(start, end, inc), output_progress=True)
-            else:
-                node.render(output_progress=True)
-        else:
-            # A File Cache SOP has no render(); its Save to Disk is a button, and
-            # its range lives on trange/f rather than in a render() argument.
-            method = 'execute button'
-            if frame_range is not None:
-                _apply_frame_range_parms(node, frame_range)
-            # Save to Disk is a Python callback: pressButton() would answer
-            # its exception with a modal window instead of raising.
-            callback_helpers.press(execute_parm)
-    except (hou.OperationFailed, callback_helpers.CallbackError) as e:
-        with output_helpers.at_frame(first_frame):
-            verdict = output_helpers.failure_verdict(node, before, e)
-        return {
-            'node_path': node_path,
-            'category': category,
-            'method': method,
-            **verdict,
-        }
-
-    # render() returning without raising is NOT evidence that a render happened.
-    # A LOP usdrender_rop shells out to husk, and when husk exits non-zero -- no
-    # license, bad scene, missing camera -- the ROP records the error and render()
-    # still returns normally. Reporting that as success is how a caller ends up
-    # verifying a screenshot of an image that was never written, so read the
-    # node's own errors and whether the files moved.
-    with output_helpers.at_frame(first_frame):
-        verdict = output_helpers.write_verdict(node, before, action='Render')
-    return {
-        'node_path': node_path,
-        'category': category,
-        'method': method,
-        'background': False,
-        'frame_range': frame_range,
-        **verdict,
-    }
 
 
 @register_command(PluginCommand.RENDERING_RENDER_NODE_NETWORK)
@@ -976,4 +660,320 @@ def get_render_progress(node_path: str) -> dict:
         'background': background,
         'done': (background is not None and not background['running'])
         or (background is None and not is_cooking),
+    }
+
+
+def _find_flipbook_output(output_path: str, frame: float) -> str:
+    """Find the actual output file after flipbook, handling frame number insertion."""
+
+    if os.path.isfile(output_path):
+        return output_path
+
+    # Try common frame-number patterns
+    base, ext = os.path.splitext(output_path)
+    frame_int = int(frame)
+    candidates = [
+        f'{base}.{frame_int:04d}{ext}',
+        f'{base}.{frame_int:03d}{ext}',
+        f'{base}.{frame_int}{ext}',
+        f'{base}_{frame_int:04d}{ext}',
+    ]
+    for candidate in candidates:
+        if os.path.isfile(candidate):
+            # Rename to the originally requested path
+            try:
+                os.rename(candidate, output_path)
+                return output_path
+            except OSError:
+                return candidate
+
+    return output_path
+
+
+def _size_flipbook(settings: Any, resolution: list | None) -> None:
+    """Write *resolution* if one is asked for, else the viewport as it is."""
+
+    if resolution is not None:
+        settings.useResolution(True)
+        settings.resolution(tuple(resolution))
+    else:
+        settings.useResolution(False)
+    settings.outputZoom(100)
+
+
+def _apply_frame_range_parms(node: hou.Node, frame_range: list) -> None:
+    """Set trange/f1..f3 on a node whose execution is a button press."""
+
+    trange = node.parm('trange')
+    if trange is not None:
+        # 1 is "Render Frame Range" on every stock ROP-style node.
+        trange.set(1)
+    values = [float(frame_range[0]), float(frame_range[1])]
+    values.append(float(frame_range[2]) if len(frame_range) > 2 else 1.0)
+    for name, value in zip(_RANGE_PARMS, values, strict=False):
+        parm = node.parm(name)
+        if parm is not None:
+            # A File Cache's f1/f2 are $FSTART/$FEND keyframes, and set() under
+            # an expression keeps the expression: [10, 20] rendered the whole
+            # playbar range. Same fix as cache_handlers._set_frame_parm.
+            if parm.keyframes():
+                parm.deleteAllKeyframes()
+            parm.set(value)
+
+
+def _renderable(node_path: str) -> tuple[hou.Node, str, bool]:
+    """The node, its category, and whether it has render() (else an execute button)."""
+
+    node = hou.node(node_path)
+    if node is None:
+        raise ValueError(f'Node not found: {node_path}')
+    category = node.type().category().name()
+    can_render = hasattr(node, 'render')
+    if not can_render and node.parm('execute') is None:
+        buttons = [
+            p.name()
+            for p in node.parms()
+            if p.parmTemplate().type() == hou.parmTemplateType.Button
+        ]
+        raise ValueError(
+            f"{node_path} ({category}) has neither render() nor an 'execute' "
+            f'button, so there is nothing to trigger.'
+            + (f' Buttons it does have: {buttons[:6]}' if buttons else '')
+        )
+    return node, category, can_render
+
+
+def _launch_background_render(
+    node: hou.Node, frame_range: list | None
+) -> dict[str, Any]:
+    """Render from a fresh hython on the saved hip, like Houdini's own "Render in..."""
+
+    if hou.hipFile.isNewFile():
+        raise ValueError(
+            'save the hip first (save_scene): a background render loads it from disk'
+        )
+    hou.hipFile.save()
+    hfs = hou.getenv('HFS') or ''
+    hython = os.path.join(hfs, 'bin', 'hython.exe' if os.name == 'nt' else 'hython')
+    if not os.path.exists(hython):
+        raise ValueError(
+            f'hython not found at {hython}; cannot render in the background'
+        )
+    fd, log_path = tempfile.mkstemp(prefix='houdini_mcp_render_', suffix='.log')
+    log = os.fdopen(fd, 'w')
+    args = [hython, '-c', _BACKGROUND_SCRIPT, hou.hipFile.path(), node.path()]
+    if frame_range is not None:
+        inc = frame_range[2] if len(frame_range) > 2 else 1
+        args += ['1', str(frame_range[0]), str(frame_range[1]), str(inc)]
+    else:
+        args += ['0', '0', '0', '1']
+    env = dict(os.environ)
+    # Houdini 21 hython segfaults on the bundled OpenFX plugins; harmless elsewhere.
+    env.setdefault('HOUDINI_DISABLE_OPENFX_DEFAULT_PATH', '1')
+    proc = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, env=env)
+    record = {
+        'pid': proc.pid,
+        'proc': proc,
+        'log': log_path,
+        'started': time.time(),
+        'frame_range': frame_range,
+    }
+    _BACKGROUND_RENDERS[node.path()] = record
+    return record
+
+
+def _background_status(node_path: str) -> dict[str, Any] | None:
+    record = _BACKGROUND_RENDERS.get(node_path)
+    if record is None:
+        return None
+    proc = record['proc']
+    code = proc.poll()
+    tail = ''
+    with (
+        contextlib.suppress(OSError),
+        open(record['log'], encoding='utf-8', errors='replace') as fh,
+    ):
+        tail = ''.join(fh.readlines()[-8:])
+    return {
+        'pid': record['pid'],
+        'running': code is None,
+        'exit_code': code,
+        'elapsed_seconds': round(time.time() - record['started'], 1),
+        'frame_range': record['frame_range'],
+        'log': record['log'],
+        'log_tail': tail,
+    }
+
+
+def _override_targets(
+    node: hou.Node, overrides: dict
+) -> list[tuple[str, hou.Parm, Any]]:
+    """(name, parm, value) for every override, all resolved before anything is set."""
+
+    if not isinstance(overrides, dict) or not overrides:
+        raise ValueError('overrides must be a non-empty {parm_name: value} dict.')
+    targets: list[tuple[str, hou.Parm, Any]] = []
+    missing: list[str] = []
+    for name, value in overrides.items():
+        parm = node.parm(name)
+        if parm is not None:
+            targets.append((name, parm, value))
+            continue
+        parm_tuple = node.parmTuple(name)
+        if parm_tuple is None:
+            missing.append(name)
+            continue
+        if not isinstance(value, (list, tuple)) or len(value) != len(parm_tuple):
+            raise ValueError(
+                f"Override '{name}' on {node.path()} has {len(parm_tuple)} components; "
+                f'pass a list of {len(parm_tuple)} values.'
+            )
+        targets.extend(
+            (f'{name}[{i}]', component, v)
+            for i, (component, v) in enumerate(zip(parm_tuple, value, strict=True))
+        )
+    if missing:
+        from .parameters import parm_labels, suggest_parms
+
+        labels = parm_labels(node)
+        hints = {
+            name: close for name in missing if (close := suggest_parms(name, labels))
+        }
+        hint = f' Did you mean: {hints}?' if hints else ''
+        raise ValueError(
+            f'No parameter(s) {missing} on {node.path()} to override; nothing was '
+            f'set.{hint}'
+        )
+    return targets
+
+
+def _snapshot(parm: hou.Parm) -> dict[str, Any]:
+    """What putting *parm* back needs: its keyframes (an expression is one), else..."""
+
+    keys = tuple(parm.keyframes())
+    if keys:
+        return {'keyframes': keys}
+    if parm.parmTemplate().type() == hou.parmTemplateType.String:
+        # "$HIP/render/$F4.exr" comes back as written, not as today's expansion.
+        return {'value': parm.unexpandedString()}
+    return {'value': parm.eval()}
+
+
+def _restore_overrides(
+    applied: list[tuple[str, hou.Parm, dict[str, Any]]],
+) -> tuple[list[str], list[dict[str, str]]]:
+    """Put every overridden parm back, expressions and keyframes included."""
+
+    restored: list[str] = []
+    failed: list[dict[str, str]] = []
+    for name, parm, state in reversed(applied):
+        try:
+            with contextlib.suppress(Exception):
+                parm.deleteAllKeyframes()
+            if 'keyframes' in state:
+                for key in state['keyframes']:
+                    parm.setKeyframe(key)
+            else:
+                parm.set(state['value'])
+            restored.append(name)
+        except Exception as e:  # keep restoring the rest
+            failed.append({'parm': name, 'error': error_helpers.readable_message(e)})
+    return restored, failed
+
+
+def _apply_overrides(
+    targets: list[tuple[str, hou.Parm, Any]],
+    applied: list[tuple[str, hou.Parm, dict[str, Any]]],
+) -> None:
+    """Set each override, adding it to *applied* with what puts it back."""
+
+    for name, parm, value in targets:
+        state = _snapshot(parm)
+        try:
+            if state.get('keyframes'):
+                parm.deleteAllKeyframes()
+            parm.set(value)
+        except (hou.Error, TypeError) as e:
+            # The refused parm is put back quietly: a write refused as locked
+            # refuses the restore just the same, having changed nothing.
+            _restore_overrides([(name, parm, state)])
+            _, failed = _restore_overrides(applied)
+            applied.clear()
+            after = (
+                f' These could not be put back: {failed}.'
+                if failed
+                else ' The overrides set before it were put back.'
+            )
+            raise ValueError(
+                f"Override '{name}' on {parm.node().path()} could not be set: "
+                f'{error_helpers.readable_message(e)}. Nothing was rendered.{after}'
+            ) from e
+        applied.append((name, parm, state))
+
+
+def _render_in_foreground(
+    node: hou.Node,
+    node_path: str,
+    category: str,
+    can_render: bool,
+    frame_range: list | None,
+) -> dict:
+    """Render *node* in this Houdini and judge what it wrote."""
+
+    execute_parm = node.parm('execute')
+    # Snapshot the outputs so "did this write anything" is answerable afterwards
+    # rather than inferred from a call that did not raise. Evaluated at the first
+    # frame of the range: at the playbar's frame a render of 41-43 read as
+    # "nothing was written".
+    first_frame = float(frame_range[0]) if frame_range else None
+    with output_helpers.at_frame(first_frame):
+        before = output_helpers.reported_outputs(node)
+
+    method = None
+    try:
+        if can_render:
+            method = 'render()'
+            if frame_range is not None:
+                start = float(frame_range[0])
+                end = float(frame_range[1])
+                inc = float(frame_range[2]) if len(frame_range) > 2 else 1.0
+                # RopNode.render takes the increment as the third element of
+                # frame_range; there is no frame_increment keyword.
+                node.render(frame_range=(start, end, inc), output_progress=True)
+            else:
+                node.render(output_progress=True)
+        else:
+            # A File Cache SOP has no render(); its Save to Disk is a button, and
+            # its range lives on trange/f rather than in a render() argument.
+            method = 'execute button'
+            if frame_range is not None:
+                _apply_frame_range_parms(node, frame_range)
+            # Save to Disk is a Python callback: pressButton() would answer
+            # its exception with a modal window instead of raising.
+            callback_helpers.press(execute_parm)
+    except (hou.OperationFailed, callback_helpers.CallbackError) as e:
+        with output_helpers.at_frame(first_frame):
+            verdict = output_helpers.failure_verdict(node, before, e)
+        return {
+            'node_path': node_path,
+            'category': category,
+            'method': method,
+            **verdict,
+        }
+
+    # render() returning without raising is NOT evidence that a render happened.
+    # A LOP usdrender_rop shells out to husk, and when husk exits non-zero -- no
+    # license, bad scene, missing camera -- the ROP records the error and render()
+    # still returns normally. Reporting that as success is how a caller ends up
+    # verifying a screenshot of an image that was never written, so read the
+    # node's own errors and whether the files moved.
+    with output_helpers.at_frame(first_frame):
+        verdict = output_helpers.write_verdict(node, before, action='Render')
+    return {
+        'node_path': node_path,
+        'category': category,
+        'method': method,
+        'background': False,
+        'frame_range': frame_range,
+        **verdict,
     }

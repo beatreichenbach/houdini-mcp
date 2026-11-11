@@ -14,17 +14,8 @@ from ..runtime import errors as error_helpers
 from .nodes import _refuse_taken_name
 
 
-def _get_node(node_path: str) -> hou.Node:
-    """Resolve a node path and raise a clear error if it does not exist."""
-
-    node = hou.node(node_path)
-    if node is None:
-        raise ValueError(f'Node not found: {node_path}')
-    return node
-
-
 @register_command(PluginCommand.CHOPS_GET_CHOP_DATA)
-def _get_chop_data(
+def get_chop_data(
     *,
     node_path: str,
     channel_name: str | None = None,
@@ -101,7 +92,7 @@ def _get_chop_data(
 
 
 @register_command(PluginCommand.CHOPS_CREATE_CHOP_NODE)
-def _create_chop_node(
+def create_chop_node(
     *,
     parent_path: str,
     chop_type: str,
@@ -132,21 +123,8 @@ def _create_chop_node(
     }
 
 
-def _track_entry(track: Any) -> dict[str, Any]:
-    """Name, sample count, rate and value range of one CHOP track."""
-
-    samples = track.allSamples()
-    return {
-        'name': track.name(),
-        'length': track.numSamples(),
-        'rate': track.clip().sampleRate(),
-        'min': min(samples) if samples else 0.0,
-        'max': max(samples) if samples else 0.0,
-    }
-
-
 @register_command(PluginCommand.CHOPS_LIST_CHOP_CHANNELS)
-def _list_chop_channels(*, node_path: str, **_: Any) -> dict[str, Any]:
+def list_chop_channels(*, node_path: str, **_: Any) -> dict[str, Any]:
     """List all tracks/channels on a CHOP node."""
 
     node = _get_node(node_path)
@@ -164,7 +142,7 @@ def _list_chop_channels(*, node_path: str, **_: Any) -> dict[str, Any]:
 
 
 @register_command(PluginCommand.CHOPS_EXPORT_CHOP_TO_PARM)
-def _export_chop_to_parm(
+def export_chop_to_parm(
     *,
     chop_path: str,
     channel_name: str,
@@ -211,3 +189,25 @@ def _export_chop_to_parm(
     if replaced_keys:
         result['replaced_keyframes'] = replaced_keys
     return result
+
+
+def _get_node(node_path: str) -> hou.Node:
+    """Resolve a node path and raise a clear error if it does not exist."""
+
+    node = hou.node(node_path)
+    if node is None:
+        raise ValueError(f'Node not found: {node_path}')
+    return node
+
+
+def _track_entry(track: Any) -> dict[str, Any]:
+    """Name, sample count, rate and value range of one CHOP track."""
+
+    samples = track.allSamples()
+    return {
+        'name': track.name(),
+        'length': track.numSamples(),
+        'rate': track.clip().sampleRate(),
+        'min': min(samples) if samples else 0.0,
+        'max': max(samples) if samples else 0.0,
+    }

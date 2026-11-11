@@ -19,49 +19,45 @@ from ..runtime import config, dop_cache, ui
 from ..runtime import errors as error_helpers
 from ..serialize import to_jsonable
 
-
-def _get_node(node_path: str) -> hou.Node:
-    """Resolve a node path and raise a clear error if it does not exist."""
-
-    node = hou.node(node_path)
-    if node is None:
-        raise ValueError(f'Node not found: {node_path}')
-    return node
+# Parameter kinds that carry no value: pressing, grouping, decorating.
+_VALUELESS_PARM_TYPES = frozenset(
+    {'Button', 'Folder', 'FolderSet', 'Separator', 'Label'}
+)
 
 
-def _node_summary(node: hou.Node) -> dict:
-    """Return a compact summary dict for a single node."""
+# SOP local variables, which only exist while the node cooks ($CEX/$CEY/$CEZ
+# for a pivot at the centroid, $BBX, $SIZEX, $XMIN, $NPT, $PT, a Group SOP's
+# factory $N), and `@attr` references (a Ray SOP's factory `@N.x`).
+_COOK_LOCAL = re.compile(
+    r'\$(?:CE[XYZ]|GC[XYZ]|BB[XYZ]|SIZE[XYZ]|[XYZ](?:MIN|MAX)|NPT|NPRIM|PT|PR|VTX|'
+    r'NVTX|NGRP|N)\b'
+    r'|(?<![\w@])@[A-Za-z_]\w*'
+)
 
-    return {
-        'name': node.name(),
-        'path': node.path(),
-        'type': node.type().name(),
-        'category': node.type().category().name(),
-    }
-
-
-def _is_locked_hda(node: hou.Node) -> bool:
-    """True when the node is a locked HDA instance."""
-
-    with contextlib.suppress(Exception):
-        return bool(node.isLockedHDA())
-    return False
+_COOK_LOCAL_NOTE = (
+    'SOP local variable: substituted while the node cooks, so it is not evaluated '
+    'here (outside a cook it reads 0). Judge the value by the cooked geometry.'
+)
 
 
-def _dive_target_path(node: hou.Node) -> str | None:
-    """Return the node's editable dive target as an absolute path."""
+_NUMBERED = re.compile(r'(.*?)(\d+)')
 
-    if not _is_locked_hda(node):
-        return None
-    definition = node.type().definition()
-    if definition is None:
-        return None
-    with contextlib.suppress(Exception):
-        section = definition.sections().get('DiveTarget')
-        target = section.contents().strip() if section is not None else ''
-        if target:
-            return node.node(target).path()
-    return None
+
+# The value types HOM's pressButton accepts in its arguments dict.
+_BUTTON_ARGUMENT_TYPES = (bool, int, float, str)
+
+
+# flag -> (setter, reader), for set_node_flags' readback.
+_FLAG_ACCESSORS = {
+    'display': ('setDisplayFlag', 'isDisplayFlagSet'),
+    'render': ('setRenderFlag', 'isRenderFlagSet'),
+    'bypass': ('bypass', 'isBypassed'),
+    'template': ('setTemplateFlag', 'isTemplateFlagSet'),
+    'lock': ('setHardLocked', 'isHardLocked'),
+}
+
+
+_XFORM_PARMS = {'translate': 't', 'rotate': 'r', 'scale': 's'}
 
 
 @register_command(PluginCommand.NODES_CREATE_NODE)
@@ -129,61 +125,6 @@ def delete_node(node_path: str | None = None, node_paths: list | None = None) ->
         'name': name,
         'parent_path': parent_path,
     }
-
-
-def _delete_nodes(node_paths: list) -> dict:
-    """delete_node over a list: every path resolved first, then deleted."""
-
-    if not isinstance(node_paths, (list, tuple)) or not node_paths:
-        raise ValueError('node_paths must be a non-empty list of node paths.')
-    paths = [str(path) for path in node_paths]
-    missing = [path for path in paths if hou.node(path) is None]
-    if missing:
-        raise ValueError(f'Node(s) not found, nothing deleted: {missing}')
-    nodes = {hou.node(path).path(): hou.node(path) for path in paths}
-    # A node under another one on the list is destroyed with it; destroying
-    # it again would raise on a dead node.
-    inside = sorted(
-        path
-        for path in nodes
-        if any(path.startswith(other + '/') for other in nodes if other != path)
-    )
-    # destroy() refuses these, after the ones before them in the list are gone.
-    locked = [
-        path
-        for path, node in nodes.items()
-        if path not in inside and node.isInsideLockedHDA()
-    ]
-    if locked:
-        raise PermissionError(
-            f'Inside a locked asset, nothing deleted: {locked}. Unlock it '
-            '(allow editing of contents) or delete the asset itself.'
-        )
-    deleted = []
-    for path, node in sorted(nodes.items()):
-        if path in inside:
-            continue
-        node.destroy()
-        deleted.append(path)
-    reply: dict[str, Any] = {
-        'success': True,
-        'deleted_nodes': deleted,
-        'deleted_count': len(deleted),
-    }
-    if inside:
-        reply['deleted_with_parent'] = inside
-    return reply
-
-
-def _refuse_taken_name(parent: Any, name: str, node: Any = None) -> None:
-    """Raise when ``name`` belongs to another child of ``parent``."""
-
-    taken = parent.node(name)
-    if taken is not None and taken != node:
-        raise ValueError(
-            f"'{name}' is already taken in {parent.path()} by {taken.path()}. "
-            f'Rename or delete that node first, or pick another name.'
-        )
 
 
 @register_command(PluginCommand.NODES_RENAME_NODE)
@@ -263,19 +204,6 @@ def copy_node(
     return result
 
 
-def _wires(node: hou.Node) -> dict[int, dict[str, Any]]:
-    """Each input of *node* by index: {"from": path}, or {"indirect_input": n}."""
-
-    wires: dict[int, dict[str, Any]] = {}
-    for conn in node.inputConnections():
-        item = conn.inputItem()
-        if isinstance(item, hou.SubnetIndirectInput):
-            wires[conn.inputIndex()] = {'indirect_input': item.number()}
-        else:
-            wires[conn.inputIndex()] = {'from': item.path()}
-    return wires
-
-
 @register_command(PluginCommand.NODES_MOVE_NODE)
 def move_node(node_path: str, dest_parent: str) -> dict:
     """Move a node to a different parent network."""
@@ -291,147 +219,6 @@ def move_node(node_path: str, dest_parent: str) -> dict:
         'new_path': moved.path(),
         'name': moved.name(),
     }
-
-
-# Parameter kinds that carry no value: pressing, grouping, decorating.
-_VALUELESS_PARM_TYPES = frozenset(
-    {'Button', 'Folder', 'FolderSet', 'Separator', 'Label'}
-)
-
-
-def _component_default(parm: hou.Parm) -> Any:
-    """The default of *parm* itself, not of the tuple it belongs to."""
-
-    default = parm.parmTemplate().defaultValue()
-    if isinstance(default, (tuple, list)):
-        try:
-            index = parm.componentIndex()
-        except Exception:
-            index = 0
-        if not isinstance(index, int) or index < 0 or index >= len(default):
-            return default[0] if len(default) == 1 else None
-        return default[index]
-    return default
-
-
-def _is_at_default(parm: hou.Parm, value: Any, default: Any) -> bool:
-    """Whether *parm* still holds its default."""
-
-    try:
-        answer = parm.isAtDefault()
-        if isinstance(answer, bool):
-            return answer
-    except Exception:
-        pass
-    # Reached only when isAtDefault() is unavailable or answers non-bool.
-    # Ramp and Data parameters have no comparable defaultValue(), so == is
-    # false for them here and they reach the response -- which is why they
-    # have to survive JSON encoding (see serialize.py).
-    try:
-        return bool(value == default)
-    except Exception:
-        return False
-
-
-# SOP local variables, which only exist while the node cooks ($CEX/$CEY/$CEZ
-# for a pivot at the centroid, $BBX, $SIZEX, $XMIN, $NPT, $PT, a Group SOP's
-# factory $N), and `@attr` references (a Ray SOP's factory `@N.x`).
-_COOK_LOCAL = re.compile(
-    r'\$(?:CE[XYZ]|GC[XYZ]|BB[XYZ]|SIZE[XYZ]|[XYZ](?:MIN|MAX)|NPT|NPRIM|PT|PR|VTX|'
-    r'NVTX|NGRP|N)\b'
-    r'|(?<![\w@])@[A-Za-z_]\w*'
-)
-
-_COOK_LOCAL_NOTE = (
-    'SOP local variable: substituted while the node cooks, so it is not evaluated '
-    'here (outside a cook it reads 0). Judge the value by the cooked geometry.'
-)
-
-
-def _cook_local_expression(parm: hou.Parm) -> str | None:
-    """*parm*'s expression when it uses a SOP local variable, else None."""
-
-    try:
-        expression = parm.expression()
-    except Exception:
-        return None
-    if isinstance(expression, str) and _COOK_LOCAL.search(expression):
-        return expression
-    return None
-
-
-def _non_default_parms(node: hou.Node, parms: list[hou.Parm]) -> list[dict[str, Any]]:
-    """The parameters of *node* that differ from their defaults, as summaries."""
-
-    summary: list[dict[str, Any]] = []
-    for parm in parms:
-        try:
-            template = parm.parmTemplate()
-            type_name = template.type().name()
-        except Exception:
-            continue
-        if type_name in _VALUELESS_PARM_TYPES:
-            continue
-        expression = _cook_local_expression(parm)
-        if expression is not None:
-            try:
-                default = _component_default(parm)
-            except Exception:
-                default = None
-            # A type's own expression (a Group SOP's $N) is its default.
-            if _is_at_default(parm, None, default):
-                continue
-            summary.append(
-                {
-                    'name': parm.name(),
-                    'label': parm.description(),
-                    'value': None,
-                    'default': to_jsonable(default),
-                    'type': type_name,
-                    'expression': expression,
-                    'local_variable': True,
-                    'note': _COOK_LOCAL_NOTE,
-                }
-            )
-            continue
-        try:
-            val = parm.eval()
-        except Exception:
-            continue
-        try:
-            default = _component_default(parm)
-        except Exception:
-            default = None
-        if _is_at_default(parm, val, default):
-            continue
-        summary.append(
-            {
-                'name': parm.name(),
-                'label': parm.description(),
-                'value': to_jsonable(val),
-                'default': to_jsonable(default),
-                'type': type_name,
-            }
-        )
-    return summary
-
-
-def _name_input(
-    entry: dict, node: Any, source: Any, output_index: int, named_inputs: bool
-) -> None:
-    """Name the wire into *entry*'s input where an index alone is ambiguous."""
-
-    with contextlib.suppress(Exception):
-        names = list(source.outputNames())
-        if len(names) > 1:
-            entry['output_index'] = output_index
-            if output_index < len(names):
-                entry['output_name'] = names[output_index]
-    if named_inputs:
-        with contextlib.suppress(Exception):
-            names = list(node.inputNames())
-            if entry['index'] < len(names):
-                entry['input_name'] = names[entry['index']]
 
 
 @register_command(PluginCommand.NODES_GET_NODE_INFO)
@@ -714,186 +501,6 @@ def list_node_types(
     }
 
 
-def _input_table(node: hou.Node) -> list[dict[str, Any]]:
-    """A node's input connectors in order: index, name, label, data type."""
-
-    names: list[str] = []
-    labels: list[str] = []
-    data_types: list[str] = []
-    with contextlib.suppress(Exception):
-        names = list(node.inputNames())
-    with contextlib.suppress(Exception):
-        labels = list(node.inputLabels())
-    with contextlib.suppress(Exception):
-        data_types = list(node.inputDataTypes())
-    table: list[dict[str, Any]] = []
-    for index, name in enumerate(names):
-        entry: dict[str, Any] = {'index': index, 'name': name}
-        if index < len(labels):
-            entry['label'] = labels[index]
-        if index < len(data_types):
-            entry['data_type'] = data_types[index]
-        table.append(entry)
-    return table
-
-
-_NUMBERED = re.compile(r'(.*?)(\d+)')
-
-
-def _variadic_index(
-    inputs: list[dict[str, Any]], name: str, max_inputs: int
-) -> int | None:
-    """Index of `input3` on a node that grows inputs as they are wired."""
-
-    if not inputs or max_inputs <= len(inputs):
-        return None
-    first = _NUMBERED.fullmatch(str(inputs[0].get('name', '')))
-    wanted = _NUMBERED.fullmatch(name)
-    if first is None or wanted is None or wanted.group(1) != first.group(1):
-        return None
-    stem, start = first.group(1), int(first.group(2))
-    if any(entry.get('name') != f'{stem}{start + entry["index"]}' for entry in inputs):
-        return None
-    index = int(wanted.group(2)) - start
-    return index if 0 <= index < max_inputs else None
-
-
-def _find_input(
-    inputs: list[dict[str, Any]], input_name: str, max_inputs: int = 0
-) -> int:
-    """Index of the input called *input_name*: names first, then labels, then the..."""
-
-    for entry in inputs:
-        if entry.get('name') == input_name:
-            return int(entry['index'])
-    for entry in inputs:
-        if entry.get('label') == input_name:
-            return int(entry['index'])
-    variadic = _variadic_index(inputs, input_name, max_inputs)
-    if variadic is not None:
-        return variadic
-    candidates: list[str] = []
-    for entry in inputs:
-        for value in (entry.get('name'), entry.get('label')):
-            if value and value not in candidates:
-                candidates.append(value)
-    close = get_close_matches(input_name, candidates, n=3, cutoff=0.4)
-    if close:
-        hint = f' Did you mean: {close}?'
-    else:
-        hint = f' Inputs: {candidates[:15] + (["..."] if len(candidates) > 15 else [])}'
-    raise ValueError(f"has no input named '{input_name}'.{hint}")
-
-
-def _find_output(outputs: list[dict[str, Any]], output_name: str) -> int:
-    """Index of the output called *output_name*: names first, then labels."""
-
-    for key in ('name', 'label'):
-        for entry in outputs:
-            if entry.get(key) == output_name:
-                return int(entry['index'])
-    candidates: list[str] = []
-    for entry in outputs:
-        for value in (entry.get('name'), entry.get('label')):
-            if value and value not in candidates:
-                candidates.append(value)
-    close = get_close_matches(output_name, candidates, n=3, cutoff=0.4)
-    if close:
-        hint = f' Did you mean: {close}?'
-    else:
-        hint = (
-            f' Outputs: {candidates[:15] + (["..."] if len(candidates) > 15 else [])}'
-        )
-    raise ValueError(f"has no output named '{output_name}'.{hint}")
-
-
-def _output_index(source: hou.Node, source_output: int | str) -> int:
-    """*source_output* as an index on the live *source*: an index, or an output name."""
-
-    if isinstance(source_output, int):
-        return source_output
-    outputs = [
-        {'index': i, 'name': name} for i, name in enumerate(source.outputNames())
-    ]
-    with contextlib.suppress(Exception):
-        for entry, label in zip(outputs, source.outputLabels(), strict=False):
-            entry['label'] = label
-    try:
-        return _find_output(outputs, source_output)
-    except ValueError as exc:
-        raise ValueError(f'{source.path()} {exc}') from None
-
-
-def _resolve_input_index(
-    dest: hou.Node, input_index: int, input_name: str | None
-) -> int:
-    """Turn an input name (VOP connector such as "base_color") into its index."""
-
-    if not input_name:
-        return int(input_index)
-    max_inputs = 0
-    with contextlib.suppress(Exception):
-        max_inputs = int(dest.type().maxNumInputs())
-    try:
-        return _find_input(_input_table(dest), str(input_name), max_inputs)
-    except ValueError as exc:
-        raise ValueError(f'{dest.path()} {exc}') from None
-
-
-def _indirect_input_item(
-    subnet: hou.Node, indirect: Any, connectors: list | None = None
-) -> Any:
-    """Input connector *indirect* of *subnet*, or ValueError saying why not."""
-
-    if isinstance(indirect, float) and indirect.is_integer():
-        indirect = int(indirect)
-    if isinstance(indirect, bool) or not isinstance(indirect, int):
-        raise ValueError(f'indirect_input must be an integer, got {indirect!r}')
-    if connectors is None:
-        try:
-            connectors = list(subnet.indirectInputs())
-        except Exception as exc:
-            raise ValueError(
-                f'{subnet.path()} has no input connectors to wire from: '
-                f'{error_helpers.readable_message(exc)}'
-            ) from exc
-    if not connectors:
-        # Not a subnet (a Box answers an empty tuple on 22.0 rather than the
-        # documented InvalidNodeType), or a subnet with no inputs.
-        raise ValueError(
-            f'{subnet.path()} has no input connectors to wire from: it is not a '
-            f'subnet, or a subnet without inputs.'
-        )
-    if not 0 <= indirect < len(connectors):
-        raise ValueError(
-            f'{subnet.path()} has {len(connectors)} input connector(s); asked for '
-            f'#{indirect}.'
-        )
-    return connectors[indirect]
-
-
-def _resolve_source(
-    source_path: str, indirect_input: Any, dest: hou.Node, output_index: int
-) -> Any:
-    """The item to wire from: a node, or one of a subnet's indirect inputs."""
-
-    node = _get_node(source_path)
-    if indirect_input is None:
-        return node
-    item = _indirect_input_item(node, indirect_input)
-    if dest.parent() != node:
-        raise ValueError(
-            f"{dest.path()} is not inside {node.path()}: a subnet's input connector "
-            f'feeds only nodes inside that subnet.'
-        )
-    if int(output_index) != 0:
-        raise ValueError(
-            f'a subnet input connector has one output; output_index must be 0, got '
-            f'{output_index}.'
-        )
-    return item
-
-
 @register_command(PluginCommand.NODES_CONNECT_NODES)
 def connect_nodes(
     source_path: str,
@@ -926,15 +533,6 @@ def connect_nodes(
     if cache := dop_cache.dop_cache_note([dest], rewired=True):
         result['simulation_cache'] = cache
     return result
-
-
-def _non_default_parm_names(node: hou.Node) -> set[str]:
-    names = set()
-    for parm in node.parms():
-        with contextlib.suppress(Exception):
-            if not parm.isAtDefault():
-                names.add(parm.name())
-    return names
 
 
 @register_command(PluginCommand.NODES_CHANGE_NODE_TYPE)
@@ -1013,10 +611,6 @@ def change_node_type(
         if changed.type().definition() is not None:
             result['matches_definition'] = changed.matchesCurrentDefinition()
     return result
-
-
-# The value types HOM's pressButton accepts in its arguments dict.
-_BUTTON_ARGUMENT_TYPES = (bool, int, float, str)
 
 
 @register_command(PluginCommand.NODES_PRESS_BUTTON)
@@ -1335,16 +929,6 @@ def set_node_flags(
     return result
 
 
-# flag -> (setter, reader), for set_node_flags' readback.
-_FLAG_ACCESSORS = {
-    'display': ('setDisplayFlag', 'isDisplayFlagSet'),
-    'render': ('setRenderFlag', 'isRenderFlagSet'),
-    'bypass': ('bypass', 'isBypassed'),
-    'template': ('setTemplateFlag', 'isTemplateFlagSet'),
-    'lock': ('setHardLocked', 'isHardLocked'),
-}
-
-
 @register_command(PluginCommand.NODES_LAYOUT_CHILDREN)
 def layout_children(parent_path: str, spacing: float | None = None) -> dict:
     """Auto-layout the children of a network node."""
@@ -1488,16 +1072,6 @@ def create_sticky_note(
     }
 
 
-def _sticky_notes_in(node: hou.Node) -> list[hou.StickyNote]:
-    """Every sticky note in *node*'s network and in nested networks."""
-
-    notes = list(node.stickyNotes())
-    for child in node.children():
-        if child.isNetwork():
-            notes.extend(_sticky_notes_in(child))
-    return notes
-
-
 @register_command(PluginCommand.NODES_DELETE_STICKY_NOTES)
 def delete_sticky_notes(parent_path: str, recursive: bool = True) -> dict:
     """Delete sticky notes under a network, recursing into nested networks."""
@@ -1514,9 +1088,6 @@ def delete_sticky_notes(parent_path: str, recursive: bool = True) -> dict:
         'deleted_count': len(paths),
         'deleted': paths,
     }
-
-
-_XFORM_PARMS = {'translate': 't', 'rotate': 'r', 'scale': 's'}
 
 
 @register_command(PluginCommand.NODES_SET_OBJECT_TRANSFORM)
@@ -1559,3 +1130,431 @@ def set_object_transform(
     if not applied:
         raise ValueError('nothing to set: give translate, rotate, scale or parent.')
     return {'success': True, 'node_path': node.path(), **applied}
+
+
+def _get_node(node_path: str) -> hou.Node:
+    """Resolve a node path and raise a clear error if it does not exist."""
+
+    node = hou.node(node_path)
+    if node is None:
+        raise ValueError(f'Node not found: {node_path}')
+    return node
+
+
+def _node_summary(node: hou.Node) -> dict:
+    """Return a compact summary dict for a single node."""
+
+    return {
+        'name': node.name(),
+        'path': node.path(),
+        'type': node.type().name(),
+        'category': node.type().category().name(),
+    }
+
+
+def _is_locked_hda(node: hou.Node) -> bool:
+    """True when the node is a locked HDA instance."""
+
+    with contextlib.suppress(Exception):
+        return bool(node.isLockedHDA())
+    return False
+
+
+def _dive_target_path(node: hou.Node) -> str | None:
+    """Return the node's editable dive target as an absolute path."""
+
+    if not _is_locked_hda(node):
+        return None
+    definition = node.type().definition()
+    if definition is None:
+        return None
+    with contextlib.suppress(Exception):
+        section = definition.sections().get('DiveTarget')
+        target = section.contents().strip() if section is not None else ''
+        if target:
+            return node.node(target).path()
+    return None
+
+
+def _delete_nodes(node_paths: list) -> dict:
+    """delete_node over a list: every path resolved first, then deleted."""
+
+    if not isinstance(node_paths, (list, tuple)) or not node_paths:
+        raise ValueError('node_paths must be a non-empty list of node paths.')
+    paths = [str(path) for path in node_paths]
+    missing = [path for path in paths if hou.node(path) is None]
+    if missing:
+        raise ValueError(f'Node(s) not found, nothing deleted: {missing}')
+    nodes = {hou.node(path).path(): hou.node(path) for path in paths}
+    # A node under another one on the list is destroyed with it; destroying
+    # it again would raise on a dead node.
+    inside = sorted(
+        path
+        for path in nodes
+        if any(path.startswith(other + '/') for other in nodes if other != path)
+    )
+    # destroy() refuses these, after the ones before them in the list are gone.
+    locked = [
+        path
+        for path, node in nodes.items()
+        if path not in inside and node.isInsideLockedHDA()
+    ]
+    if locked:
+        raise PermissionError(
+            f'Inside a locked asset, nothing deleted: {locked}. Unlock it '
+            '(allow editing of contents) or delete the asset itself.'
+        )
+    deleted = []
+    for path, node in sorted(nodes.items()):
+        if path in inside:
+            continue
+        node.destroy()
+        deleted.append(path)
+    reply: dict[str, Any] = {
+        'success': True,
+        'deleted_nodes': deleted,
+        'deleted_count': len(deleted),
+    }
+    if inside:
+        reply['deleted_with_parent'] = inside
+    return reply
+
+
+def _refuse_taken_name(parent: Any, name: str, node: Any = None) -> None:
+    """Raise when ``name`` belongs to another child of ``parent``."""
+
+    taken = parent.node(name)
+    if taken is not None and taken != node:
+        raise ValueError(
+            f"'{name}' is already taken in {parent.path()} by {taken.path()}. "
+            f'Rename or delete that node first, or pick another name.'
+        )
+
+
+def _wires(node: hou.Node) -> dict[int, dict[str, Any]]:
+    """Each input of *node* by index: {"from": path}, or {"indirect_input": n}."""
+
+    wires: dict[int, dict[str, Any]] = {}
+    for conn in node.inputConnections():
+        item = conn.inputItem()
+        if isinstance(item, hou.SubnetIndirectInput):
+            wires[conn.inputIndex()] = {'indirect_input': item.number()}
+        else:
+            wires[conn.inputIndex()] = {'from': item.path()}
+    return wires
+
+
+def _component_default(parm: hou.Parm) -> Any:
+    """The default of *parm* itself, not of the tuple it belongs to."""
+
+    default = parm.parmTemplate().defaultValue()
+    if isinstance(default, (tuple, list)):
+        try:
+            index = parm.componentIndex()
+        except Exception:
+            index = 0
+        if not isinstance(index, int) or index < 0 or index >= len(default):
+            return default[0] if len(default) == 1 else None
+        return default[index]
+    return default
+
+
+def _is_at_default(parm: hou.Parm, value: Any, default: Any) -> bool:
+    """Whether *parm* still holds its default."""
+
+    try:
+        answer = parm.isAtDefault()
+        if isinstance(answer, bool):
+            return answer
+    except Exception:
+        pass
+    # Reached only when isAtDefault() is unavailable or answers non-bool.
+    # Ramp and Data parameters have no comparable defaultValue(), so == is
+    # false for them here and they reach the response -- which is why they
+    # have to survive JSON encoding (see serialize.py).
+    try:
+        return bool(value == default)
+    except Exception:
+        return False
+
+
+def _cook_local_expression(parm: hou.Parm) -> str | None:
+    """*parm*'s expression when it uses a SOP local variable, else None."""
+
+    try:
+        expression = parm.expression()
+    except Exception:
+        return None
+    if isinstance(expression, str) and _COOK_LOCAL.search(expression):
+        return expression
+    return None
+
+
+def _non_default_parms(node: hou.Node, parms: list[hou.Parm]) -> list[dict[str, Any]]:
+    """The parameters of *node* that differ from their defaults, as summaries."""
+
+    summary: list[dict[str, Any]] = []
+    for parm in parms:
+        try:
+            template = parm.parmTemplate()
+            type_name = template.type().name()
+        except Exception:
+            continue
+        if type_name in _VALUELESS_PARM_TYPES:
+            continue
+        expression = _cook_local_expression(parm)
+        if expression is not None:
+            try:
+                default = _component_default(parm)
+            except Exception:
+                default = None
+            # A type's own expression (a Group SOP's $N) is its default.
+            if _is_at_default(parm, None, default):
+                continue
+            summary.append(
+                {
+                    'name': parm.name(),
+                    'label': parm.description(),
+                    'value': None,
+                    'default': to_jsonable(default),
+                    'type': type_name,
+                    'expression': expression,
+                    'local_variable': True,
+                    'note': _COOK_LOCAL_NOTE,
+                }
+            )
+            continue
+        try:
+            val = parm.eval()
+        except Exception:
+            continue
+        try:
+            default = _component_default(parm)
+        except Exception:
+            default = None
+        if _is_at_default(parm, val, default):
+            continue
+        summary.append(
+            {
+                'name': parm.name(),
+                'label': parm.description(),
+                'value': to_jsonable(val),
+                'default': to_jsonable(default),
+                'type': type_name,
+            }
+        )
+    return summary
+
+
+def _name_input(
+    entry: dict, node: Any, source: Any, output_index: int, named_inputs: bool
+) -> None:
+    """Name the wire into *entry*'s input where an index alone is ambiguous."""
+
+    with contextlib.suppress(Exception):
+        names = list(source.outputNames())
+        if len(names) > 1:
+            entry['output_index'] = output_index
+            if output_index < len(names):
+                entry['output_name'] = names[output_index]
+    if named_inputs:
+        with contextlib.suppress(Exception):
+            names = list(node.inputNames())
+            if entry['index'] < len(names):
+                entry['input_name'] = names[entry['index']]
+
+
+def _input_table(node: hou.Node) -> list[dict[str, Any]]:
+    """A node's input connectors in order: index, name, label, data type."""
+
+    names: list[str] = []
+    labels: list[str] = []
+    data_types: list[str] = []
+    with contextlib.suppress(Exception):
+        names = list(node.inputNames())
+    with contextlib.suppress(Exception):
+        labels = list(node.inputLabels())
+    with contextlib.suppress(Exception):
+        data_types = list(node.inputDataTypes())
+    table: list[dict[str, Any]] = []
+    for index, name in enumerate(names):
+        entry: dict[str, Any] = {'index': index, 'name': name}
+        if index < len(labels):
+            entry['label'] = labels[index]
+        if index < len(data_types):
+            entry['data_type'] = data_types[index]
+        table.append(entry)
+    return table
+
+
+def _variadic_index(
+    inputs: list[dict[str, Any]], name: str, max_inputs: int
+) -> int | None:
+    """Index of `input3` on a node that grows inputs as they are wired."""
+
+    if not inputs or max_inputs <= len(inputs):
+        return None
+    first = _NUMBERED.fullmatch(str(inputs[0].get('name', '')))
+    wanted = _NUMBERED.fullmatch(name)
+    if first is None or wanted is None or wanted.group(1) != first.group(1):
+        return None
+    stem, start = first.group(1), int(first.group(2))
+    if any(entry.get('name') != f'{stem}{start + entry["index"]}' for entry in inputs):
+        return None
+    index = int(wanted.group(2)) - start
+    return index if 0 <= index < max_inputs else None
+
+
+def _find_input(
+    inputs: list[dict[str, Any]], input_name: str, max_inputs: int = 0
+) -> int:
+    """Index of the input called *input_name*: names first, then labels, then the..."""
+
+    for entry in inputs:
+        if entry.get('name') == input_name:
+            return int(entry['index'])
+    for entry in inputs:
+        if entry.get('label') == input_name:
+            return int(entry['index'])
+    variadic = _variadic_index(inputs, input_name, max_inputs)
+    if variadic is not None:
+        return variadic
+    candidates: list[str] = []
+    for entry in inputs:
+        for value in (entry.get('name'), entry.get('label')):
+            if value and value not in candidates:
+                candidates.append(value)
+    close = get_close_matches(input_name, candidates, n=3, cutoff=0.4)
+    if close:
+        hint = f' Did you mean: {close}?'
+    else:
+        hint = f' Inputs: {candidates[:15] + (["..."] if len(candidates) > 15 else [])}'
+    raise ValueError(f"has no input named '{input_name}'.{hint}")
+
+
+def _find_output(outputs: list[dict[str, Any]], output_name: str) -> int:
+    """Index of the output called *output_name*: names first, then labels."""
+
+    for key in ('name', 'label'):
+        for entry in outputs:
+            if entry.get(key) == output_name:
+                return int(entry['index'])
+    candidates: list[str] = []
+    for entry in outputs:
+        for value in (entry.get('name'), entry.get('label')):
+            if value and value not in candidates:
+                candidates.append(value)
+    close = get_close_matches(output_name, candidates, n=3, cutoff=0.4)
+    if close:
+        hint = f' Did you mean: {close}?'
+    else:
+        hint = (
+            f' Outputs: {candidates[:15] + (["..."] if len(candidates) > 15 else [])}'
+        )
+    raise ValueError(f"has no output named '{output_name}'.{hint}")
+
+
+def _output_index(source: hou.Node, source_output: int | str) -> int:
+    """*source_output* as an index on the live *source*: an index, or an output name."""
+
+    if isinstance(source_output, int):
+        return source_output
+    outputs = [
+        {'index': i, 'name': name} for i, name in enumerate(source.outputNames())
+    ]
+    with contextlib.suppress(Exception):
+        for entry, label in zip(outputs, source.outputLabels(), strict=False):
+            entry['label'] = label
+    try:
+        return _find_output(outputs, source_output)
+    except ValueError as exc:
+        raise ValueError(f'{source.path()} {exc}') from None
+
+
+def _resolve_input_index(
+    dest: hou.Node, input_index: int, input_name: str | None
+) -> int:
+    """Turn an input name (VOP connector such as "base_color") into its index."""
+
+    if not input_name:
+        return int(input_index)
+    max_inputs = 0
+    with contextlib.suppress(Exception):
+        max_inputs = int(dest.type().maxNumInputs())
+    try:
+        return _find_input(_input_table(dest), str(input_name), max_inputs)
+    except ValueError as exc:
+        raise ValueError(f'{dest.path()} {exc}') from None
+
+
+def _indirect_input_item(
+    subnet: hou.Node, indirect: Any, connectors: list | None = None
+) -> Any:
+    """Input connector *indirect* of *subnet*, or ValueError saying why not."""
+
+    if isinstance(indirect, float) and indirect.is_integer():
+        indirect = int(indirect)
+    if isinstance(indirect, bool) or not isinstance(indirect, int):
+        raise ValueError(f'indirect_input must be an integer, got {indirect!r}')
+    if connectors is None:
+        try:
+            connectors = list(subnet.indirectInputs())
+        except Exception as exc:
+            raise ValueError(
+                f'{subnet.path()} has no input connectors to wire from: '
+                f'{error_helpers.readable_message(exc)}'
+            ) from exc
+    if not connectors:
+        # Not a subnet (a Box answers an empty tuple on 22.0 rather than the
+        # documented InvalidNodeType), or a subnet with no inputs.
+        raise ValueError(
+            f'{subnet.path()} has no input connectors to wire from: it is not a '
+            f'subnet, or a subnet without inputs.'
+        )
+    if not 0 <= indirect < len(connectors):
+        raise ValueError(
+            f'{subnet.path()} has {len(connectors)} input connector(s); asked for '
+            f'#{indirect}.'
+        )
+    return connectors[indirect]
+
+
+def _resolve_source(
+    source_path: str, indirect_input: Any, dest: hou.Node, output_index: int
+) -> Any:
+    """The item to wire from: a node, or one of a subnet's indirect inputs."""
+
+    node = _get_node(source_path)
+    if indirect_input is None:
+        return node
+    item = _indirect_input_item(node, indirect_input)
+    if dest.parent() != node:
+        raise ValueError(
+            f"{dest.path()} is not inside {node.path()}: a subnet's input connector "
+            f'feeds only nodes inside that subnet.'
+        )
+    if int(output_index) != 0:
+        raise ValueError(
+            f'a subnet input connector has one output; output_index must be 0, got '
+            f'{output_index}.'
+        )
+    return item
+
+
+def _non_default_parm_names(node: hou.Node) -> set[str]:
+    names = set()
+    for parm in node.parms():
+        with contextlib.suppress(Exception):
+            if not parm.isAtDefault():
+                names.add(parm.name())
+    return names
+
+
+def _sticky_notes_in(node: hou.Node) -> list[hou.StickyNote]:
+    """Every sticky note in *node*'s network and in nested networks."""
+
+    notes = list(node.stickyNotes())
+    for child in node.children():
+        if child.isNetwork():
+            notes.extend(_sticky_notes_in(child))
+    return notes
