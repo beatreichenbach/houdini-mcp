@@ -53,62 +53,6 @@ def callback_script(parm: hou.Parm) -> str:
     return ''
 
 
-def _is_python(parm: hou.Parm) -> bool:
-    with contextlib.suppress(Exception):
-        return parm.parmTemplate().scriptCallbackLanguage() == hou.scriptLanguage.Python
-    return False
-
-
-def _callback_kwargs(parm: hou.Parm, arguments: dict | None) -> dict[str, Any]:
-    """The kwargs pressButton() gives a Python callback (measured on 22.0.429)."""
-
-    # multiParmInstanceIndices() gives the numbers in the parm name, outermost
-    # first: btn2_3 -> (2, 3), and pressButton() says index "3", index2 "2".
-    indices: tuple = ()
-    with contextlib.suppress(Exception):
-        indices = tuple(parm.multiParmInstanceIndices())
-    index = str(indices[-1]) if indices else '-1'
-    nesting = str(len(indices))
-    # Pressed on any component of a tuple, pressButton() answers as the
-    # tuple's first component: vecz gives parm vecx, parm_name "vecx",
-    # script_parm "vec" and vecx's value (measured on 22.0.429).
-    first, tuple_name = parm, parm.name()
-    with contextlib.suppress(Exception):
-        parm_tuple = parm.tuple()
-        first, tuple_name = parm_tuple[0], parm_tuple.name()
-    kwargs: dict[str, Any] = {
-        'node': parm.node(),
-        'parm': first,
-        'parm_name': first.name(),
-        'script_parm': tuple_name,
-        'script_multiparm_index': index,
-        'script_multiparm_nesting': nesting,
-    }
-    for level, number in enumerate(reversed(indices[:-1]), 2):
-        kwargs[f'script_multiparm_index{level}'] = str(number)
-    value = ''
-    with contextlib.suppress(Exception):
-        value = first.evalAsString()
-    kwargs['script_value'] = kwargs['script_value0'] = value
-    with contextlib.suppress(Exception):
-        components = list(parm.tuple())
-        if len(components) > 1:
-            for i, component in enumerate(components):
-                kwargs[f'script_value{i}'] = component.evalAsString()
-    kwargs.update(arguments or {})
-    return kwargs
-
-
-def _script_name(parm: hou.Parm) -> str:
-    """
-    What Houdini names the script in a traceback: `Lop/karmarendersettings/res_mode`.
-    """
-
-    with contextlib.suppress(Exception):
-        return f'{parm.node().type().nameWithCategory()}/{parm.name()}'
-    return parm.name()
-
-
 def exec_python_callback(parm: hou.Parm, script: str, kwargs: dict[str, Any]) -> None:
     """Execute *script* as pressButton() would; raise CallbackError if it raises."""
 
@@ -184,3 +128,59 @@ def press(parm: hou.Parm, arguments: dict | None = None) -> str:
     else:
         parm.pressButton()
     return 'hscript' if script else 'native'
+
+
+def _is_python(parm: hou.Parm) -> bool:
+    with contextlib.suppress(Exception):
+        return parm.parmTemplate().scriptCallbackLanguage() == hou.scriptLanguage.Python
+    return False
+
+
+def _callback_kwargs(parm: hou.Parm, arguments: dict | None) -> dict[str, Any]:
+    """The kwargs pressButton() gives a Python callback (measured on 22.0.429)."""
+
+    # multiParmInstanceIndices() gives the numbers in the parm name, outermost
+    # first: btn2_3 -> (2, 3), and pressButton() says index "3", index2 "2".
+    indices: tuple = ()
+    with contextlib.suppress(Exception):
+        indices = tuple(parm.multiParmInstanceIndices())
+    index = str(indices[-1]) if indices else '-1'
+    nesting = str(len(indices))
+    # Pressed on any component of a tuple, pressButton() answers as the
+    # tuple's first component: vecz gives parm vecx, parm_name "vecx",
+    # script_parm "vec" and vecx's value (measured on 22.0.429).
+    first, tuple_name = parm, parm.name()
+    with contextlib.suppress(Exception):
+        parm_tuple = parm.tuple()
+        first, tuple_name = parm_tuple[0], parm_tuple.name()
+    kwargs: dict[str, Any] = {
+        'node': parm.node(),
+        'parm': first,
+        'parm_name': first.name(),
+        'script_parm': tuple_name,
+        'script_multiparm_index': index,
+        'script_multiparm_nesting': nesting,
+    }
+    for level, number in enumerate(reversed(indices[:-1]), 2):
+        kwargs[f'script_multiparm_index{level}'] = str(number)
+    value = ''
+    with contextlib.suppress(Exception):
+        value = first.evalAsString()
+    kwargs['script_value'] = kwargs['script_value0'] = value
+    with contextlib.suppress(Exception):
+        components = list(parm.tuple())
+        if len(components) > 1:
+            for i, component in enumerate(components):
+                kwargs[f'script_value{i}'] = component.evalAsString()
+    kwargs.update(arguments or {})
+    return kwargs
+
+
+def _script_name(parm: hou.Parm) -> str:
+    """
+    What Houdini names the script in a traceback: `Lop/karmarendersettings/res_mode`.
+    """
+
+    with contextlib.suppress(Exception):
+        return f'{parm.node().type().nameWithCategory()}/{parm.name()}'
+    return parm.name()

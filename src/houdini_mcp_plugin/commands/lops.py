@@ -5,7 +5,6 @@ from __future__ import annotations
 import bisect
 import contextlib
 import fnmatch
-import functools
 import itertools
 import os
 import re
@@ -16,7 +15,7 @@ import hou
 from houdini_mcp_protocol import PluginCommand
 
 from ..host import register_command
-from ..runtime import config, ui
+from ..runtime import config, cooking, ui
 from ..runtime import outputs as output_helpers
 from .nodes import _refuse_taken_name
 
@@ -85,22 +84,6 @@ _LOP_LIGHT_TYPES: dict[str, tuple[str, str | None]] = {
 }
 
 
-def _cooked_at_time(handler: Any) -> Any:
-    """Run a stage read with the stage cooked at the requested *time*."""
-
-    # wraps keeps the handler's signature visible: the dispatcher reads it to
-    # explain a bad argument, and a bare **kwargs answered every call alike.
-    @functools.wraps(handler)
-    def run(**kwargs: Any) -> Any:
-        time = kwargs.get('time')
-        if time is None or time == _stage_frame():
-            return handler(**kwargs)
-        with output_helpers.at_frame(float(time)):
-            return handler(**kwargs)
-
-    return run
-
-
 @register_command(PluginCommand.LOPS_GET_STAGE_INFO)
 def get_stage_info(*, node_path: str = '/stage') -> dict[str, Any]:
     """Stage summary: prim count, layers, default prim, up axis, meters per unit."""
@@ -142,7 +125,7 @@ def get_stage_info(*, node_path: str = '/stage') -> dict[str, Any]:
 
 
 @register_command(PluginCommand.LOPS_GET_USD_PRIM)
-@_cooked_at_time
+@cooking.cooked_at_time
 def get_usd_prim(
     *,
     node_path: str,
@@ -262,7 +245,7 @@ def list_usd_prims(
 
 
 @register_command(PluginCommand.LOPS_GET_USD_ATTRIBUTE)
-@_cooked_at_time
+@cooking.cooked_at_time
 def get_usd_attribute(
     *,
     node_path: str,
@@ -302,7 +285,7 @@ def get_usd_attribute(
     time_used = time
     time_source = 'requested' if time is not None else 'default'
     if time is None and samples:
-        time_used, time_source = _stage_frame(), 'stage_frame'
+        time_used, time_source = cooking.stage_frame(), 'stage_frame'
         if time_used is None or not (samples[0] <= time_used <= samples[-1]):
             time_used = samples[0]
             time_source = 'first_sample'
@@ -382,7 +365,7 @@ def get_usd_attribute(
 
 
 @register_command(PluginCommand.LOPS_GET_USD_ATTRIBUTES)
-@_cooked_at_time
+@cooking.cooked_at_time
 def get_usd_attributes(
     *,
     node_path: str,
@@ -463,7 +446,7 @@ def get_usd_world_transform(
         prim_paths = [prim_paths]
     if not prim_paths:
         raise ValueError('prim_paths must name at least one prim.')
-    wanted = [float(f) for f in frames] if frames else [_stage_frame()]
+    wanted = [float(f) for f in frames] if frames else [cooking.stage_frame()]
     if len(wanted) > _MAX_TRANSFORM_FRAMES:
         raise ValueError(
             f'{len(wanted)} frames; at most {_MAX_TRANSFORM_FRAMES}, since each one '
@@ -473,7 +456,7 @@ def get_usd_world_transform(
 
     results: dict[str, list[dict[str, Any]]] = {path: [] for path in prim_paths}
     for frame in wanted:
-        with output_helpers.at_frame(frame if frame != _stage_frame() else None):
+        with output_helpers.at_frame(frame if frame != cooking.stage_frame() else None):
             stage = _get_lop_stage(node_path)
             time_code = (
                 Usd.TimeCode(frame) if frame is not None else Usd.TimeCode.Default()
@@ -1683,20 +1666,12 @@ def _hidden_descendants(prim: Usd.Prim) -> int:
     return max(0, count - 1)
 
 
-def _stage_frame() -> float | None:
-    """The current frame, or None when hou cannot say."""
-
-    with contextlib.suppress(Exception):
-        return float(hou.frame())
-    return None
-
-
 def _read_time(time: float | None) -> tuple[Any, float | None, str]:
     """(time code, time, time_source) for reading many attributes at once."""
 
     if time is not None:
         return Usd.TimeCode(float(time)), float(time), 'requested'
-    frame = _stage_frame()
+    frame = cooking.stage_frame()
     if frame is not None:
         return Usd.TimeCode(frame), frame, 'stage_frame'
     return Usd.TimeCode.Default(), None, 'default'

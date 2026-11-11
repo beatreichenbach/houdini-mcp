@@ -70,30 +70,6 @@ def generator_script(parm: hou.Parm) -> tuple[str, bool]:
     return '', False
 
 
-def _menu_kwargs(parm: hou.Parm) -> dict[str, Any]:
-    """The kwargs Houdini gives a Python menu script (measured on 22.0.429)."""
-
-    indices: tuple = ()
-    with contextlib.suppress(Exception):
-        indices = tuple(parm.multiParmInstanceIndices())
-    kwargs: dict[str, Any] = {'node': parm.node(), 'parm': parm}
-    if not indices:
-        kwargs.update(script_multiparm_index='-1', script_multiparm_nesting='0')
-        return kwargs
-    # Outermost first: m3_1 is index 1, index2 3 (as for callbacks).
-    kwargs['script_multiparm_index'] = int(indices[-1])
-    kwargs['script_multiparm_nesting'] = len(indices)
-    for level, number in enumerate(reversed(indices[:-1]), 2):
-        kwargs[f'script_multiparm_index{level}'] = int(number)
-    return kwargs
-
-
-def _script_name(parm: hou.Parm) -> str:
-    with contextlib.suppress(Exception):
-        return f'{parm.node().path()}/{parm.name()}'
-    return parm.name()
-
-
 def run_python_menu(parm: hou.Parm, script: str) -> list[str]:
     """Run *script* as Houdini runs a Python menu script; the flat token/label list."""
 
@@ -132,6 +108,48 @@ def run_python_menu(parm: hou.Parm, script: str) -> list[str]:
     return flat
 
 
+def items_and_labels(parm: hou.Parm) -> tuple[list[str], list[str]]:
+    """
+    The parm's menu tokens and labels; MenuScriptError if its Python script raises.
+    """
+
+    if script := _python_generator(parm):
+        return _read(run_python_menu(parm, script))
+    return list(parm.menuItems()), list(parm.menuLabels())
+
+
+def items(parm: hou.Parm) -> list[str]:
+    """The parm's menu tokens; MenuScriptError if its Python script raises."""
+
+    if script := _python_generator(parm):
+        return _read(run_python_menu(parm, script))[0]
+    return list(parm.menuItems())
+
+
+def _menu_kwargs(parm: hou.Parm) -> dict[str, Any]:
+    """The kwargs Houdini gives a Python menu script (measured on 22.0.429)."""
+
+    indices: tuple = ()
+    with contextlib.suppress(Exception):
+        indices = tuple(parm.multiParmInstanceIndices())
+    kwargs: dict[str, Any] = {'node': parm.node(), 'parm': parm}
+    if not indices:
+        kwargs.update(script_multiparm_index='-1', script_multiparm_nesting='0')
+        return kwargs
+    # Outermost first: m3_1 is index 1, index2 3 (as for callbacks).
+    kwargs['script_multiparm_index'] = int(indices[-1])
+    kwargs['script_multiparm_nesting'] = len(indices)
+    for level, number in enumerate(reversed(indices[:-1]), 2):
+        kwargs[f'script_multiparm_index{level}'] = int(number)
+    return kwargs
+
+
+def _script_name(parm: hou.Parm) -> str:
+    with contextlib.suppress(Exception):
+        return f'{parm.node().path()}/{parm.name()}'
+    return parm.name()
+
+
 def _python_generator(parm: hou.Parm) -> str:
     """The Python script Houdini would run for *parm*'s menu; "" when it runs none."""
 
@@ -157,21 +175,3 @@ def _read(flat: list[str]) -> tuple[list[str], list[str]]:
         tokens.append(token)
         labels.append(label)
     return tokens, labels
-
-
-def items_and_labels(parm: hou.Parm) -> tuple[list[str], list[str]]:
-    """
-    The parm's menu tokens and labels; MenuScriptError if its Python script raises.
-    """
-
-    if script := _python_generator(parm):
-        return _read(run_python_menu(parm, script))
-    return list(parm.menuItems()), list(parm.menuLabels())
-
-
-def items(parm: hou.Parm) -> list[str]:
-    """The parm's menu tokens; MenuScriptError if its Python script raises."""
-
-    if script := _python_generator(parm):
-        return _read(run_python_menu(parm, script))[0]
-    return list(parm.menuItems())

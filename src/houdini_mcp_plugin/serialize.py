@@ -30,33 +30,6 @@ _MAX_DEPTH = 12
 _MAX_REPR = 200
 
 
-def _hou_types(*names: str) -> tuple[type, ...]:
-    """
-    Resolve HOM class names to a tuple usable with isinstance().
-
-    Names that are missing on this Houdini version -- or that are not classes,
-    which is the case when ``hou`` is a test double -- are skipped.
-    ``isinstance(x, ())`` is False, so an empty tuple is harmless.
-    """
-
-    resolved = []
-    for name in names:
-        candidate = getattr(hou, name, None)
-        if isinstance(candidate, type):
-            resolved.append(candidate)
-    return tuple(resolved)
-
-
-_VECTORS = _hou_types('Vector2', 'Vector3', 'Vector4')
-_MATRICES = _hou_types('Matrix2', 'Matrix3', 'Matrix4')
-_QUATERNIONS = _hou_types('Quaternion')
-_RAMPS = _hou_types('Ramp')
-_GEOMETRIES = _hou_types('Geometry')
-_COLORS = _hou_types('Color')
-_NODES = _hou_types('Node', 'NetworkMovableItem')
-_PARMS = _hou_types('Parm', 'ParmTuple')
-
-
 ###### Individual HOM types
 
 
@@ -191,3 +164,33 @@ def json_default(value: Any) -> Any:
     """
 
     return to_jsonable(value)
+
+
+###### HOM type tuples
+
+
+def _hou_types(*names: str) -> tuple[type, ...]:
+    """
+    Resolve HOM class names to a tuple usable with isinstance().
+
+    Names that are missing on this Houdini version -- or that are not classes,
+    which is the case when ``hou`` is a test double -- are skipped.
+    ``isinstance(x, ())`` is False, so an empty tuple is harmless.
+    """
+
+    resolved = []
+    for name in names:
+        candidate = getattr(hou, name, None)
+        if isinstance(candidate, type):
+            resolved.append(candidate)
+    return tuple(resolved)
+
+
+_VECTORS = _hou_types('Vector2', 'Vector3', 'Vector4')
+_MATRICES = _hou_types('Matrix2', 'Matrix3', 'Matrix4')
+_QUATERNIONS = _hou_types('Quaternion')
+_RAMPS = _hou_types('Ramp')
+_GEOMETRIES = _hou_types('Geometry')
+_COLORS = _hou_types('Color')
+_NODES = _hou_types('Node', 'NetworkMovableItem')
+_PARMS = _hou_types('Parm', 'ParmTuple')

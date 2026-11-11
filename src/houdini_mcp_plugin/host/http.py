@@ -28,40 +28,6 @@ def _api_function(namespace: str) -> Callable[[Function], Function]:
     return decorator
 
 
-def _json_response(payload: dict[str, Any]) -> hwebserver.Response:
-    """Encode a payload as an hwebserver JSON response."""
-
-    body = json.dumps(payload, default=str)
-    return hwebserver.Response(body.encode('utf-8'), 200, 'application/json')
-
-
-def _forbidden(reason: str) -> hwebserver.Response:
-    """Return a JSON 403 response."""
-
-    payload = {
-        'status': 'error',
-        'error': {'code': ErrorCode.INVALID_REQUEST, 'message': reason},
-    }
-    body = json.dumps(payload, default=str)
-    return hwebserver.Response(body.encode('utf-8'), 403, 'application/json')
-
-
-def _guard(request: object) -> hwebserver.Response | None:
-    """Return a 403 response unless the request comes from the local server."""
-
-    try:
-        headers = {
-            str(name): str(value)
-            for name, value in dict(getattr(request, 'headers')()).items()  # noqa: B009
-        }
-    except Exception:
-        logger.debug('Could not read request headers', exc_info=True)
-        headers = {}
-    if security.request_allowed(headers):
-        return None
-    return _forbidden('request is not allowed from this origin')
-
-
 @_api_function('mcp')
 def execute(
     request: object,
@@ -113,3 +79,37 @@ def list_commands(request: object) -> hwebserver.Response:
     if denied is not None:
         return denied
     return _json_response({'commands': dispatcher.list_commands()})
+
+
+def _json_response(payload: dict[str, Any]) -> hwebserver.Response:
+    """Encode a payload as an hwebserver JSON response."""
+
+    body = json.dumps(payload, default=str)
+    return hwebserver.Response(body.encode('utf-8'), 200, 'application/json')
+
+
+def _forbidden(reason: str) -> hwebserver.Response:
+    """Return a JSON 403 response."""
+
+    payload = {
+        'status': 'error',
+        'error': {'code': ErrorCode.INVALID_REQUEST, 'message': reason},
+    }
+    body = json.dumps(payload, default=str)
+    return hwebserver.Response(body.encode('utf-8'), 403, 'application/json')
+
+
+def _guard(request: object) -> hwebserver.Response | None:
+    """Return a 403 response unless the request comes from the local server."""
+
+    try:
+        headers = {
+            str(name): str(value)
+            for name, value in dict(getattr(request, 'headers')()).items()  # noqa: B009
+        }
+    except Exception:
+        logger.debug('Could not read request headers', exc_info=True)
+        headers = {}
+    if security.request_allowed(headers):
+        return None
+    return _forbidden('request is not allowed from this origin')

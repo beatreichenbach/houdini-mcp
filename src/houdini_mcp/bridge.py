@@ -192,17 +192,6 @@ class HoudiniBridge:
         return cast(dict[str, Any], payload)
 
 
-def _rpc_body(endpoint: str, params: dict[str, Any]) -> dict[str, str]:
-    """
-    Build the form body hwebserver expects for an API function call.
-
-    hwebserver reads ``json=["namespace.function", [args], {keywords}]`` from a
-    form field rather than a JSON request body.
-    """
-
-    return {'json': json.dumps([endpoint, [], params])}
-
-
 async def find_servers(
     host: str,
     base_port: int,
@@ -238,14 +227,14 @@ async def find_servers(
     return [result for result in results if result is not None]
 
 
-_bridge: HoudiniBridge | None = None
-
-
 def set_bridge(bridge: HoudiniBridge | None) -> None:
     """Set the process bridge, or clear it when the server stops."""
 
     global _bridge
     _bridge = bridge
+
+
+_bridge: HoudiniBridge | None = None
 
 
 def current_bridge() -> HoudiniBridge:
@@ -254,3 +243,14 @@ def current_bridge() -> HoudiniBridge:
     if _bridge is None:
         raise RuntimeError('no Houdini bridge; the server has not started')
     return _bridge
+
+
+def _rpc_body(endpoint: str, params: dict[str, Any]) -> dict[str, str]:
+    """
+    Build the form body hwebserver expects for an API function call.
+
+    hwebserver reads ``json=["namespace.function", [args], {keywords}]`` from a
+    form field rather than a JSON request body.
+    """
+
+    return {'json': json.dumps([endpoint, [], params])}

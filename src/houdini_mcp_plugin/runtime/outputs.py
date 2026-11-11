@@ -94,67 +94,6 @@ def license_error(errors: list[str]) -> str | None:
     return None
 
 
-def _file_entry(label: str, path: str) -> dict[str, Any]:
-    entry: dict[str, Any] = {'parm': label, 'path': path}
-    with contextlib.suppress(Exception):
-        entry['exists'] = os.path.exists(path)
-        if entry['exists']:
-            entry['size_bytes'] = os.path.getsize(path)
-            entry['mtime'] = os.path.getmtime(path)
-    return entry
-
-
-def _render_product_paths(node: hou.Node) -> list[str]:
-    """
-    The images a usdrender ROP writes when its own Output Image is empty.
-
-    That is the default in Solaris: the path lives on the RenderProduct that
-    Karma Render Settings authors (productName), and husk writes there. Reading
-    only the ROP's parm made every default Karma render report "nothing was
-    written". Evaluated at the current frame, which the caller sets.
-    """
-
-    try:
-        from pxr import UsdRender  # ty: ignore[import-not-found]
-
-        source = node.inputs()[0] if node.inputs() else None
-        if source is None and node.parm('loppath') is not None:
-            source = node.node(node.parm('loppath').eval())
-        stage = source.stage()  # ty: ignore[unresolved-attribute]
-        settings_path = (
-            node.parm('rendersettings').eval() if node.parm('rendersettings') else ''
-        )
-        prim = stage.GetPrimAtPath(settings_path) if settings_path else None
-        settings = (
-            UsdRender.Settings(prim)
-            if prim
-            else UsdRender.Settings.GetStageRenderSettings(stage)
-        )
-        if not settings:
-            settings = next(
-                (
-                    UsdRender.Settings(p)
-                    for p in stage.Traverse()
-                    if p.IsA(UsdRender.Settings)
-                ),
-                None,
-            )
-        paths = []
-        for target in (
-            settings.GetProductsRel().GetTargets()  # ty: ignore[unresolved-attribute]
-        ):
-            name = (
-                UsdRender.Product(stage.GetPrimAtPath(target))
-                .GetProductNameAttr()
-                .Get(hou.frame())
-            )
-            if name:
-                paths.append(str(name))
-        return paths
-    except Exception:
-        return []
-
-
 def reported_outputs(node: hou.Node) -> list[dict[str, Any]]:
     """The node's output path(s) and whether anything is on disk there."""
 
@@ -214,12 +153,6 @@ def wrote_anything(before: list[dict[str, Any]], after: list[dict[str, Any]]) ->
     return False
 
 
-# A node that delegates its write can hold no errors at all while the node doing
-# the work holds every one of them, so a bounded walk inside is necessary.
-_MAX_DESCENDANTS_SCANNED = 400
-_MAX_MESSAGES = 12
-
-
 def node_messages(node: hou.Node) -> tuple[list[str], list[str]]:
     """
     A node's errors and warnings, including those of whatever it delegates to.
@@ -258,22 +191,6 @@ def node_messages(node: hou.Node) -> tuple[list[str], list[str]]:
             if len(errors) >= _MAX_MESSAGES:
                 break
     return errors[:_MAX_MESSAGES], warnings[:_MAX_MESSAGES]
-
-
-# Where a ROP finds the network it renders. The error of a failed chain lives
-# there, not on the ROP: a Fetch/Merge chain in /out reported "The attempted
-# operation failed." for an hour-long cook and the user had to say which stage
-# had died.
-_TARGET_PARMS = (
-    'soppath',
-    'source',
-    'loppath',
-    'coppath',
-    'objpath',
-    'dopnet',
-    'camera',
-)
-_MAX_UPSTREAM = 120
 
 
 def upstream_messages(node: hou.Node) -> list[str]:
@@ -316,6 +233,12 @@ def upstream_messages(node: hou.Node) -> list[str]:
         if item not in unique:
             unique.append(item)
     return unique[:_MAX_MESSAGES]
+
+
+# A node that delegates its write can hold no errors at all while the node doing
+# the work holds every one of them, so a bounded walk inside is necessary.
+_MAX_DESCENDANTS_SCANNED = 400
+_MAX_MESSAGES = 12
 
 
 def write_verdict(
@@ -403,6 +326,22 @@ def write_verdict(
     return verdict
 
 
+# Where a ROP finds the network it renders. The error of a failed chain lives
+# there, not on the ROP: a Fetch/Merge chain in /out reported "The attempted
+# operation failed." for an hour-long cook and the user had to say which stage
+# had died.
+_TARGET_PARMS = (
+    'soppath',
+    'source',
+    'loppath',
+    'coppath',
+    'objpath',
+    'dopnet',
+    'camera',
+)
+_MAX_UPSTREAM = 120
+
+
 def failure_verdict(
     node: hou.Node,
     before: list[dict[str, Any]],
@@ -431,3 +370,64 @@ def failure_verdict(
         'message': f'{action} raised before completing; nothing was verified.'
         + (f' First upstream error: {errors[1]}' if len(errors) > 1 else ''),
     }
+
+
+def _file_entry(label: str, path: str) -> dict[str, Any]:
+    entry: dict[str, Any] = {'parm': label, 'path': path}
+    with contextlib.suppress(Exception):
+        entry['exists'] = os.path.exists(path)
+        if entry['exists']:
+            entry['size_bytes'] = os.path.getsize(path)
+            entry['mtime'] = os.path.getmtime(path)
+    return entry
+
+
+def _render_product_paths(node: hou.Node) -> list[str]:
+    """
+    The images a usdrender ROP writes when its own Output Image is empty.
+
+    That is the default in Solaris: the path lives on the RenderProduct that
+    Karma Render Settings authors (productName), and husk writes there. Reading
+    only the ROP's parm made every default Karma render report "nothing was
+    written". Evaluated at the current frame, which the caller sets.
+    """
+
+    try:
+        from pxr import UsdRender  # ty: ignore[import-not-found]
+
+        source = node.inputs()[0] if node.inputs() else None
+        if source is None and node.parm('loppath') is not None:
+            source = node.node(node.parm('loppath').eval())
+        stage = source.stage()  # ty: ignore[unresolved-attribute]
+        settings_path = (
+            node.parm('rendersettings').eval() if node.parm('rendersettings') else ''
+        )
+        prim = stage.GetPrimAtPath(settings_path) if settings_path else None
+        settings = (
+            UsdRender.Settings(prim)
+            if prim
+            else UsdRender.Settings.GetStageRenderSettings(stage)
+        )
+        if not settings:
+            settings = next(
+                (
+                    UsdRender.Settings(p)
+                    for p in stage.Traverse()
+                    if p.IsA(UsdRender.Settings)
+                ),
+                None,
+            )
+        paths = []
+        for target in (
+            settings.GetProductsRel().GetTargets()  # ty: ignore[unresolved-attribute]
+        ):
+            name = (
+                UsdRender.Product(stage.GetPrimAtPath(target))
+                .GetProductNameAttr()
+                .Get(hou.frame())
+            )
+            if name:
+                paths.append(str(name))
+        return paths
+    except Exception:
+        return []

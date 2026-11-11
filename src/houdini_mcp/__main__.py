@@ -14,23 +14,6 @@ from .server import create_server
 logger = logging.getLogger(__name__)
 
 
-def _load_content_or_exit() -> Content:
-    try:
-        return load_content()
-    except ValueError as exc:
-        logger.error('%s', exc)
-        raise SystemExit(1) from exc
-
-
-def _validate_content_or_exit(content: Content) -> None:
-    try:
-        for workflow in content.workflows.values():
-            workflow.source(content.shared)
-    except ValueError as exc:
-        logger.error('%s', exc)
-        raise SystemExit(1) from exc
-
-
 def main() -> None:
     """Run the MCP server or install the Houdini package."""
 
@@ -95,6 +78,23 @@ def main() -> None:
     server = create_server(settings)
     with contextlib.suppress(KeyboardInterrupt):
         server.run(transport='stdio')
+
+
+def _load_content_or_exit() -> Content:
+    try:
+        return load_content()
+    except ValueError as exc:
+        logger.error('%s', exc)
+        raise SystemExit(1) from exc
+
+
+def _validate_content_or_exit(content: Content) -> None:
+    try:
+        for workflow in content.workflows.values():
+            workflow.source(content.shared)
+    except ValueError as exc:
+        logger.error('%s', exc)
+        raise SystemExit(1) from exc
 
 
 if __name__ == '__main__':

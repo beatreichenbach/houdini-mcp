@@ -190,19 +190,6 @@ def mark_placed(node: hou.Node) -> None:
         node.setUserData(_PLACED_TAG, '1')
 
 
-def _is_unplaced(node: hou.Node) -> bool:
-    """
-    Whether the placement floor should position *node*.
-
-    Unplaced means nobody has positioned it: no placement tag, and still at
-    exactly ``(0, 0)``. The residual cost is unchanged -- a node a user parked
-    at the origin by hand is nudged -- but only once, because placing it tags
-    it.
-    """
-
-    return node.userData(_PLACED_TAG) is None and tuple(node.position()) == (0.0, 0.0)
-
-
 def place_new_node(node: hou.Node) -> None:
     """
     Give a *freshly created* node a sensible position, moving nothing else.
@@ -234,6 +221,19 @@ def place_new_nodes(nodes: Any) -> None:
     for node in nodes:
         if node is not None:
             place_new_node(node)
+
+
+def _is_unplaced(node: hou.Node) -> bool:
+    """
+    Whether the placement floor should position *node*.
+
+    Unplaced means nobody has positioned it: no placement tag, and still at
+    exactly ``(0, 0)``. The residual cost is unchanged -- a node a user parked
+    at the origin by hand is nudged -- but only once, because placing it tags
+    it.
+    """
+
+    return node.userData(_PLACED_TAG) is None and tuple(node.position()) == (0.0, 0.0)
 
 
 def _unplaced_children(parent: hou.Node) -> list:

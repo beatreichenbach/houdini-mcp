@@ -108,17 +108,6 @@ def set_other_objects(mode: str | None) -> str | None:
     return applied
 
 
-def _viewed_object(network: Any) -> hou.Node | None:
-    """The object whose contents *network* belongs to, or None at /obj or outside it."""
-
-    node = network
-    while node is not None and node.type().category() != hou.objNodeTypeCategory():
-        node = node.parent()
-    if node is None or node.childTypeCategory() == hou.objNodeTypeCategory():
-        return None
-    return node
-
-
 def pattern_hides(pattern: str, obj_path: str) -> bool:
     """
     Whether the Visible Objects *pattern* certainly leaves *obj_path* out.
@@ -203,33 +192,6 @@ def show_viewed_object(network: Any) -> list[dict]:
     return reset
 
 
-def _in_lops(viewer: Any) -> bool:
-    """Whether *viewer* shows a LOP network (its cameras are prims) or not (nodes)."""
-
-    return viewer.pwd().childTypeCategory() == hou.lopNodeTypeCategory()
-
-
-def _restore_cameras(cameras: list) -> None:
-    """
-    Bind each recorded (viewer, view name, camera path) again where it changed.
-
-    Only while the viewer is in the same kind of network as when it was
-    recorded. Houdini keeps a camera per context itself; a USD prim path bound
-    again in an object network matched nothing, and the view drew through it
-    with the wrong aspect (22.0.368).
-    """
-
-    for tab, name, path, lops in cameras:
-        with contextlib.suppress(Exception):
-            if _in_lops(tab) != lops:
-                continue
-            viewport = next(v for v in tab.viewports() if v.name() == name)
-            current = viewport.camera()
-            now = current.path() if current is not None else viewport.cameraPath()
-            if now != path:
-                viewport.setCamera(hou.node(path) or path)
-
-
 @contextlib.contextmanager
 def keep_viewer_state() -> Generator[None]:
     """
@@ -292,21 +254,6 @@ def keep_viewer_state() -> Generator[None]:
                     hou.clearAllSelected()
                     for node in keep:
                         node.setSelected(True, clear_all_selected=False)
-
-
-def _viewers_in_dops() -> set[str]:
-    """Names of the Scene Viewers drawing a DOP network right now."""
-
-    names: set[str] = set()
-    with contextlib.suppress(Exception):
-        dops = hou.dopNodeTypeCategory()
-        for tab in hou.ui.paneTabs():
-            if (
-                tab.type() == hou.paneTabType.SceneViewer
-                and tab.pwd().childTypeCategory() == dops
-            ):
-                names.add(tab.name())
-    return names
 
 
 @contextlib.contextmanager
@@ -387,12 +334,6 @@ def viewer_context(scene_viewer: Any) -> dict:
     return context
 
 
-def _current_viewport_name(scene_viewer: Any) -> str | None:
-    with contextlib.suppress(Exception):
-        return scene_viewer.curViewport().name()
-    return None
-
-
 def focus_network_editor(
     node: hou.Node,
     place_unpositioned: bool = True,
@@ -458,3 +399,62 @@ def selection_hidden() -> Generator[None]:
             with contextlib.suppress(Exception):
                 for n in selected:
                     n.setSelected(True, clear_all_selected=False)
+
+
+def _viewed_object(network: Any) -> hou.Node | None:
+    """The object whose contents *network* belongs to, or None at /obj or outside it."""
+
+    node = network
+    while node is not None and node.type().category() != hou.objNodeTypeCategory():
+        node = node.parent()
+    if node is None or node.childTypeCategory() == hou.objNodeTypeCategory():
+        return None
+    return node
+
+
+def _in_lops(viewer: Any) -> bool:
+    """Whether *viewer* shows a LOP network (its cameras are prims) or not (nodes)."""
+
+    return viewer.pwd().childTypeCategory() == hou.lopNodeTypeCategory()
+
+
+def _restore_cameras(cameras: list) -> None:
+    """
+    Bind each recorded (viewer, view name, camera path) again where it changed.
+
+    Only while the viewer is in the same kind of network as when it was
+    recorded. Houdini keeps a camera per context itself; a USD prim path bound
+    again in an object network matched nothing, and the view drew through it
+    with the wrong aspect (22.0.368).
+    """
+
+    for tab, name, path, lops in cameras:
+        with contextlib.suppress(Exception):
+            if _in_lops(tab) != lops:
+                continue
+            viewport = next(v for v in tab.viewports() if v.name() == name)
+            current = viewport.camera()
+            now = current.path() if current is not None else viewport.cameraPath()
+            if now != path:
+                viewport.setCamera(hou.node(path) or path)
+
+
+def _viewers_in_dops() -> set[str]:
+    """Names of the Scene Viewers drawing a DOP network right now."""
+
+    names: set[str] = set()
+    with contextlib.suppress(Exception):
+        dops = hou.dopNodeTypeCategory()
+        for tab in hou.ui.paneTabs():
+            if (
+                tab.type() == hou.paneTabType.SceneViewer
+                and tab.pwd().childTypeCategory() == dops
+            ):
+                names.add(tab.name())
+    return names
+
+
+def _current_viewport_name(scene_viewer: Any) -> str | None:
+    with contextlib.suppress(Exception):
+        return scene_viewer.curViewport().name()
+    return None
