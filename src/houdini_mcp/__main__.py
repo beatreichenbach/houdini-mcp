@@ -56,9 +56,9 @@ def main() -> None:
     if args.command == 'install':
         try:
             paths = install(args.packages_dir)
-        except RuntimeError as exc:
-            logger.error('%s', exc)
-            raise SystemExit(1) from exc
+        except RuntimeError as e:
+            logger.error('%s', e)
+            raise SystemExit(1) from e
         for path in paths:
             logger.info('Wrote %s', path)
         print(client_config())
@@ -83,18 +83,18 @@ def main() -> None:
 def _load_content_or_exit() -> Content:
     try:
         return load_content()
-    except ValueError as exc:
-        logger.error('%s', exc)
-        raise SystemExit(1) from exc
+    except ValueError as e:
+        logger.error('%s', e)
+        raise SystemExit(1) from e
 
 
 def _validate_content_or_exit(content: Content) -> None:
     try:
         for workflow in content.workflows.values():
             workflow.source(content.shared)
-    except ValueError as exc:
-        logger.error('%s', exc)
-        raise SystemExit(1) from exc
+    except ValueError as e:
+        logger.error('%s', e)
+        raise SystemExit(1) from e
 
 
 if __name__ == '__main__':

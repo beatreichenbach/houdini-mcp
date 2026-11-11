@@ -60,25 +60,25 @@ def dispatch(command: str, params: dict[str, Any]) -> Response:
     started = time.monotonic()
     try:
         inspect.signature(handler).bind(**params)
-    except TypeError as exc:
+    except TypeError as e:
         return Response(
             status=ResponseStatus.ERROR,
             error={
                 'code': ErrorCode.BAD_ARGUMENTS,
-                'message': f'{command} received invalid arguments: {exc}',
+                'message': f'{command} received invalid arguments: {e}',
             },
             timing_ms=_elapsed(started),
         )
 
     try:
         data = _run_handler(handler, command, params)
-    except Exception as exc:
+    except Exception as e:
         logger.exception('Houdini command failed: %s', command)
         return Response(
             status=ResponseStatus.ERROR,
             error={
                 'code': ErrorCode.COMMAND_ERROR,
-                'message': str(exc),
+                'message': str(e),
                 'traceback': traceback.format_exc(),
             },
             timing_ms=_elapsed(started),

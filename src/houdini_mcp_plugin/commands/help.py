@@ -52,7 +52,7 @@ def search_help(
     if not tokens:
         raise ValueError('query must contain at least one word')
     if scope is not None and scope not in available:
-        raise ValueError(f"Unknown scope '{scope}'. Available: {available}")
+        raise ValueError(f"unknown scope '{scope}'. Available: {available}")
     scopes = [scope] if scope else available
 
     hits: list[tuple[float, dict]] = []
@@ -103,7 +103,7 @@ def get_help_page(
     scope, _, entry = normalized.partition('/')  # ty: ignore[invalid-assignment]
     if scope not in _available_scopes():
         raise ValueError(
-            f"Unknown scope '{scope}'. Paths look like 'nodes/sop/scatter', "
+            f"unknown scope '{scope}'. Paths look like 'nodes/sop/scatter', "
             f"'vex/functions/noise' or 'pyro/lookdev'. Available scopes: "
             f'{_available_scopes()}'
         )
@@ -113,7 +113,7 @@ def get_help_page(
         actual = lowered.get(entry.lower())
         if actual is None:
             close = get_close_matches(entry, sorted(pages), n=5, cutoff=0.4)
-            raise ValueError(f"No page '{entry}' in {scope}. Close matches: {close}")
+            raise ValueError(f"no page '{entry}' in {scope}. Close matches: {close}")
         entry = actual
 
     text = pages[entry][0]
@@ -125,7 +125,7 @@ def get_help_page(
         ]
         if not found:
             raise ValueError(
-                f'No section {section!r} in {scope}/{entry}. Its sections: '
+                f'no section {section!r} in {scope}/{entry}. Its sections: '
                 f'{[s["title"] for s in sections]}'
             )
         offset = found[0]['offset']
@@ -191,7 +191,7 @@ def _require_help() -> list[str]:
     scopes = _available_scopes()
     if not scopes:
         raise hou.OperationFailed(
-            'This Houdini build ships no local help '
+            'this Houdini build ships no local help '
             f'({_help_dir()} contains no help archives). Use '
             'get_node_card for live node introspection, or consult '
             'https://www.sidefx.com/docs/houdini/ directly.'

@@ -47,7 +47,7 @@ def _menu_pairs(spec: dict) -> tuple:
 
     items = spec.get('menu_items')
     if not items:
-        raise ValueError(f'Menu parameter {spec.get("name")!r} needs menu_items.')
+        raise ValueError(f'menu parameter {spec.get("name")!r} needs menu_items.')
     if isinstance(items, str):
         raise ValueError(
             f'menu_items on {spec.get("name")!r} must be a list, e.g. '
@@ -58,7 +58,7 @@ def _menu_pairs(spec: dict) -> tuple:
         if isinstance(item, (list, tuple)):
             if len(item) != 2:
                 raise ValueError(
-                    f'Menu item {item!r} on {spec.get("name")!r} must be '
+                    f'menu item {item!r} on {spec.get("name")!r} must be '
                     f'[value, label] or a plain string.'
                 )
             values.append(str(item[0]))
@@ -154,14 +154,14 @@ def _menu_default(spec: dict, values: tuple) -> int:
     if isinstance(default, str):
         if default not in values:
             raise ValueError(
-                f'Default {default!r} of menu {spec.get("name")!r} is not one of its '
+                f'default {default!r} of menu {spec.get("name")!r} is not one of its '
                 f'items {list(values)}.'
             )
         return values.index(default)
     index = int(default)
     if not 0 <= index < len(values):
         raise ValueError(
-            f'Default {index} of menu {spec.get("name")!r} is out of range: it has '
+            f'default {index} of menu {spec.get("name")!r} is out of range: it has '
             f'{len(values)} item(s), 0-{len(values) - 1}.'
         )
     return index

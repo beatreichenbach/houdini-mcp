@@ -111,7 +111,7 @@ def render_viewport(
     if camera is not None:
         cam_node = hou.node(camera)
         if cam_node is None:
-            raise ValueError(f'Camera node not found: {camera}')
+            raise ValueError(f'camera node not found: {camera}')
         viewport.setCamera(cam_node)
 
     cur_frame = hou.frame()
@@ -423,7 +423,7 @@ def create_render_node(
             sorted(k for k, v in renderer_map.items() if any(c in available for c in v))
         )
         raise ValueError(
-            f"No ROP type '{renderer}' in this Houdini (looked for: "
+            f"no ROP type '{renderer}' in this Houdini (looked for: "
             f'{", ".join(candidates)}). '
             f'Renderer names that work here: {renderers}. '
             'Other types in /out can be passed by their exact name.'
@@ -433,7 +433,7 @@ def create_render_node(
         node = out_context.createNode(node_type, name)
     except hou.OperationFailed as e:
         raise ValueError(
-            f"Failed to create render node of type '{node_type}': "
+            f"failed to create render node of type '{node_type}': "
             f'{error_helpers.readable_message(e)}'
         ) from e
 
@@ -551,7 +551,7 @@ def render_node_network(
     )
     node = hou.node(node_path)
     if node is None:
-        raise ValueError(f'Node not found: {node_path}')
+        raise ValueError(f'node not found: {node_path}')
 
     out_dir = os.path.dirname(output_path)
     if out_dir and not os.path.isdir(out_dir):
@@ -726,7 +726,7 @@ def _renderable(node_path: str) -> tuple[hou.Node, str, bool]:
 
     node = hou.node(node_path)
     if node is None:
-        raise ValueError(f'Node not found: {node_path}')
+        raise ValueError(f'node not found: {node_path}')
     category = node.type().category().name()
     can_render = hasattr(node, 'render')
     if not can_render and node.parm('execute') is None:
@@ -825,7 +825,7 @@ def _override_targets(
             continue
         if not isinstance(value, (list, tuple)) or len(value) != len(parm_tuple):
             raise ValueError(
-                f"Override '{name}' on {node.path()} has {len(parm_tuple)} components; "
+                f"override '{name}' on {node.path()} has {len(parm_tuple)} components; "
                 f'pass a list of {len(parm_tuple)} values.'
             )
         targets.extend(
@@ -841,7 +841,7 @@ def _override_targets(
         }
         hint = f' Did you mean: {hints}?' if hints else ''
         raise ValueError(
-            f'No parameter(s) {missing} on {node.path()} to override; nothing was '
+            f'no parameter(s) {missing} on {node.path()} to override; nothing was '
             f'set.{hint}'
         )
     return targets
@@ -876,7 +876,7 @@ def _restore_overrides(
             else:
                 parm.set(state['value'])
             restored.append(name)
-        except Exception as e:  # keep restoring the rest
+        except hou.Error as e:  # keep restoring the rest
             failed.append({'parm': name, 'error': error_helpers.readable_message(e)})
     return restored, failed
 
@@ -905,7 +905,7 @@ def _apply_overrides(
                 else ' The overrides set before it were put back.'
             )
             raise ValueError(
-                f"Override '{name}' on {parm.node().path()} could not be set: "
+                f"override '{name}' on {parm.node().path()} could not be set: "
                 f'{error_helpers.readable_message(e)}. Nothing was rendered.{after}'
             ) from e
         applied.append((name, parm, state))

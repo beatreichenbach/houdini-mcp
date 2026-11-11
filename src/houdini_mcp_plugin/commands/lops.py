@@ -142,7 +142,7 @@ def get_usd_prim(
     prim = stage.GetPrimAtPath(prim_path)
     if not prim.IsValid():
         raise hou.OperationFailed(
-            f"USD prim not found at '{prim_path}' on stage from {node_path}"
+            f"usd prim not found at '{prim_path}' on stage from {node_path}"
         )
 
     time_code, time_used, time_source = _read_time(time)
@@ -179,7 +179,7 @@ def list_usd_prims(
     root = stage.GetPrimAtPath(root_path)
     if not root.IsValid():
         raise hou.OperationFailed(
-            f"Root prim not found at '{root_path}' on stage from {node_path}"
+            f"root prim not found at '{root_path}' on stage from {node_path}"
         )
 
     results: list[dict[str, Any]] = []
@@ -269,13 +269,13 @@ def get_usd_attribute(
     prim = stage.GetPrimAtPath(prim_path)
     if not prim.IsValid():
         raise hou.OperationFailed(
-            f"USD prim not found at '{prim_path}' on stage from {node_path}"
+            f"usd prim not found at '{prim_path}' on stage from {node_path}"
         )
 
     attr = prim.GetAttribute(attr_name)
     if not attr.IsValid():
         raise hou.OperationFailed(
-            f"Attribute '{attr_name}' not found on prim '{prim_path}'"
+            f"attribute '{attr_name}' not found on prim '{prim_path}'"
         )
 
     samples: list[float] = []
@@ -466,7 +466,7 @@ def get_usd_world_transform(
                 prim = stage.GetPrimAtPath(path)
                 if not prim.IsValid():
                     raise hou.OperationFailed(
-                        f"USD prim not found at '{path}' on stage from {node_path}"
+                        f"usd prim not found at '{path}' on stage from {node_path}"
                     )
                 entry = {
                     'frame': frame,
@@ -519,7 +519,7 @@ def get_usd_prim_stats(
     root = stage.GetPrimAtPath(prim_path)
     if not root.IsValid():
         raise hou.OperationFailed(
-            f"Root prim not found at '{prim_path}' on stage from {node_path}"
+            f"root prim not found at '{prim_path}' on stage from {node_path}"
         )
     # Same test as list_usd_prims: a path, not a string prefix.
     proxies = bool(traverse_instance_proxies)
@@ -559,7 +559,7 @@ def get_last_modified_prims(*, node_path: str) -> dict[str, Any]:
     _require_pxr()
     node = hou.node(node_path)
     if node is None:
-        raise hou.OperationFailed(f'Node not found: {node_path}')
+        raise hou.OperationFailed(f'node not found: {node_path}')
 
     # Attempt lastModifiedPrims() (Houdini 19.5+)
     if hasattr(node, 'lastModifiedPrims'):
@@ -573,7 +573,7 @@ def get_last_modified_prims(*, node_path: str) -> dict[str, Any]:
     # Fallback: inspect the edit target layer for authored prims
     stage = node.stage()
     if stage is None:
-        raise hou.OperationFailed(f'Node has no stage: {node_path}')
+        raise hou.OperationFailed(f'node has no stage: {node_path}')
 
     edit_target = stage.GetEditTarget()
     layer = edit_target.GetLayer()
@@ -613,7 +613,7 @@ def create_lop_node(
 
     parent = hou.node(parent_path)
     if parent is None:
-        raise hou.OperationFailed(f'Parent node not found: {parent_path}')
+        raise hou.OperationFailed(f'parent node not found: {parent_path}')
     if name:
         _refuse_taken_name(parent, name)
 
@@ -666,7 +666,7 @@ def set_usd_attribute(
     _require_pxr()
     node = hou.node(node_path)
     if node is None:
-        raise hou.OperationFailed(f'Node not found: {node_path}')
+        raise hou.OperationFailed(f'node not found: {node_path}')
 
     edit = _edit_attributes_after(
         node, 'set_usd_attr_auto', prim_path, {attr_name: value}
@@ -792,7 +792,7 @@ def get_usd_material_textures(
     stage = _get_lop_stage(node_path)
     root = stage.GetPseudoRoot() if root_path == '/' else stage.GetPrimAtPath(root_path)
     if not root:
-        raise ValueError(f'Prim not found: {root_path}')
+        raise ValueError(f'prim not found: {root_path}')
 
     def walk(prim: Any) -> Any:
         if traverse_instance_proxies:
@@ -985,7 +985,7 @@ def get_usd_composition(
     prim = stage.GetPrimAtPath(prim_path)
     if not prim.IsValid():
         raise hou.OperationFailed(
-            f"USD prim not found at '{prim_path}' on stage from {node_path}"
+            f"usd prim not found at '{prim_path}' on stage from {node_path}"
         )
 
     prim_index = prim.GetPrimIndex()
@@ -1066,7 +1066,7 @@ def get_usd_variants(
     prim = stage.GetPrimAtPath(prim_path)
     if not prim.IsValid():
         raise hou.OperationFailed(
-            f"USD prim not found at '{prim_path}' on stage from {node_path}"
+            f"usd prim not found at '{prim_path}' on stage from {node_path}"
         )
 
     variant_sets: list[dict[str, Any]] = []
@@ -1102,7 +1102,7 @@ def inspect_usd_layer(
     layers = stage.GetUsedLayers()
     if layer_index < 0 or layer_index >= len(layers):
         raise hou.OperationFailed(
-            f'Layer index {layer_index} out of range '
+            f'layer index {layer_index} out of range '
             f'(0..{len(layers) - 1}) for stage from {node_path}'
         )
 
@@ -1162,7 +1162,7 @@ def create_light(
 
     parent = hou.node(parent_path)
     if parent is None:
-        raise hou.OperationFailed(f'Parent node not found: {parent_path}')
+        raise hou.OperationFailed(f'parent node not found: {parent_path}')
 
     lop_type, shape = _lop_light_type(light_type)
     if name:
@@ -1272,7 +1272,7 @@ def set_light_properties(
     _require_pxr()
     node = hou.node(node_path)
     if node is None:
-        raise hou.OperationFailed(f'Node not found: {node_path}')
+        raise hou.OperationFailed(f'node not found: {node_path}')
 
     # Map friendly property names to USD attribute names
     attr_name_map = {
@@ -1327,7 +1327,7 @@ def create_light_rig(
 
     parent = hou.node(parent_path)
     if parent is None:
-        raise hou.OperationFailed(f'Parent node not found: {parent_path}')
+        raise hou.OperationFailed(f'parent node not found: {parent_path}')
 
     presets = {
         'three_point': [
@@ -1421,7 +1421,7 @@ def create_light_rig(
     if preset_config is None:
         available = sorted(presets.keys())
         raise hou.OperationFailed(
-            f"Unknown lighting preset: '{preset}'. Available presets: {available}"
+            f"unknown lighting preset: '{preset}'. Available presets: {available}"
         )
 
     created_nodes: list[str] = []
@@ -1491,7 +1491,7 @@ def _require_pxr() -> None:
 
     if not HAS_PXR:
         raise hou.OperationFailed(
-            'USD (pxr) modules are not available in this Houdini session. '
+            'usd (pxr) modules are not available in this Houdini session. '
             'Ensure you are running a Houdini build with USD support.'
         )
 
@@ -1502,12 +1502,12 @@ def _get_lop_stage(node_path: str) -> Usd.Stage:
     _require_pxr()
     node = hou.node(node_path)
     if node is None:
-        raise hou.OperationFailed(f'Node not found: {node_path}')
+        raise hou.OperationFailed(f'node not found: {node_path}')
     if not hasattr(node, 'stage'):
-        raise hou.OperationFailed(f'Node is not a LOP node (no stage()): {node_path}')
+        raise hou.OperationFailed(f'node is not a LOP node (no stage()): {node_path}')
     stage = node.stage()
     if stage is None:
-        raise hou.OperationFailed(f'Node has no USD stage: {node_path}')
+        raise hou.OperationFailed(f'node has no USD stage: {node_path}')
     return stage
 
 
@@ -1808,23 +1808,23 @@ def _resolve_stage_node(node_path: str) -> tuple[hou.Node, dict[str, Any]]:
 
     node = hou.node(node_path)
     if node is None:
-        raise hou.OperationFailed(f'Node not found: {node_path}')
+        raise hou.OperationFailed(f'node not found: {node_path}')
     if hasattr(node, 'stage'):
         return node, {}
     if not hasattr(node, 'displayNode'):
-        raise hou.OperationFailed(f'Node is not a LOP node (no stage()): {node_path}')
+        raise hou.OperationFailed(f'node is not a LOP node (no stage()): {node_path}')
     display = None
     with contextlib.suppress(Exception):
         display = node.displayNode()
     if display is None:
         raise hou.OperationFailed(
-            f'Node is not a LOP node (no stage()): {node_path} is a network with '
+            f'node is not a LOP node (no stage()): {node_path} is a network with '
             'no display node. Set the display flag on a LOP inside it, or pass '
             "that LOP's path."
         )
     if not hasattr(display, 'stage'):
         raise hou.OperationFailed(
-            f'Node is not a LOP node (no stage()): {node_path}, and its display '
+            f'node is not a LOP node (no stage()): {node_path}, and its display '
             f'node {display.path()} is not a LOP either.'
         )
     context: dict[str, Any] = {
@@ -1873,7 +1873,7 @@ def _matching_prims(
         prim = stage.GetPrimAtPath(path)
         if not prim or not prim.IsValid():
             raise hou.OperationFailed(
-                f"USD prim not found at '{path}' on stage from {node_path}"
+                f"usd prim not found at '{path}' on stage from {node_path}"
             )
         found[str(prim.GetPath())] = prim
     if globs:
@@ -2035,7 +2035,7 @@ def _lop_light_type(light_type: str) -> tuple[str, str | None]:
     if entry is None:
         available = sorted(_LOP_LIGHT_TYPES)
         raise hou.OperationFailed(
-            f"Unknown light type: '{light_type}'. Available types: {available}"
+            f"unknown light type: '{light_type}'. Available types: {available}"
         )
     return entry
 

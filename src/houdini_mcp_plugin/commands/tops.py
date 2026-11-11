@@ -138,7 +138,7 @@ def cook_top_node(
             node.executeGraph(False, False)
         except Exception as e:
             raise ValueError(
-                f'Failed to start non-blocking cook: '
+                f'failed to start non-blocking cook: '
                 f'{error_helpers.readable_message(e)}'
             ) from e
 
@@ -209,7 +209,7 @@ def cancel_top_cook(node_path: str) -> dict:
         ctx.cancelCook()
     except Exception as e:
         raise ValueError(
-            f'Failed to cancel cook: {error_helpers.readable_message(e)}'
+            f'failed to cancel cook: {error_helpers.readable_message(e)}'
         ) from e
 
     return {
@@ -230,7 +230,7 @@ def pause_top_cook(node_path: str) -> dict:
         ctx.pauseCook()
     except Exception as e:
         raise ValueError(
-            f'Failed to pause cook: {error_helpers.readable_message(e)}'
+            f'failed to pause cook: {error_helpers.readable_message(e)}'
         ) from e
 
     return {
@@ -285,7 +285,7 @@ def get_work_item_states(node_path: str) -> dict:
             total += 1
     except Exception as e:
         raise ValueError(
-            f'Failed to read work items: {error_helpers.readable_message(e)}'
+            f'failed to read work items: {error_helpers.readable_message(e)}'
         ) from e
 
     return {
@@ -306,12 +306,12 @@ def get_work_item_info(node_path: str, work_item_index: int) -> dict:
         work_items = list(pdg_node.workItems)
     except Exception as e:
         raise ValueError(
-            f'Failed to read work items: {error_helpers.readable_message(e)}'
+            f'failed to read work items: {error_helpers.readable_message(e)}'
         ) from e
 
     if work_item_index < 0 or work_item_index >= len(work_items):
         raise ValueError(
-            f'Work item index {work_item_index} out of range. '
+            f'work item index {work_item_index} out of range. '
             f'Node has {len(work_items)} work items (0-{len(work_items) - 1}).'
         )
 
@@ -397,7 +397,7 @@ def generate_static_items(node_path: str) -> dict:
             pdg_node.generateStaticItems()
         except Exception as e:
             raise ValueError(
-                f'Failed to generate static items: {error_helpers.readable_message(e)}'
+                f'failed to generate static items: {error_helpers.readable_message(e)}'
             ) from e
 
     # Gather generated item info
@@ -561,7 +561,7 @@ def _get_top_node(node_path: str) -> hou.Node:
 
     node = hou.node(node_path)
     if node is None:
-        raise ValueError(f'Node not found: {node_path}')
+        raise ValueError(f'node not found: {node_path}')
     category = node.type().category().name()
     if category == 'Top':
         return node
@@ -582,7 +582,7 @@ def _get_pdg_node(node: hou.Node) -> Any:
     pdg_node = node.getPDGNode()
     if pdg_node is None:
         raise ValueError(
-            f'Node {node.path()} does not have a PDG node. '
+            f'node {node.path()} does not have a PDG node. '
             'It may not be a TOP node or the graph has not been generated.'
         )
     return pdg_node
@@ -599,20 +599,20 @@ def _assert_has_generating_node(node: hou.Node) -> None:
 
     if target is None:
         raise ValueError(
-            f'TOP network {node.path()} is empty, so there is nothing to '
+            f'top network {node.path()} is empty, so there is nothing to '
             'generate. Add a TOP node (for example wedge or filepattern) first.'
         )
 
     pdg_node = target.getPDGNode()
     if pdg_node is None:
         raise ValueError(
-            f'Node {target.path()} has no PDG node, so it cannot generate '
+            f'node {target.path()} has no PDG node, so it cannot generate '
             'work items. It may not be a TOP node.'
         )
 
     if not hasattr(pdg_node, 'nodeType'):
         raise ValueError(
-            f'TOP network {node.path()} contains no work-item-generating '
+            f'top network {node.path()} contains no work-item-generating '
             f"nodes -- '{target.name()}' is a scheduler. Add a TOP node "
             '(for example wedge or filepattern) before generating or cooking.'
         )
@@ -657,7 +657,7 @@ def _get_graph_context(node: hou.Node) -> Any:
             break
         parent = parent.parent()
     raise ValueError(
-        f'Cannot find PDG graph context for node {node.path()}. '
+        f'cannot find PDG graph context for node {node.path()}. '
         'Ensure the node is inside a TOP network.'
     )
 

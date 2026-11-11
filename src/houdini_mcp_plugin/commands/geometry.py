@@ -167,7 +167,7 @@ def get_points(
     if group:
         pt_group = geo.findPointGroup(group)
         if pt_group is None:
-            raise hou.OperationFailed(f'Point group not found: {group}')
+            raise hou.OperationFailed(f'point group not found: {group}')
         total = _group_size(pt_group, 'pointCount', 'points')
         end = min(start + count, total)
         page = _group_page(pt_group, 'iterPoints', 'points', start, end)
@@ -213,7 +213,7 @@ def get_prims(
     if group:
         pr_group = geo.findPrimGroup(group)
         if pr_group is None:
-            raise hou.OperationFailed(f'Prim group not found: {group}')
+            raise hou.OperationFailed(f'prim group not found: {group}')
         total = _group_size(pr_group, 'primCount', 'prims')
         end = min(start + count, total)
         page = _group_page(pr_group, 'iterPrims', 'prims', start, end)
@@ -283,7 +283,7 @@ def get_attrib_values(
         attrib = geo.findGlobalAttrib(attrib_name)
         if attrib is None:
             raise hou.OperationFailed(
-                f"Detail attribute '{attrib_name}' not found on {node_path}"
+                f"detail attribute '{attrib_name}' not found on {node_path}"
             )
         val = geo.attribValue(attrib_name)
         return {
@@ -328,9 +328,9 @@ def set_detail_attrib(
 
     node = hou.node(node_path)
     if node is None:
-        raise hou.OperationFailed(f'Node not found: {node_path}')
+        raise hou.OperationFailed(f'node not found: {node_path}')
     if node.geometry() is None:
-        raise hou.OperationFailed(f'Node has no geometry: {node_path}')
+        raise hou.OperationFailed(f'node has no geometry: {node_path}')
 
     attrib_node = node.parent().createNode('attribcreate', f'set_{attrib_name}')
     attrib_node.setInput(0, node)
@@ -358,7 +358,7 @@ def set_detail_attrib(
             attrib_node.parm(f'value1v{index + 1}').set(float(component))
     else:
         attrib_node.destroy()
-        raise ValueError(f'Unsupported value type: {type(value).__name__}')
+        raise ValueError(f'unsupported value type: {type(value).__name__}')
 
     attrib_node.setDisplayFlag(True)
     attrib_node.setRenderFlag(True)
@@ -438,7 +438,7 @@ def get_group_members(
         grp = geo.findPointGroup(group_name)
         if grp is None:
             raise hou.OperationFailed(
-                f"Point group '{group_name}' not found on {node_path}"
+                f"point group '{group_name}' not found on {node_path}"
             )
         total = _group_size(grp, 'pointCount', 'points')
         end = min(start + max(1, count), total)
@@ -449,7 +449,7 @@ def get_group_members(
         grp = geo.findPrimGroup(group_name)
         if grp is None:
             raise hou.OperationFailed(
-                f"Prim group '{group_name}' not found on {node_path}"
+                f"prim group '{group_name}' not found on {node_path}"
             )
         total = _group_size(grp, 'primCount', 'prims')
         end = min(start + max(1, count), total)
@@ -460,7 +460,7 @@ def get_group_members(
         grp = geo.findEdgeGroup(group_name)
         if grp is None:
             raise hou.OperationFailed(
-                f"Edge group '{group_name}' not found on {node_path}"
+                f"edge group '{group_name}' not found on {node_path}"
             )
         total = _group_size(grp, 'edgeCount', 'edges')
         end = min(start + max(1, count), total)
@@ -470,7 +470,7 @@ def get_group_members(
         ]
     else:
         raise ValueError(
-            f"Invalid group_type: {group_type!r}. Use 'point', 'prim', or 'edge'."
+            f"invalid group_type: {group_type!r}. Use 'point', 'prim', or 'edge'."
         )
 
     return {
@@ -639,7 +639,7 @@ def get_prim_intrinsics(
         out_of_range = [i for i in indices if i < 0 or i >= total_prims]
         if out_of_range:
             raise hou.OperationFailed(
-                f'Prim index/indices {out_of_range[:10]} out of range '
+                f'prim index/indices {out_of_range[:10]} out of range '
                 f'(0..{total_prims - 1}) on {node_path}'
             )
     elif names and prim_index is None:
@@ -657,7 +657,7 @@ def get_prim_intrinsics(
     if prim_index is not None:
         if prim_index < 0 or prim_index >= total_prims:
             raise hou.OperationFailed(
-                f'Prim index {prim_index} out of range (0..{total_prims - 1}) on '
+                f'prim index {prim_index} out of range (0..{total_prims - 1}) on '
                 f'{node_path}'
             )
         prim = geo.prim(prim_index)
@@ -720,7 +720,7 @@ def get_prim_intrinsics(
                 summary[name] = {
                     'sample': _vec_to_list(first_val),
                 }
-        except Exception:
+        except hou.Error:
             summary[name] = {'sample': None, 'error': 'Could not read'}
 
     result = {
@@ -856,8 +856,8 @@ def get_attrib_stats(
                         quantiles,
                         **narrowing,  # ty: ignore[invalid-argument-type]
                     )
-                except Exception as exc:
-                    row = {'node_path': path, 'error': str(exc)}
+                except Exception as e:
+                    row = {'node_path': path, 'error': str(e)}
                 row['frame'] = frame
                 rows.append(row)
     finally:
@@ -1006,11 +1006,11 @@ def _get_sop_geo(node_path: str, output_index: int = 0) -> hou.Geometry:
 
     node = hou.node(node_path)
     if node is None:
-        raise hou.OperationFailed(f'Node not found: {node_path}')
+        raise hou.OperationFailed(f'node not found: {node_path}')
     geo = node.geometry(output_index) if output_index else node.geometry()
     if geo is None:
         raise hou.OperationFailed(
-            f'Node has no geometry: {node_path}{_cook_errors(node)}'
+            f'node has no geometry: {node_path}{_cook_errors(node)}'
         )
     return geo
 
@@ -1055,7 +1055,7 @@ def _attrib_class_key(attrib_class: str) -> str:
     key = _ATTRIB_CLASS_ALIASES.get(str(attrib_class).strip().lower())
     if key is None:
         raise ValueError(
-            f'Invalid attrib_class: {attrib_class!r}. '
+            f'invalid attrib_class: {attrib_class!r}. '
             "Use 'point', 'prim' (or 'primitive'), 'vertex' or 'detail'."
         )
     return key
@@ -1067,7 +1067,7 @@ def _loop_context(node: hou.Node) -> dict[str, str] | None:
     try:
         parent = node.parent()
         ancestors = set(node.inputAncestors())
-    except Exception:
+    except hou.Error:
         return None
     if parent is None:
         return None
@@ -1078,7 +1078,7 @@ def _loop_context(node: hou.Node) -> dict[str, str] | None:
             if node not in child.inputAncestors():
                 continue
             begin = child.parm('blockpath').evalAsNode()
-        except Exception:
+        except (hou.Error, AttributeError):
             continue
         if begin is not None and begin in ancestors:
             return {'begin': begin.path(), 'end': child.path()}
@@ -1137,7 +1137,7 @@ def _group_page(group: Any, iterator: str, lister: str, start: int, end: int) ->
 
     try:
         return list(itertools.islice(getattr(group, iterator)(), max(start, 0), end))
-    except Exception:
+    except (hou.Error, AttributeError):
         return list(getattr(group, lister)()[start:end])
 
 
@@ -1146,7 +1146,7 @@ def _group_size(group: Any, counter: str, lister: str) -> int:
 
     try:
         return int(getattr(group, counter)())
-    except Exception:
+    except (hou.Error, AttributeError):
         return len(getattr(group, lister)())
 
 
@@ -1158,7 +1158,7 @@ def _intrinsic_row(prim: Any, names: list[str] | None) -> dict[str, Any]:
     for name in wanted:
         try:
             row[name] = _vec_to_list(prim.intrinsicValue(name))
-        except Exception:
+        except hou.Error:
             row[name] = None
     return row
 
@@ -1627,7 +1627,7 @@ def _numpy_stats(
                 name, hou.numericData.Float32
             )
             values = np.frombuffer(raw, dtype=np.float32)
-    except Exception:
+    except (ImportError, hou.Error):
         return None
     size = max(size, 1)
     table = values.reshape(-1, size)
@@ -1718,7 +1718,7 @@ def _volume_prims(geo: hou.Geometry) -> list:
             + list(geo.primsOfType(hou.primType.VDB)),
             key=lambda prim: prim.number(),
         )
-    except Exception:
+    except hou.Error:
         return [
             prim
             for prim in geo.prims()
@@ -1730,7 +1730,7 @@ def _volume_prims(geo: hou.Geometry) -> list:
 def _volume_name(prim: Any) -> str:
     try:
         return prim.attribValue('name') or ''
-    except Exception:
+    except hou.Error:
         return ''
 
 
@@ -1743,7 +1743,7 @@ def _named_volume(geo: hou.Geometry, name: str, node_path: str) -> Any:
             return prim
     have = sorted({_volume_name(prim) for prim in prims} - {''})
     raise ValueError(
-        f"No volume named '{name}' on {node_path}. It has: "
+        f"no volume named '{name}' on {node_path}. It has: "
         f'{", ".join(have) or "no named volumes"}.'
     )
 
@@ -1773,7 +1773,7 @@ def _voxel_array(prim: Any) -> Any:
         origin = [0, 0, 0]
         if shape[0] * shape[1] * shape[2] > _MAX_VOXELS_READ:
             raise ValueError(
-                f'A {shape} grid is more than the {_MAX_VOXELS_READ} voxels this '
+                f'a {shape} grid is more than the {_MAX_VOXELS_READ} voxels this '
                 f'reads. '
                 'Call get_volume_info without threshold/bins for the intrinsics.'
             )
@@ -1783,7 +1783,7 @@ def _voxel_array(prim: Any) -> Any:
         )
     if values.size != shape[0] * shape[1] * shape[2]:
         raise ValueError(
-            f'Houdini gave {values.size} voxels for a {shape} region, so the array has '
+            f'houdini gave {values.size} voxels for a {shape} region, so the array has '
             f'no '
             'shape. Use sample_volume to read it at positions.'
         )

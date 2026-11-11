@@ -35,5 +35,5 @@ async def run_command(
         if timeout is None:
             return await bridge.execute(command, params)
         return await bridge.execute(command, params, timeout=timeout)
-    except HoudiniMCPError as exc:
-        raise ToolError(str(exc)) from exc
+    except HoudiniMCPError as e:
+        raise ToolError(str(e)) from e

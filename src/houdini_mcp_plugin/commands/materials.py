@@ -50,7 +50,7 @@ def list_materials(*, root_path: str = '/mat', **_: Any) -> dict[str, Any]:
     # materials, and the caller goes looking for why its shaders vanished.
     if hou.node(root_path) is None:
         raise ValueError(
-            f'Root path not found: {root_path}. Materials usually live under /mat, '
+            f'root path not found: {root_path}. Materials usually live under /mat, '
             f'or under a material library LOP in /stage.'
         )
 
@@ -99,7 +99,7 @@ def get_material_info(*, node_path: str, **_: Any) -> dict[str, Any]:
             # every vector component read as changed.
             if not _is_at_default(parm, val, _component_default(parm)):
                 params[parm.name()] = val
-        except Exception:
+        except hou.Error:
             pass
 
     # List shader VOP nodes inside (if this is a material builder)
@@ -114,7 +114,7 @@ def get_material_info(*, node_path: str, **_: Any) -> dict[str, Any]:
                         'type': child.type().name(),
                     }
                 )
-    except Exception:
+    except (hou.Error, AttributeError):
         pass
 
     # Nodes that reference this material: material-path parameters only, on
@@ -161,7 +161,7 @@ def create_material_network(
         node = mat_context.createNode(actual_type, node_name=name)
     except hou.OperationFailed as e:
         raise ValueError(
-            f"Failed to create material of type '{actual_type}' in /mat: "
+            f"failed to create material of type '{actual_type}' in /mat: "
             f'{error_helpers.readable_message(e)}'
         ) from e
 
@@ -199,7 +199,7 @@ def assign_material(
             if child.isDisplayFlagSet():
                 display_node = child
                 break
-        except Exception:
+        except hou.Error:
             continue
 
     if display_node is None and sop_children:
@@ -252,7 +252,7 @@ def list_material_types(
             try:
                 if node_type.hidden():
                     continue
-            except Exception:
+            except (hou.Error, AttributeError):
                 pass
 
             label = node_type.description()
@@ -282,7 +282,7 @@ def _get_node(node_path: str) -> hou.Node:
 
     node = hou.node(node_path)
     if node is None:
-        raise ValueError(f'Node not found: {node_path}')
+        raise ValueError(f'node not found: {node_path}')
     return node
 
 
@@ -308,7 +308,7 @@ def _material_parm_templates(node_type: hou.NodeType) -> list[str]:
 
     try:
         walk(node_type.parmTemplateGroup().entries())
-    except Exception:
+    except hou.Error:
         names = []
     _material_parm_cache[key] = names
     return names
@@ -344,7 +344,7 @@ def _find_material_assignments(mat_path: str) -> tuple[list[str], int]:
                 for parm in candidates:
                     try:
                         value = parm.evalAsString()
-                    except Exception:
+                    except hou.Error:
                         continue
                     if mat_path in value:
                         found = True
@@ -387,8 +387,8 @@ def _apply_shader_params(
             continue
         try:
             target.set(value)
-        except Exception as exc:
-            skipped[key] = error_helpers.readable_message(exc)
+        except hou.Error as e:
+            skipped[key] = error_helpers.readable_message(e)
             continue
         applied[key] = name
     return applied, skipped

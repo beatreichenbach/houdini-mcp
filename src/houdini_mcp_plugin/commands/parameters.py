@@ -172,8 +172,8 @@ def ramp_shape_error(value: dict) -> str | None:
     try:
         for name in names:
             _ramp_basis(name)
-    except ValueError as exc:
-        return str(exc)
+    except ValueError as e:
+        return str(e)
     return None
 
 
@@ -248,7 +248,7 @@ def locked_controllers(parm: hou.Parm) -> list[dict[str, Any]]:
     try:
         node = parm.node()
         tuple_name = parm.tuple().name().lower()
-    except Exception:
+    except hou.Error:
         return []
     found: list[dict[str, Any]] = []
     for other in node.parms():
@@ -390,8 +390,8 @@ def set_parameters(
                     results.append(
                         {'parm_name': name, **_write_ramp(parm, value, callbacks)}
                     )
-                except Exception as exc:
-                    errors.append(_error_entry(name, exc))
+                except Exception as e:
+                    errors.append(_error_entry(name, e))
                 continue
             if 'expr' not in value or parm is None:
                 problem = (
@@ -412,8 +412,8 @@ def set_parameters(
                     if language == 'python'
                     else hou.exprLanguage.Hscript,
                 )
-            except Exception as exc:
-                errors.append({'parm_name': name, 'error': str(exc)})
+            except Exception as e:
+                errors.append({'parm_name': name, 'error': str(e)})
                 continue
             entry = {'parm_name': name, 'expression': str(value['expr'])}
             if replaced:
@@ -428,8 +428,8 @@ def set_parameters(
         if isinstance(value, (list, tuple)):
             try:
                 new_value, report = _set_tuple(node, name, value, override, callbacks)
-            except Exception as exc:
-                errors.append(_error_entry(name, exc))
+            except Exception as e:
+                errors.append(_error_entry(name, e))
                 continue
             if new_value is not None:
                 entry: dict[str, Any] = {'parm_name': name, 'new_value': new_value}
@@ -448,8 +448,8 @@ def set_parameters(
             entry = {'parm_name': name}
             entry.update(_write_parm(parm, value, override, callbacks))
             results.append(entry)
-        except Exception as exc:
-            errors.append(_error_entry(name, exc))
+        except Exception as e:
+            errors.append(_error_entry(name, e))
 
     # A ramp written key by key (`ramp: 3`, `ramp3pos`, `ramp3c`) was echoed
     # straight after the count, when the new key still read t=0, black,
@@ -600,10 +600,10 @@ def set_expression(
         try:
             hou.setPwd(parm.node())
             hou.hscriptExpression(expression)
-        except hou.OperationFailed as exc:
-            detail = str(exc).replace('The attempted operation failed.', '').strip()
+        except hou.OperationFailed as e:
+            detail = str(e).replace('The attempted operation failed.', '').strip()
             problems.append(f'{parm_name}: the expression does not evaluate ({detail})')
-        except Exception:
+        except hou.Error:
             pass
         finally:
             hou.setPwd(previous)
@@ -692,7 +692,7 @@ def link_parameters(
         )
     if _reaches(src, dst.path(), set()):
         raise ValueError(
-            f'Linking {dst.path()} to {src.path()} would create a channel cycle.'
+            f'linking {dst.path()} to {src.path()} would create a channel cycle.'
         )
 
     function = _channel_function(dst)
@@ -765,7 +765,7 @@ def create_spare_parameter(
     template_cls = type_map.get(parm_type.lower())
     if template_cls is None:
         raise ValueError(
-            f"Unsupported parm_type '{parm_type}'. Supported types: "
+            f"unsupported parm_type '{parm_type}'. Supported types: "
             f'{list(type_map.keys())}'
         )
 
@@ -944,7 +944,7 @@ def get_parameters(
     needle = _needle(value_contains)
     node = hou.node(node_path)
     if node is None:
-        raise hou.OperationFailed(f'Node not found: {node_path}')
+        raise hou.OperationFailed(f'node not found: {node_path}')
 
     if isinstance(patterns, str):
         patterns = [patterns]
@@ -996,7 +996,7 @@ def broken_references(parm: hou.Parm) -> list[str]:
             or '`' not in parm.unexpandedString()
         ):
             return []
-    except Exception:
+    except hou.Error:
         return []
     # A factory default is the node type's own, and Houdini evaluates it where
     # it means something: popsteerseek's `state` reads ch("statemethod") off
@@ -1146,7 +1146,7 @@ def get_parm_template_tree(
                 e.label() for e in group.entries() if _parm_type_name(e) == 'Folder'
             ]
             raise ValueError(
-                f'No folder labelled {labels!r}. Top-level folders: {available}'
+                f'no folder labelled {labels!r}. Top-level folders: {available}'
             )
         entries = [_template_tree_entry(found)]
     else:
@@ -1277,7 +1277,7 @@ def _resolve_node(node_path: str) -> hou.Node:
 
     node = hou.node(node_path)
     if node is None:
-        raise ValueError(f'Node not found: {node_path}')
+        raise ValueError(f'node not found: {node_path}')
     return node
 
 
@@ -1325,7 +1325,7 @@ def _resolve_parm(node_path: str, parm_name: str) -> hou.Parm:
         close = suggest_parms(parm_name, parm_labels(node))
         hint = f' Did you mean: {close}?' if close else ''
         raise ValueError(
-            f"Parameter '{parm_name}' not found on node '{node_path}'.{hint} "
+            f"parameter '{parm_name}' not found on node '{node_path}'.{hint} "
             f'get_node_card(node_type, parm_filter=...) lists the real names.'
         )
     return parm
@@ -1422,10 +1422,10 @@ def _template_to_dict(pt: hou.ParmTemplate) -> dict[str, Any]:
     # Default value
     try:
         info['default_value'] = list(pt.defaultValue())
-    except Exception:
+    except hou.Error:
         try:
             info['default_value'] = pt.defaultValue()
-        except Exception:
+        except hou.Error:
             info['default_value'] = None
 
     # Range
@@ -1434,7 +1434,7 @@ def _template_to_dict(pt: hou.ParmTemplate) -> dict[str, Any]:
         info['max'] = pt.maxValue()
         info['min_is_strict'] = pt.minIsStrict()
         info['max_is_strict'] = pt.maxIsStrict()
-    except Exception:
+    except hou.Error:
         pass
 
     # Menu items — capped at 50 to avoid enormous enum lists
@@ -1446,7 +1446,7 @@ def _template_to_dict(pt: hou.ParmTemplate) -> dict[str, Any]:
             info['menu_labels'] = list(labels)[:50]
             if len(items) > 50:
                 info['menu_items_truncated'] = True
-    except Exception:
+    except hou.Error:
         pass
 
     # Naming scheme (for multi-component parms)
@@ -1490,9 +1490,9 @@ def _run_callback(parm: hou.Parm) -> dict[str, Any] | None:
         return None
     try:
         route = callback_helpers.press(parm)
-    except callback_helpers.CallbackError as exc:
-        return {'run': False, 'route': 'python', 'error': str(exc).splitlines()[0]}
-    except Exception as exc:
+    except callback_helpers.CallbackError as e:
+        return {'run': False, 'route': 'python', 'error': str(e).splitlines()[0]}
+    except hou.Error as e:
         # The Hscript route goes through pressButton(), which raises
         # hou.OperationFailed ("callback script could not be run") -- after
         # set() already wrote the value, so the write itself stands. Anything
@@ -1501,7 +1501,7 @@ def _run_callback(parm: hou.Parm) -> dict[str, Any] | None:
         return {
             'run': False,
             'route': route,
-            'error': error_helpers.readable_message(exc),
+            'error': error_helpers.readable_message(e),
         }
     return {'run': True, 'route': route}
 
@@ -1542,7 +1542,7 @@ def _expression_of(parm: hou.Parm) -> str | None:
 
     try:
         expression = parm.expression()
-    except Exception:
+    except hou.Error:
         # hou.Parm.expression() wants exactly one key. Writing a literal to a
         # parm whose expression sits on another frame (a File Cache's $FEND,
         # written at frame 6) adds a second key with the same expression and
@@ -1699,7 +1699,7 @@ def _set_tuple(
         return None, {}
     if len(value) != len(parm_tuple):
         raise ValueError(
-            f"Parameter '{parm_name}' on {node.path()} has "
+            f"parameter '{parm_name}' on {node.path()} has "
             f'{len(parm_tuple)} components, got {len(value)} values.'
         )
     components = list(parm_tuple)
@@ -1805,7 +1805,7 @@ def _channel_function(parm: hou.Parm) -> str:
 
     try:
         kind = parm.parmTemplate().type()
-    except Exception:
+    except hou.Error:
         return 'ch'
     return 'chs' if kind == hou.parmTemplateType.String else 'ch'
 
@@ -1850,7 +1850,7 @@ def _menu_template(
         spec['default'] = default_value
     if not spec['menu_items']:
         raise ValueError(
-            f'Menu parameter {parm_name!r} needs menu_items: plain strings, or '
+            f'menu parameter {parm_name!r} needs menu_items: plain strings, or '
             f'[value, label] pairs such as [["0", "Uniform"], ["1", "By Attribute"]]; '
             f'default_value then picks one by value or index.'
         )
@@ -1896,7 +1896,7 @@ def _build_parm_template(spec: dict) -> hou.ParmTemplate:
     template_cls = type_map.get(parm_type)
     if template_cls is None:
         raise ValueError(
-            f"Unsupported parm_type '{parm_type}' for parameter '{parm_name}'."
+            f"unsupported parm_type '{parm_type}' for parameter '{parm_name}'."
         )
 
     kwargs: dict[str, Any] = {}
@@ -2003,7 +2003,7 @@ def _off_default(parm: hou.Parm) -> bool:
         if ramp is not None:
             return not ramp.isAtRampDefault()
         return not parm.isAtDefault()
-    except Exception:
+    except hou.Error:
         return False
 
 
@@ -2014,7 +2014,7 @@ def _valueless(parm: hou.Parm) -> bool:
 
     try:
         return parm.parmTemplate().type().name() in _VALUELESS_PARM_TYPES
-    except Exception:
+    except hou.Error:
         return False
 
 
@@ -2027,7 +2027,7 @@ def _ramp_key_folded(parm: hou.Parm, lowered: list[str] | None) -> bool:
         ramp = parm.parentMultiParm()
         if ramp is None or ramp.parmTemplate().type() != hou.parmTemplateType.Ramp:
             return False
-    except Exception:
+    except hou.Error:
         return False
     if lowered is None or _matches_patterns(ramp, lowered):
         return True
@@ -2051,7 +2051,7 @@ def _ramp_named_by_key(parm: hou.Parm, lowered: list[str] | None) -> bool:
             _matches_patterns(key, lowered) and _ramp_key_folded(key, lowered)
             for key in parm.multiParmInstances()
         )
-    except Exception:
+    except hou.Error:
         return False
 
 
@@ -2105,7 +2105,7 @@ def _sweep_parameters(
 
     parent = hou.node(inside)
     if parent is None:
-        raise hou.OperationFailed(f'Node not found: {inside}')
+        raise hou.OperationFailed(f'node not found: {inside}')
     if isinstance(patterns, str):
         patterns = [patterns]
     needle = _needle(value_contains)
@@ -2368,7 +2368,7 @@ def _node_type_for_tree(context: str, type_name: str) -> Any:
     category = categories.get(context)
     if category is None:
         raise ValueError(
-            f"Unknown context '{context}'. Available: {sorted(categories)}"
+            f"unknown context '{context}'. Available: {sorted(categories)}"
         )
     resolved = _resolve_node_type(category, type_name)
     if resolved is None:
@@ -2376,7 +2376,7 @@ def _node_type_for_tree(context: str, type_name: str) -> Any:
             type_name, list(category.nodeTypes()), n=5, cutoff=0.4
         )
         raise ValueError(
-            f"Node type '{type_name}' not found in {context}. Close: {close}"
+            f"node type '{type_name}' not found in {context}. Close: {close}"
         )
     return resolved
 

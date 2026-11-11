@@ -83,8 +83,8 @@ class HoudiniBridge:
 
         try:
             commands = set(await self.list_commands())
-        except HoudiniConnectionError as exc:
-            logger.warning('Could not read plugin commands: %s', exc)
+        except HoudiniConnectionError as e:
+            logger.warning('Could not read plugin commands: %s', e)
             return
         missing = PLUGIN_COMMANDS - commands
         if missing:
@@ -115,8 +115,8 @@ class HoudiniBridge:
         failed_port = self._port
         try:
             return await self._execute(command, params, timeout=timeout)
-        except HoudiniConnectionError as exc:
-            if not exc.retryable:
+        except HoudiniConnectionError as e:
+            if not e.retryable:
                 raise
             logger.info('Reconnecting to Houdini after a connection failure')
             await self._rediscover(failed_port)
@@ -165,26 +165,26 @@ class HoudiniBridge:
                 timeout=effective,
             )
             response.raise_for_status()
-        except httpx.HTTPStatusError as exc:
+        except httpx.HTTPStatusError as e:
             raise HoudiniConnectionError(
-                f'houdini returned HTTP {exc.response.status_code}'
-            ) from exc
-        except httpx.TimeoutException as exc:
-            retryable = isinstance(exc, httpx.ConnectTimeout)
+                f'houdini returned HTTP {e.response.status_code}'
+            ) from e
+        except httpx.TimeoutException as e:
+            retryable = isinstance(e, httpx.ConnectTimeout)
             raise HoudiniConnectionError(
                 f'houdini request timed out after {effective}s',
                 retryable=retryable,
-            ) from exc
-        except httpx.TransportError as exc:
-            retryable = isinstance(exc, httpx.ConnectError)
+            ) from e
+        except httpx.TransportError as e:
+            retryable = isinstance(e, httpx.ConnectError)
             raise HoudiniConnectionError(
-                f'cannot reach houdini at {self.base_url} ({type(exc).__name__})',
+                f'cannot reach houdini at {self.base_url} ({type(e).__name__})',
                 retryable=retryable,
-            ) from exc
+            ) from e
         try:
             payload = response.json()
-        except json.JSONDecodeError as exc:
-            raise HoudiniConnectionError('houdini returned invalid JSON') from exc
+        except json.JSONDecodeError as e:
+            raise HoudiniConnectionError('houdini returned invalid JSON') from e
         if not isinstance(payload, dict):
             raise HoudiniConnectionError(
                 f'unexpected houdini response type: {type(payload).__name__}'

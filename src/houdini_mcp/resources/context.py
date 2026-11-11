@@ -16,9 +16,9 @@ async def run_command(
 
     try:
         bridge = current_bridge()
-    except RuntimeError as exc:
-        raise ResourceError(str(exc)) from exc
+    except RuntimeError as e:
+        raise ResourceError(str(e)) from e
     try:
         return await bridge.execute(command, params)
-    except HoudiniMCPError as exc:
-        raise ResourceError(str(exc)) from exc
+    except HoudiniMCPError as e:
+        raise ResourceError(str(e)) from e

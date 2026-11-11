@@ -451,11 +451,11 @@ def build_network(
                     for position, component in enumerate(value):
                         try:
                             _wrapped_expression(component)
-                        except ValueError as exc:
+                        except ValueError as e:
                             errors.append(
                                 f"node {label}: parm '{parm_name}' component "
                                 f'{position}: '
-                                f'{exc}'
+                                f'{e}'
                             )
                 if is_ramp_value(value):
                     # A whole ramp, written as one value; on any other parm a
@@ -560,8 +560,8 @@ def build_network(
                         input_index = _find_input(
                             connectors['inputs'], str(wire['input_name']), max_inputs
                         )
-                    except ValueError as exc:
-                        errors.append(f'node {label}: {spec.get("type")} {exc}')
+                    except ValueError as e:
+                        errors.append(f'node {label}: {spec.get("type")} {e}')
             if input_index is not None and input_index >= max_inputs > 0:
                 errors.append(
                     f'node {label}: input {input_index} exceeds max inputs '
@@ -577,8 +577,8 @@ def build_network(
                     )
                 try:
                     _indirect_input_item(parent, indirect, parent_connectors())
-                except ValueError as exc:
-                    errors.append(f'node {label}: {exc}')
+                except ValueError as e:
+                    errors.append(f'node {label}: {e}')
                 if wire['source_output'] != 0:
                     errors.append(
                         f'node {label}: a subnet input connector has one output; '
@@ -602,8 +602,8 @@ def build_network(
                 if outputs is not None:
                     try:
                         _find_output(outputs, wire['source_output'])
-                    except ValueError as exc:
-                        errors.append(f"node {label}: input source '{source}' {exc}")
+                    except ValueError as e:
+                        errors.append(f"node {label}: input source '{source}' {e}")
 
     if errors:
         reply: dict[str, Any] = {
@@ -652,15 +652,15 @@ def build_network(
                     continue  # an {"expr": ...} value, set with the expressions below
                 try:
                     written = _apply_parm(node, parm_name, value, override, callbacks)
-                except Exception as exc:
+                except Exception as e:
                     items = []
                     with contextlib.suppress(Exception):
                         items = menu_helpers.items(node.parm(parm_name))
                     shown = f' Menu items: {items[:20]}' if items else ''
                     raise RuntimeError(
                         f"{node.path()} parm '{parm_name}': "
-                        f'{error_helpers.readable_message(exc)}.{shown}'
-                    ) from exc
+                        f'{error_helpers.readable_message(e)}.{shown}'
+                    ) from e
                 for kind, found in written.items():
                     parm_reports.setdefault(node.path(), {}).setdefault(
                         kind, {}
@@ -730,7 +730,7 @@ def build_network(
             if spec.get('comment'):
                 node.setComment(spec['comment'])
                 node.setGenericFlag(hou.nodeFlag.DisplayComment, True)
-    except Exception as exc:
+    except Exception as e:
         for node in created.values():
             with contextlib.suppress(Exception):
                 node.destroy()
@@ -738,8 +738,7 @@ def build_network(
             'success': False,
             'valid': False,
             'errors': [
-                f'build failed and was rolled back: '
-                f'{error_helpers.readable_message(exc)}'
+                f'build failed and was rolled back: {error_helpers.readable_message(e)}'
             ],
             'created': [],
         }
@@ -855,7 +854,7 @@ def verify_network(parent_path: str, force_cook: bool = False, **_: Any) -> dict
 
     parent = hou.node(parent_path)
     if parent is None:
-        raise ValueError(f'Network not found: {parent_path}')
+        raise ValueError(f'network not found: {parent_path}')
 
     display = parent.displayNode() if hasattr(parent, 'displayNode') else None
     if display is None:
@@ -937,7 +936,7 @@ def get_node_card(
     category = categories.get(context)
     if category is None:
         raise ValueError(
-            f"Unknown context '{context}'. Available: {sorted(categories.keys())}"
+            f"unknown context '{context}'. Available: {sorted(categories.keys())}"
         )
     resolved = _resolve_node_type(category, node_type)
     if resolved is None:
@@ -945,7 +944,7 @@ def get_node_card(
             node_type, list(category.nodeTypes()), n=5, cutoff=0.4
         )
         raise ValueError(
-            f"Node type '{node_type}' not found in {context}. Close matches: {close}"
+            f"node type '{node_type}' not found in {context}. Close matches: {close}"
         )
 
     # Connectors, in order, by index AND name: the index of `texcoord` on
@@ -1199,7 +1198,7 @@ def find_expensive_nodes(
 
     root = hou.node(root_path)
     if root is None:
-        raise ValueError(f'Node not found: {root_path}')
+        raise ValueError(f'node not found: {root_path}')
 
     if frame is not None:
         hou.setFrame(frame)
@@ -1294,7 +1293,7 @@ def cook_frame_range(
 
     node = hou.node(node_path)
     if node is None:
-        raise hou.OperationFailed(f'Node not found: {node_path}')
+        raise hou.OperationFailed(f'node not found: {node_path}')
 
     playbar_start, playbar_end = hou.playbar.frameRange()
     start = float(playbar_start if start is None else start)
@@ -1344,7 +1343,7 @@ def cook_frame_range(
             except hou.OperationInterrupted:
                 interrupted_at = frame
                 break
-            except hou.OperationFailed as exc:
+            except hou.OperationFailed as e:
                 # Esc during the cook is not OperationInterrupted: measured on
                 # 22.0, cook() raised a bare OperationFailed and the node said
                 # "Cooking was interrupted.", which read as a failed frame.
@@ -1354,7 +1353,7 @@ def cook_frame_range(
                 # A cook failure is data, not a reason to abandon the range: a solver
                 # that fails on one frame and recovers is exactly what the caller is
                 # trying to see.
-                cook_error = str(exc).splitlines()[0][:200]
+                cook_error = str(e).splitlines()[0][:200]
             elapsed_ms = round((time.time() - began) * 1000, 1)
             total_ms += elapsed_ms
 
@@ -1372,8 +1371,8 @@ def cook_frame_range(
                 first_error_frame = frame
             try:
                 row.update(_frame_measurement(node, attribs, volumes))
-            except hou.OperationFailed as exc:
-                row['measure_error'] = str(exc).splitlines()[0][:200]
+            except hou.OperationFailed as e:
+                row['measure_error'] = str(e).splitlines()[0][:200]
             frames.append(row)
 
     shown = _thin_frame_rows(frames)
@@ -1424,7 +1423,7 @@ def get_cook_status(node_path: str = '/obj', **_: Any) -> dict:
 
     node = hou.node(node_path)
     if node is None:
-        raise hou.OperationFailed(f'Node not found: {node_path}')
+        raise hou.OperationFailed(f'node not found: {node_path}')
 
     result: dict[str, Any] = {
         'node_path': node.path(),
@@ -1493,7 +1492,7 @@ def _is_dynamic_menu(probe: hou.Node, parm: hou.Parm) -> bool:
 
     try:
         return parm.name() == 'signature' and probe.type().category().name() == 'Vop'
-    except Exception:
+    except (hou.Error, AttributeError):
         return False
 
 
@@ -1592,8 +1591,8 @@ def _locked_on_build(scratch: hou.Node, node_type: Any, spec: dict) -> dict[str,
                     continue
                 try:
                     _apply_parm(probe, name, value, override, callbacks)
-                except LockedParmError as exc:
-                    found[name] = str(exc)
+                except LockedParmError as e:
+                    found[name] = str(e)
                 except Exception:
                     pass  # a bad value is reported by the rest of validation
             for name in _spec_expressions(spec):
@@ -1673,11 +1672,11 @@ def _generated_menus_of(node: hou.Node) -> dict[str, dict[str, Any]]:
                 entry: dict[str, Any] = {'generator': script}
                 try:
                     items, labels = menu_helpers.items_and_labels(parm)
-                except menu_helpers.MenuScriptError as exc:
+                except menu_helpers.MenuScriptError as e:
                     # Read on the card's unwired probe: a script that needs
                     # an input fails here and lists its items on a wired node.
                     items, labels = [], []
-                    entry['script_error'] = str(exc).splitlines()[0]
+                    entry['script_error'] = str(e).splitlines()[0]
                 if items:
                     entry['items'] = items
                     entry['labels'] = labels
@@ -1743,8 +1742,8 @@ def _connectors_for_type(
                 with contextlib.suppress(Exception):
                     _mark_parm_named_outputs(probe, connectors)
             break
-        except Exception as exc:
-            first_error = first_error or exc
+        except hou.Error as e:
+            first_error = first_error or e
         finally:
             with contextlib.suppress(Exception):
                 if scratch is not None:
@@ -1805,7 +1804,7 @@ def _on_created_templates(category_name: str, node_type: Any) -> list:
     try:
         if 'OnCreated' not in definition.sections():
             return []
-    except Exception:
+    except (hou.Error, AttributeError):
         return []
     key = (category_name, node_type.name(), _definition_stamp(node_type))
     if key in _ON_CREATED_CACHE:
@@ -1830,7 +1829,7 @@ def _on_created_templates(category_name: str, node_type: Any) -> list:
                     for template in probe.parmTemplateGroup().entriesWithoutFolders()
                     if template.name() not in known
                 ]
-        except Exception:
+        except hou.Error:
             added = []
         finally:
             with contextlib.suppress(Exception):
@@ -1849,7 +1848,7 @@ def _vop_signatures(node_type: Any) -> list[dict[str, Any]]:
         if definition is None:
             return []
         text = definition.sections()['DialogScript'].contents()
-    except Exception:
+    except (hou.Error, AttributeError, KeyError):
         return []
     signatures = []
     for label, token, types in _SIGNATURE_LINE_RE.findall(text):
@@ -1965,7 +1964,7 @@ def _expression_of(parm: hou.Parm) -> str | None:
 
     try:
         expression = parm.expression()
-    except Exception:
+    except hou.Error:
         return None
     return expression or None
 
@@ -2176,7 +2175,7 @@ def _misshapen_attribs(node: hou.Node) -> dict[tuple[str, str], int]:
         if not hasattr(node, 'geometry') or node.needsToCook():
             return {}
         geo = node.geometry()
-    except Exception:
+    except (hou.Error, AttributeError):
         return {}
     if geo is None:
         return {}
@@ -2250,7 +2249,7 @@ def _stage_summary(node: hou.Node) -> dict[str, Any] | None:
         from pxr import UsdGeom, UsdShade  # ty: ignore[import-not-found]
 
         stage = node.stage()
-    except Exception:
+    except (ImportError, hou.Error):
         return None
     if stage is None:
         return None
@@ -2317,7 +2316,7 @@ def _geometry_summary(node: hou.Node) -> dict[str, Any] | None:
         return None
     try:
         geo = node.geometry()
-    except Exception:
+    except (hou.Error, AttributeError):
         return None
     if geo is None:
         return None

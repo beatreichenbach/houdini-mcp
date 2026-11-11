@@ -64,7 +64,7 @@ def set_keyframes(
         value = kf_data.get('value')
         if frame is None or value is None:
             raise hou.OperationFailed(
-                f"Each keyframe must have 'frame' and 'value'. Got: {kf_data}"
+                f"each keyframe must have 'frame' and 'value'. Got: {kf_data}"
             )
 
         key = hou.Keyframe()
@@ -111,7 +111,7 @@ def delete_keyframe(
 
     if not found:
         raise hou.OperationFailed(
-            f"No keyframe found at frame {frame} on parameter '{parm_name}' of node "
+            f"no keyframe found at frame {frame} on parameter '{parm_name}' of node "
             f"'{node_path}'."
         )
 
@@ -236,7 +236,7 @@ def playbar_control(
     valid_actions = ('play', 'stop', 'reverse')
     if action not in valid_actions:
         raise hou.OperationFailed(
-            f"Invalid action '{action}'. Must be one of: {valid_actions}"
+            f"invalid action '{action}'. Must be one of: {valid_actions}"
         )
 
     # Apply optional settings before acting
@@ -270,11 +270,11 @@ def _get_parm(node_path: str, parm_name: str) -> hou.Parm:
 
     node = hou.node(node_path)
     if node is None:
-        raise hou.NodeError(f'Node not found: {node_path}')
+        raise hou.NodeError(f'node not found: {node_path}')
     parm = node.parm(parm_name)
     if parm is None:
         raise hou.OperationFailed(
-            f"Parameter '{parm_name}' not found on node '{node_path}'. "
+            f"parameter '{parm_name}' not found on node '{node_path}'. "
             f'Available parameters: {[p.name() for p in node.parms()[:30]]}'
         )
     return parm
@@ -289,23 +289,23 @@ def _keyframe_to_dict(key: hou.Keyframe) -> dict:
     }
     try:
         result['slope'] = key.slope()
-    except Exception:
+    except hou.Error:
         result['slope'] = None
     try:
         result['accel'] = key.accel()
-    except Exception:
+    except hou.Error:
         result['accel'] = None
     try:
         expr = key.expression()
         result['expression'] = expr if expr else None
-    except Exception:
+    except hou.Error:
         result['expression'] = None
     try:
         result['in_slope'] = key.inSlope()
-    except Exception:
+    except hou.Error:
         result['in_slope'] = None
     try:
         result['in_accel'] = key.inAccel()
-    except Exception:
+    except hou.Error:
         result['in_accel'] = None
     return result

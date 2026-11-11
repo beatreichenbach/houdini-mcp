@@ -93,9 +93,9 @@ def get_cop_geometry(node_path: str, output_index: int = 0) -> dict:
 
     try:
         geo = node.geometry(output_index)
-    except Exception as e:
+    except hou.Error as e:
         raise ValueError(
-            f'Failed to get geometry from COP node {node_path} at output '
+            f'failed to get geometry from COP node {node_path} at output '
             f'{output_index}: '
             f'{error_helpers.readable_message(e)}'
         ) from e
@@ -215,7 +215,7 @@ def get_cop_layer(node_path: str, output_index: int = 0) -> dict:
     # without a screenshot of a visualizer that is not the data.
     try:
         layer_data = node.layer(output_index)
-    except Exception:
+    except hou.Error:
         layer_data = None
     result['copernicus_layer'] = (
         _layer_summary(layer_data) if layer_data is not None else {'available': False}
@@ -236,7 +236,7 @@ def create_cop_node(
 
     parent = hou.node(parent_path)
     if parent is None:
-        raise ValueError(f'Parent node not found: {parent_path}')
+        raise ValueError(f'parent node not found: {parent_path}')
     if name:
         _refuse_taken_name(parent, name)
 
@@ -246,7 +246,7 @@ def create_cop_node(
         )
     except hou.OperationFailed as e:
         raise ValueError(
-            f"Failed to create COP node of type '{cop_type}' under {parent_path}: "
+            f"failed to create COP node of type '{cop_type}' under {parent_path}: "
             f'{error_helpers.readable_message(e)}'
         ) from e
 
@@ -277,7 +277,7 @@ def set_cop_flags(
         try:
             node.setDisplayFlag(display)
             flags_set['display'] = display
-        except Exception as e:
+        except hou.Error as e:
             flags_set['display_error'] = str(e)
 
     if export_flag is not None:
@@ -287,7 +287,7 @@ def set_cop_flags(
         try:
             getattr(node, setter)(export_flag)
             flags_set['export_flag'] = export_flag
-        except Exception as e:
+        except (hou.Error, AttributeError) as e:
             flags_set['export_flag_error'] = str(e)
 
     if compress is not None:
@@ -355,9 +355,9 @@ def get_cop_vdb(node_path: str, output_index: int = 0) -> dict:
 
     try:
         geo = node.geometry(output_index)
-    except Exception as e:
+    except hou.Error as e:
         raise ValueError(
-            f'Failed to get geometry from COP node {node_path} at output '
+            f'failed to get geometry from COP node {node_path} at output '
             f'{output_index}: '
             f'{error_helpers.readable_message(e)}'
         ) from e
@@ -437,7 +437,7 @@ def _get_cop_node(node_path: str) -> hou.Node:
 
     node = hou.node(node_path)
     if node is None:
-        raise ValueError(f'Node not found: {node_path}')
+        raise ValueError(f'node not found: {node_path}')
     category = node.type().category().name()
     if category == 'Cop':
         return node

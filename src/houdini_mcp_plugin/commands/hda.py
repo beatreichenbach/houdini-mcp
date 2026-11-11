@@ -117,7 +117,7 @@ def list_installed_hdas(filter: str | None = None, limit: int = 100) -> dict:
     for hda_file in hou.hda.loadedFiles():
         try:
             definitions = hou.hda.definitionsInFile(hda_file)
-        except Exception:
+        except hou.Error:
             definitions = []
         for defn in definitions:
             type_name = defn.nodeTypeName()
@@ -166,7 +166,7 @@ def get_hda_info(
         definition = _get_definition(instance)
     elif hda_file is not None:
         if not os.path.isfile(hda_file):
-            raise FileNotFoundError(f'HDA file not found: {hda_file}')
+            raise FileNotFoundError(f'hda file not found: {hda_file}')
         definitions = hou.hda.definitionsInFile(hda_file)
         if type_name:
             for defn in definitions:
@@ -175,13 +175,13 @@ def get_hda_info(
                     break
             if definition is None:
                 raise ValueError(
-                    f"Type '{type_name}' not found in {hda_file}. "
+                    f"type '{type_name}' not found in {hda_file}. "
                     f'Available: {[d.nodeTypeName() for d in definitions]}'
                 )
         elif definitions:
             definition = definitions[0]
         else:
-            raise ValueError(f'No HDA definitions found in {hda_file}')
+            raise ValueError(f'no HDA definitions found in {hda_file}')
     elif type_name is not None:
         node_type = hou.nodeType(hou.sopNodeTypeCategory(), type_name)
         if node_type is None:
@@ -200,13 +200,13 @@ def get_hda_info(
                     node_type = hou.nodeType(cat_func(), type_name)
                     if node_type is not None:
                         break
-                except Exception:
+                except hou.Error:
                     continue
         if node_type is None:
-            raise ValueError(f'Node type not found: {type_name}')
+            raise ValueError(f'node type not found: {type_name}')
         definition = node_type.definition()
         if definition is None:
-            raise ValueError(f"Type '{type_name}' is not an HDA.")
+            raise ValueError(f"type '{type_name}' is not an HDA.")
     else:
         raise ValueError(
             'at least one of node_path, hda_file, or type_name must be provided.'
@@ -218,7 +218,7 @@ def get_hda_info(
     try:
         parm_templates = definition.parmTemplateGroup().entries()
         info['parameters'] = [_parm_template_to_dict(pt) for pt in parm_templates]
-    except Exception:
+    except hou.Error:
         info['parameters'] = []
 
     # Input and output labels
@@ -228,10 +228,10 @@ def get_hda_info(
             try:
                 label = definition.inputLabel(i)
                 input_labels.append(label)
-            except Exception:
+            except hou.Error:
                 break
         info['input_labels'] = input_labels
-    except Exception:
+    except hou.Error:
         info['input_labels'] = []
 
     try:
@@ -240,10 +240,10 @@ def get_hda_info(
             try:
                 label = definition.outputLabel(i)
                 output_labels.append(label)
-            except Exception:
+            except hou.Error:
                 break
         info['output_labels'] = output_labels
-    except Exception:
+    except hou.Error:
         info['output_labels'] = []
 
     if instance is not None and info['dive_target']:
@@ -260,7 +260,7 @@ def install_hda(file_path: str, force: bool = False) -> dict:
     # This guard sat inside the docstring above, where it never ran.
     config.require_inside_project_root(file_path, 'HDA file')
     if not os.path.isfile(file_path):
-        raise FileNotFoundError(f'HDA file not found: {file_path}')
+        raise FileNotFoundError(f'hda file not found: {file_path}')
 
     # Check if already installed
     loaded_files = hou.hda.loadedFiles()
@@ -278,9 +278,9 @@ def install_hda(file_path: str, force: bool = False) -> dict:
 
     try:
         hou.hda.installFile(file_path)
-    except Exception as e:
+    except hou.Error as e:
         raise ValueError(
-            f'Failed to install HDA: {error_helpers.readable_message(e)}'
+            f'failed to install HDA: {error_helpers.readable_message(e)}'
         ) from e
 
     # List definitions that were installed
@@ -309,15 +309,15 @@ def uninstall_hda(file_path: str) -> dict:
         installed = list(hou.hda.loadedFiles())
     if installed and file_path not in installed:
         raise ValueError(
-            f'HDA file is not installed, so there is nothing to uninstall: '
+            f'hda file is not installed, so there is nothing to uninstall: '
             f'{file_path}. '
             f'Installed files: {installed[:6]}'
         )
     try:
         hou.hda.uninstallFile(file_path)
-    except Exception as e:
+    except hou.Error as e:
         raise ValueError(
-            f'Failed to uninstall HDA {file_path}: '
+            f'failed to uninstall HDA {file_path}: '
             f'{error_helpers.readable_message(e)}. '
             f'Installed files: {installed[:6] if installed else "none"}'
         ) from e
@@ -335,13 +335,13 @@ def reload_hda(file_path: str) -> dict:
 
     config.require_inside_project_root(file_path, 'HDA file')
     if not os.path.isfile(file_path):
-        raise FileNotFoundError(f'HDA file not found: {file_path}')
+        raise FileNotFoundError(f'hda file not found: {file_path}')
 
     try:
         hou.hda.reloadFile(file_path)
-    except Exception as e:
+    except hou.Error as e:
         raise ValueError(
-            f'Failed to reload HDA: {error_helpers.readable_message(e)}'
+            f'failed to reload HDA: {error_helpers.readable_message(e)}'
         ) from e
 
     definitions = hou.hda.definitionsInFile(file_path)
@@ -371,7 +371,7 @@ def create_hda(
     # Verify the node is a subnet
     if not node.isSubNetwork():
         raise ValueError(
-            f'Node {node_path} is not a subnet. Only subnet nodes can be converted to '
+            f'node {node_path} is not a subnet. Only subnet nodes can be converted to '
             f'HDAs.'
         )
 
@@ -391,9 +391,9 @@ def create_hda(
             version=version,
             max_num_inputs=inputs_used,
         )
-    except Exception as e:
+    except hou.Error as e:
         raise ValueError(
-            f'Failed to create HDA: {error_helpers.readable_message(e)}'
+            f'failed to create HDA: {error_helpers.readable_message(e)}'
         ) from e
 
     promoted = _promote_spares_to_definition(hda_node)
@@ -456,9 +456,9 @@ def update_hda(node_path: str) -> dict:
     before = _mtime()
     try:
         node.type().definition().updateFromNode(node)
-    except Exception as e:
+    except hou.Error as e:
         raise ValueError(
-            f'Failed to update HDA definition: {error_helpers.readable_message(e)}'
+            f'failed to update HDA definition: {error_helpers.readable_message(e)}'
         ) from e
     after = _mtime()
 
@@ -512,7 +512,7 @@ def get_hda_sections(node_path: str) -> dict:
         try:
             content = section.contents()
             info['size_bytes'] = len(content) if content else 0
-        except Exception:
+        except hou.Error:
             info['size_bytes'] = None
         section_info.append(info)
 
@@ -535,15 +535,15 @@ def get_hda_section_content(node_path: str, section_name: str) -> dict:
     if section_name not in sections:
         available = sorted(sections.keys())
         raise ValueError(
-            f"Section '{section_name}' not found in HDA '{definition.nodeTypeName()}'. "
+            f"section '{section_name}' not found in HDA '{definition.nodeTypeName()}'. "
             f'Available sections: {available}'
         )
 
     try:
         content = sections[section_name].contents()
-    except Exception as e:
+    except hou.Error as e:
         raise ValueError(
-            f"Failed to read section '{section_name}': "
+            f"failed to read section '{section_name}': "
             f'{error_helpers.readable_message(e)}'
         ) from e
 
@@ -569,9 +569,9 @@ def set_hda_section_content(
 
     try:
         definition.addSection(section_name, content)
-    except Exception as e:
+    except hou.Error as e:
         raise ValueError(
-            f"Failed to write section '{section_name}': "
+            f"failed to write section '{section_name}': "
             f'{error_helpers.readable_message(e)}'
         ) from e
 
@@ -594,7 +594,7 @@ def list_hda_versions(node_path: str) -> dict:
     node_type = node.type()
     own = _type_name_components(node_type.name())
     if own is None:
-        raise hou.OperationFailed(f"Cannot read the type name of '{node_type.name()}'")
+        raise hou.OperationFailed(f"cannot read the type name of '{node_type.name()}'")
     scope, namespace, name, _ = own
 
     # Houdini keeps a version in the type name (brick::1.1 is a different
@@ -632,7 +632,7 @@ def _get_node(node_path: str) -> hou.Node:
 
     node = hou.node(node_path)
     if node is None:
-        raise ValueError(f'Node not found: {node_path}')
+        raise ValueError(f'node not found: {node_path}')
     return node
 
 
@@ -642,7 +642,7 @@ def _get_definition(node: hou.Node) -> hou.HDADefinition:
     definition = node.type().definition()
     if definition is None:
         raise ValueError(
-            f'Node {node.path()} is not an HDA instance. Its type is '
+            f'node {node.path()} is not an HDA instance. Its type is '
             f"'{node.type().name()}'."
         )
     return definition
@@ -687,19 +687,19 @@ def _definition_to_dict(definition: hou.HDADefinition) -> dict:
 
     try:
         info['version'] = definition.version()
-    except Exception:
+    except hou.Error:
         info['version'] = None
 
     try:
         info['min_num_inputs'] = definition.minNumInputs()
         info['max_num_inputs'] = definition.maxNumInputs()
-    except Exception:
+    except hou.Error:
         info['min_num_inputs'] = None
         info['max_num_inputs'] = None
 
     try:
         info['max_num_outputs'] = definition.maxNumOutputs()
-    except Exception:
+    except hou.Error:
         info['max_num_outputs'] = None
 
     sections: dict[str, hou.HDASection] = {}
@@ -714,7 +714,7 @@ def _definition_to_dict(definition: hou.HDADefinition) -> dict:
 
     try:
         info['embedded'] = _is_embedded(definition)
-    except Exception:
+    except hou.Error:
         info['embedded'] = None
 
     info['dive_target'] = _section_text(sections, 'DiveTarget') or None
@@ -733,20 +733,20 @@ def _parm_template_to_dict(pt: Any) -> dict:
     }
     try:
         info['default_value'] = list(pt.defaultValue())
-    except Exception:
+    except hou.Error:
         try:
             info['default_value'] = list(pt.defaultExpression())
-        except Exception:
+        except hou.Error:
             info['default_value'] = None
 
     try:
         info['num_components'] = pt.numComponents()
-    except Exception:
+    except hou.Error:
         info['num_components'] = 1
 
     try:
         info['is_hidden'] = pt.isHidden()
-    except Exception:
+    except hou.Error:
         info['is_hidden'] = False
 
     return info
@@ -794,7 +794,7 @@ def _menu_pairs(spec: dict) -> tuple:
 
     items = spec.get('menu_items')
     if not items:
-        raise ValueError(f'Menu parameter {spec.get("name")!r} needs menu_items.')
+        raise ValueError(f'menu parameter {spec.get("name")!r} needs menu_items.')
     # A string iterates as its characters: "abc" made a menu of a, b, c.
     if isinstance(items, str):
         raise ValueError(
@@ -806,7 +806,7 @@ def _menu_pairs(spec: dict) -> tuple:
         if isinstance(item, (list, tuple)):
             if len(item) != 2:
                 raise ValueError(
-                    f'Menu item {item!r} on {spec.get("name")!r} must be '
+                    f'menu item {item!r} on {spec.get("name")!r} must be '
                     f'[value, label] or a plain string.'
                 )
             values.append(str(item[0]))
@@ -824,14 +824,14 @@ def _menu_default(spec: dict, values: tuple) -> int:
     if isinstance(default, str):
         if default not in values:
             raise ValueError(
-                f'Default {default!r} of menu {spec.get("name")!r} is not one of its '
+                f'default {default!r} of menu {spec.get("name")!r} is not one of its '
                 f'items {list(values)}.'
             )
         return values.index(default)
     index = int(default)
     if not 0 <= index < len(values):
         raise ValueError(
-            f'Default {index} of menu {spec.get("name")!r} is out of range: it has '
+            f'default {index} of menu {spec.get("name")!r} is out of range: it has '
             f'{len(values)} item(s), 0-{len(values) - 1}.'
         )
     return index
@@ -841,7 +841,7 @@ def _build_parm_template(spec: dict, seen: set) -> Any:
     """Turn one spec dict into a hou.ParmTemplate (recursive for folders)."""
 
     if not isinstance(spec, dict):
-        raise ValueError(f'Each parameter must be a dict, got {type(spec).__name__}.')
+        raise ValueError(f'each parameter must be a dict, got {type(spec).__name__}.')
     spec = dict(spec)
     for alias, key in _SPEC_ALIASES.items():
         if alias in spec and key not in spec:
@@ -849,9 +849,9 @@ def _build_parm_template(spec: dict, seen: set) -> Any:
 
     name = spec.get('name')
     if not name:
-        raise ValueError(f"Parameter spec is missing 'name': {spec}")
+        raise ValueError(f"parameter spec is missing 'name': {spec}")
     if name in seen:
-        raise ValueError(f'Duplicate parameter name {name!r} in this interface.')
+        raise ValueError(f'duplicate parameter name {name!r} in this interface.')
     seen.add(name)
 
     label = spec.get('label') or name.replace('_', ' ').title()
@@ -863,7 +863,7 @@ def _build_parm_template(spec: dict, seen: set) -> Any:
         folder_key = str(spec.get('folder_type', 'tabs')).lower()
         if folder_key not in _FOLDER_TYPES:
             raise ValueError(
-                f'Unknown folder_type {folder_key!r} on {name!r}. '
+                f'unknown folder_type {folder_key!r} on {name!r}. '
                 f'Use one of: {sorted(_FOLDER_TYPES)}.'
             )
         children = tuple(
@@ -962,7 +962,7 @@ def _build_parm_template(spec: dict, seen: set) -> Any:
         )
     else:
         raise ValueError(
-            f'Unknown parameter type {kind!r} on {name!r}. Use one of: '
+            f'unknown parameter type {kind!r} on {name!r}. Use one of: '
             f'int, float, vector, color, string, file, oppath, toggle, menu, '
             f'button, separator, label, folder.'
         )
@@ -997,7 +997,7 @@ def _naming_scheme(spec: dict, default: Any) -> Any:
     attr = _NAMING_SCHEMES.get(str(key).lower().replace('_', ''))
     if attr is None:
         raise ValueError(
-            f'Unknown naming_scheme {key!r} on {spec.get("name")!r}. '
+            f'unknown naming_scheme {key!r} on {spec.get("name")!r}. '
             f'Use one of: {sorted(set(_NAMING_SCHEMES.values()))}.'
         )
     return getattr(hou.parmNamingScheme, attr)
@@ -1103,7 +1103,7 @@ def _describe_template(template: Any) -> dict:
                 str(key).replace('parmCondType.', ''): value
                 for key, value in conditionals.items()
             }
-    except Exception:
+    except hou.Error:
         pass
     # Folders are recognised by their reported type, not by isinstance: the
     # group hands back plain ParmTemplates and the check has to survive that.
@@ -1207,7 +1207,7 @@ def _find_target(group: Any, target: Any, what: str = 'target') -> Any:
     if labels is not None:
         folder = group.findFolder(labels)
         if folder is None:
-            raise ValueError(f'No folder labelled {labels!r} for {what}.')
+            raise ValueError(f'no folder labelled {labels!r} for {what}.')
         return folder, 'folder'
     name = str(target)
     template = group.find(name)
@@ -1223,7 +1223,7 @@ def _find_target(group: Any, target: Any, what: str = 'target') -> Any:
     close = get_close_matches(name, candidates, n=5, cutoff=0.4)
     hint = f' Did you mean: {close}?' if close else ''
     raise ValueError(
-        f'No parameter named or folder labelled {name!r} for {what}.{hint} '
+        f'no parameter named or folder labelled {name!r} for {what}.{hint} '
         f"(Component names such as 'tx' are not template names: use 't'.)"
     )
 
@@ -1300,7 +1300,7 @@ def _modify_template(template: Any, op: dict) -> list[str]:
                 )
             )
         else:
-            raise ValueError(f'A {kind} parameter has no default value to set.')
+            raise ValueError(f'a {kind} parameter has no default value to set.')
         changed.append('default')
     if 'default_expression' in op:
         _apply_default_expression(template, {'name': template.name(), **op})
@@ -1463,11 +1463,11 @@ def _edit_interface(
     node = _get_node(node_path)
     try:
         definition = _get_definition(node)
-    except ValueError as exc:
+    except ValueError as e:
         raise ValueError(
-            f'{exc} There is no definition whose interface could be edited; for '
+            f'{e} There is no definition whose interface could be edited; for '
             f'parameters on this node only, use create_spare_parameter.'
-        ) from exc
+        ) from e
 
     group = definition.parmTemplateGroup()
     before_names = {t.name() for t in _flatten_templates(group.entries())}
@@ -1480,11 +1480,11 @@ def _edit_interface(
             records.append(_apply_op(group, op, index, existing))
         except ValueError:
             raise
-        except Exception as exc:
+        except Exception as e:
             raise ValueError(
                 f'op #{index} ({op.get("op") if isinstance(op, dict) else op!r}): '
-                f'{error_helpers.readable_message(exc)}'
-            ) from exc
+                f'{error_helpers.readable_message(e)}'
+            ) from e
 
     collisions = _component_collisions(group)
     if collisions:
@@ -1524,13 +1524,13 @@ def _edit_interface(
         config.require_inside_project_root(definition.libraryFilePath(), 'HDA library')
     try:
         definition.setParmTemplateGroup(group)
-    except Exception as exc:
+    except hou.Error as e:
         raise ValueError(
-            f'Houdini refused the edited interface: '
-            f'{error_helpers.readable_message(exc)}. Nothing '
+            f'houdini refused the edited interface: '
+            f'{error_helpers.readable_message(e)}. Nothing '
             f'was '
             f'written.'
-        ) from exc
+        ) from e
 
     stored_group = definition.parmTemplateGroup()
     stored_list = _flatten_templates(stored_group.entries())
@@ -1691,7 +1691,7 @@ def _type_name_components(type_name: str) -> tuple[str, str, str, str] | None:
 
     try:
         parts = hou.hda.componentsFromFullNodeTypeName(type_name)
-    except Exception:
+    except hou.Error:
         return None
     if not isinstance(parts, (tuple, list)) or len(parts) != 4:
         return None

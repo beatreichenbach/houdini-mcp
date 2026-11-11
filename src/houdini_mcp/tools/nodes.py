@@ -250,16 +250,16 @@ async def connect_nodes(
     params['indirect_input'] = indirect_input
     try:
         return await run_command(ctx, 'nodes.connect_nodes', params)
-    except HoudiniCommandError as exc:
+    except HoudiniCommandError as e:
         # The compatibility check compares command names, and connect_nodes
         # exists on a plugin that predates indirect_input: say so.
-        if exc.code == 'BAD_ARGUMENTS' and 'indirect_input' in str(exc):
+        if e.code == 'BAD_ARGUMENTS' and 'indirect_input' in str(e):
             raise HoudiniCommandError(
-                f'{exc} The Houdini plugin predates indirect_input; update the '
+                f'{e} The Houdini plugin predates indirect_input; update the '
                 f"plugin to wire from a subnet's input connector.",
-                code=exc.code,
-                details=exc.details,
-            ) from exc
+                code=e.code,
+                details=e.details,
+            ) from e
         raise
 
 

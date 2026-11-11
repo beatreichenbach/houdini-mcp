@@ -28,7 +28,7 @@ def get_chop_data(
     node = _get_node(node_path)
 
     if node.type().category().name() != 'Chop':
-        raise ValueError(f'Node is not a CHOP node: {node_path}')
+        raise ValueError(f'node is not a CHOP node: {node_path}')
 
     # Collect channel metadata
     channels: list[dict[str, Any]] = []
@@ -67,7 +67,7 @@ def get_chop_data(
         track = node.track(channel_name)
         if track is None:
             raise ValueError(
-                f"Channel '{channel_name}' not found on CHOP node: {node_path}"
+                f"channel '{channel_name}' not found on CHOP node: {node_path}"
             )
 
         all_samples = list(track.allSamples())
@@ -109,7 +109,7 @@ def create_chop_node(
         node = parent.createNode(chop_type, node_name=name)
     except hou.OperationFailed as e:
         raise ValueError(
-            f"Failed to create CHOP node of type '{chop_type}' inside '{parent_path}': "
+            f"failed to create CHOP node of type '{chop_type}' inside '{parent_path}': "
             f'{error_helpers.readable_message(e)}'
         ) from e
 
@@ -130,7 +130,7 @@ def list_chop_channels(*, node_path: str, **_: Any) -> dict[str, Any]:
     node = _get_node(node_path)
 
     if node.type().category().name() != 'Chop':
-        raise ValueError(f'Node is not a CHOP node: {node_path}')
+        raise ValueError(f'node is not a CHOP node: {node_path}')
 
     channels = [_track_entry(track) for track in node.tracks()]
 
@@ -159,7 +159,7 @@ def export_chop_to_parm(
         names = [t.name() for t in chop_node.tracks()]
         shown = names[:30] + (['...'] if len(names) > 30 else [])
         raise ValueError(
-            f"Channel '{channel_name}' not found on CHOP node: {chop_path}. Channels: "
+            f"channel '{channel_name}' not found on CHOP node: {chop_path}. Channels: "
             f'{shown}'
         )
 
@@ -172,7 +172,7 @@ def export_chop_to_parm(
         close = suggest_parms(target_parm_name, parm_labels(target_node))
         hint = f' Did you mean: {close}?' if close else ''
         raise ValueError(
-            f"Parameter '{target_parm_name}' not found on node: "
+            f"parameter '{target_parm_name}' not found on node: "
             f'{target_node_path}.{hint}'
         )
 
@@ -196,7 +196,7 @@ def _get_node(node_path: str) -> hou.Node:
 
     node = hou.node(node_path)
     if node is None:
-        raise ValueError(f'Node not found: {node_path}')
+        raise ValueError(f'node not found: {node_path}')
     return node
 
 

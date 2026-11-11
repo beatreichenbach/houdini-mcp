@@ -62,7 +62,7 @@ def list_caches(*, root_path: str = '/', **_: Any) -> dict[str, Any]:
             try:
                 existing = glob.glob(glob_pattern)
                 status = f'cached ({len(existing)} files)' if existing else 'empty'
-            except Exception:
+            except OSError:
                 status = 'unknown'
 
         caches.append(
@@ -90,7 +90,7 @@ def get_cache_status(*, node_path: str, **_: Any) -> dict[str, Any]:
     raw_pattern = _get_file_pattern_raw(node)
 
     if not file_pattern and not raw_pattern:
-        raise ValueError(f'Could not determine file pattern for node: {node_path}')
+        raise ValueError(f'could not determine file pattern for node: {node_path}')
 
     # Find existing files using glob
     pattern = raw_pattern or file_pattern or ''
@@ -98,7 +98,7 @@ def get_cache_status(*, node_path: str, **_: Any) -> dict[str, Any]:
 
     try:
         existing_files = sorted(glob.glob(glob_pattern))
-    except Exception:
+    except OSError:
         existing_files = []
 
     # Extract frame numbers from filenames
@@ -184,7 +184,7 @@ def clear_cache(
     file_pattern = _get_file_pattern(node)
 
     if not file_pattern and not raw_pattern:
-        raise ValueError(f'Could not determine file pattern for node: {node_path}')
+        raise ValueError(f'could not determine file pattern for node: {node_path}')
 
     # _frame_glob, as get_cache_status uses: on File Cache 2.0 the raw output
     # parm is an expression body, so a glob built from it matched nothing and
@@ -194,7 +194,7 @@ def clear_cache(
 
     try:
         existing_files = sorted(glob.glob(glob_pattern))
-    except Exception:
+    except OSError:
         existing_files = []
 
     import re
@@ -226,10 +226,10 @@ def clear_cache(
                 os.remove(filepath)
                 deleted_count += 1
                 freed_bytes += file_size
-            except OSError as exc:
+            except OSError as e:
                 # A file locked by Houdini or OneDrive used to vanish from the
                 # count with nothing said.
-                failed.append(f'{filepath}: {exc.strerror or exc}')
+                failed.append(f'{filepath}: {e.strerror or e}')
 
     freed_mb = round(freed_bytes / (1024 * 1024), 2)
 
@@ -337,7 +337,7 @@ def write_cache(
                 node.render(frame_range=frame_range_tuple)
             else:
                 node.render()
-    except Exception as e:
+    except hou.Error as e:
         failure = e
 
     # Determine what frame range was used
@@ -400,7 +400,7 @@ def _get_node(node_path: str) -> hou.Node:
 
     node = hou.node(node_path)
     if node is None:
-        raise ValueError(f'Node not found: {node_path}')
+        raise ValueError(f'node not found: {node_path}')
     return node
 
 
@@ -435,7 +435,7 @@ def _frame_glob(node: hou.Node) -> str | None:
                 at_1 = parm.eval()
             with output_helpers.at_frame(2):
                 at_2 = parm.eval()
-        except Exception:
+        except hou.Error:
             continue
         if not at_1:
             continue
@@ -464,7 +464,7 @@ def _get_file_pattern(node: hou.Node) -> str | None:
         if parm is not None:
             try:
                 return parm.eval()
-            except Exception:
+            except hou.Error:
                 return parm.rawValue()
     return None
 

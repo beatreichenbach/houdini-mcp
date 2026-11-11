@@ -176,7 +176,7 @@ def set_viewport_camera(
             bound = viewport.camera()
         if bound is None or bound.path() != cam_node.path():
             raise RuntimeError(
-                f"Asked to look through '{camera_path}' but the viewport reports "
+                f"asked to look through '{camera_path}' but the viewport reports "
                 f"'{bound.path() if bound else None}'."
             )
         return {
@@ -224,7 +224,7 @@ def set_viewport_camera(
         echoed = viewport.cameraPath() or None
     if echoed is not None and echoed.rstrip('/') != camera_path.rstrip('/'):
         raise RuntimeError(
-            f"Asked to look through '{camera_path}' but the viewport is on '{echoed}'."
+            f"asked to look through '{camera_path}' but the viewport is on '{echoed}'."
         )
 
     return {
@@ -267,7 +267,7 @@ def set_viewport_display(
         scheme = _COLOR_SCHEMES.get(str(color_scheme).strip().lower().replace(' ', ''))
         if scheme is None:
             raise ValueError(
-                f"Unknown color_scheme '{color_scheme}'. Supported: dark, darkgrey, "
+                f"unknown color_scheme '{color_scheme}'. Supported: dark, darkgrey, "
                 f'grey, '
                 f'light.'
             )
@@ -300,7 +300,7 @@ def set_viewport_display(
         gl_mode = mode_map.get(display_mode.lower())
         if gl_mode is None:
             raise ValueError(
-                f"Unknown display mode: '{display_mode}'. Supported modes: "
+                f"unknown display mode: '{display_mode}'. Supported modes: "
                 f'{list(mode_map.keys())}'
             )
 
@@ -389,7 +389,7 @@ def set_viewport_direction(
         view_type = direction_map.get(str(direction).lower())
         if view_type is None:
             raise ValueError(
-                f"Unknown direction '{direction}'. Supported: "
+                f"unknown direction '{direction}'. Supported: "
                 f'{list(direction_map.keys())}'
             )
     # Checked before the viewer is touched, so a bad value never half-applies.
@@ -415,7 +415,7 @@ def set_viewport_direction(
                 else 'set_object_transform on the camera object'
             )
             raise ValueError(
-                f'The viewport looks through {looks_through}: rotation/pivot/distance '
+                f'the viewport looks through {looks_through}: rotation/pivot/distance '
                 f"place the viewport's own view. Move the camera instead, with {move}."
             )
     if view_type is not None:
@@ -502,7 +502,7 @@ def set_viewport_renderer(
         matched_name = renderer
     if matched_name is None:
         raise ValueError(
-            f"Renderer '{renderer}' not found. Available renderers: {available}"
+            f"renderer '{renderer}' not found. Available renderers: {available}"
         )
 
     def _current() -> str | None:
@@ -525,8 +525,8 @@ def set_viewport_renderer(
     ):
         try:
             apply()
-        except Exception as exc:
-            attempts.append(f'{label}: {type(exc).__name__}')
+        except Exception as e:
+            attempts.append(f'{label}: {type(e).__name__}')
             continue
         attempts.append(f'{label}: no error')
         if (_current() or '').lower() == matched_name.lower():
@@ -565,7 +565,7 @@ def set_viewport_renderer(
         }
     if not applied:
         raise RuntimeError(
-            f"Asked for renderer '{matched_name}' but the viewport is still on "
+            f"asked for renderer '{matched_name}' but the viewport is still on "
             f"'{active}' (was '{before}'). Tried: {'; '.join(attempts)}. "
             f'Available renderers: {available}'
         )
@@ -621,7 +621,7 @@ def frame_all(
             node_paths = [node_paths]
         missing = [path for path in node_paths if hou.node(str(path)) is None]
         if missing:
-            raise ValueError(f'Node(s) not found: {missing}')
+            raise ValueError(f'node(s) not found: {missing}')
         for path in node_paths:
             found = _world_bounds(hou.node(str(path)))
             if found is None:
@@ -633,7 +633,7 @@ def frame_all(
                     max(box[i], found[i]) for i in range(3, 6)
                 ]
         if box is None:
-            raise ValueError(f'Nothing to frame: no geometry on {empty}')
+            raise ValueError(f'nothing to frame: no geometry on {empty}')
 
     scene_viewer = _find_scene_viewer(pane_name)
     viewport = scene_viewer.curViewport()
@@ -751,7 +751,7 @@ def capture_network_editor(
     if node_path is not None:
         node = hou.node(node_path)
         if node is None:
-            raise ValueError(f'Node not found: {node_path}')
+            raise ValueError(f'node not found: {node_path}')
     # Showing a node in a DOP network takes the Scene Viewer there too; the
     # editor goes back after the shot.
     with ui.viewer_stays_out_of_dops():
@@ -799,7 +799,7 @@ def set_current_network(network_path: str, other_objects: str | None = 'hide') -
 
     node = hou.node(network_path)
     if node is None:
-        raise ValueError(f'Network path not found: {network_path}')
+        raise ValueError(f'network path not found: {network_path}')
 
     ui.require_ui(
         'navigate the network editor',
@@ -831,7 +831,7 @@ def set_current_network(network_path: str, other_objects: str | None = 'hide') -
     reached = network_editor.pwd()
     if reached is None or reached.path() != network.path():
         raise RuntimeError(
-            f'The network editor did not go into {network.path()}; it is at '
+            f'the network editor did not go into {network.path()}; it is at '
             f'{reached.path() if reached is not None else "no network"}.'
         )
 
@@ -864,7 +864,7 @@ def find_error_nodes(root_path: str = '/') -> dict:
 
     root = hou.node(root_path)
     if root is None:
-        raise ValueError(f'Root path not found: {root_path}')
+        raise ValueError(f'root path not found: {root_path}')
 
     from .graph import _condensed
 
@@ -945,7 +945,7 @@ def set_viewer_context(
 
     network = hou.node(network_path)
     if network is None:
-        raise ValueError(f'Network not found: {network_path}')
+        raise ValueError(f'network not found: {network_path}')
 
     scene_viewer = _find_scene_viewer(pane_name)
     scene_viewer.setPwd(network)
@@ -955,7 +955,7 @@ def set_viewer_context(
         # alone reads it as relative to /, and the documented usage failed.
         node = network.node(current_node) or hou.node(current_node)
         if node is None:
-            raise ValueError(f'Node not found: {current_node}')
+            raise ValueError(f'node not found: {current_node}')
         scene_viewer.setCurrentNode(node)
 
     result = {
@@ -987,7 +987,7 @@ def _capture_pane_tab_qt(pane_tab: Any, output_path: str) -> None:
     if hasattr(pane_tab, 'qtParentWidget'):
         try:
             widget = pane_tab.qtParentWidget()
-        except Exception:
+        except (hou.Error, AttributeError):
             widget = None
         if widget is not None:
             pixmap = widget.grab()
@@ -1027,13 +1027,13 @@ def _capture_pane_tab_qt(pane_tab: Any, output_path: str) -> None:
 
     if pixmap is None:
         raise RuntimeError(
-            f"Cannot capture pane '{pane_tab.name()}': no Qt capture API "
+            f"cannot capture pane '{pane_tab.name()}': no Qt capture API "
             f'available in this Houdini build.'
         )
 
     if not pixmap.save(output_path):
         raise RuntimeError(
-            f"Failed to save screenshot to '{output_path}'. "
+            f"failed to save screenshot to '{output_path}'. "
             f'Ensure the path is writable and the format is supported (e.g. .png, '
             f'.jpg).'
         )
@@ -1077,7 +1077,7 @@ def _is_scene_graph_view(scene_viewer: Any) -> bool:
 
     try:
         scene_viewer.hydraRenderers()
-    except Exception:
+    except (hou.Error, AttributeError):
         return False
     return True
 
@@ -1115,7 +1115,7 @@ def _world_bounds(node: hou.Node) -> list | None:
             owner = owner.parent()
     try:
         box = target.geometry().boundingBox()
-    except Exception:
+    except hou.Error:
         return None
     if not box.isValid():
         return None
@@ -1140,7 +1140,7 @@ def _bounds_list(bounds: Any) -> list | None:
 
     try:
         return [round(v, 3) for v in (*bounds.min(), *bounds.max())]
-    except Exception:
+    except (AttributeError, TypeError, ValueError):
         return None
 
 
@@ -1178,7 +1178,7 @@ def _find_scene_viewer(pane_name: str | None = None) -> Any:
         pane_tab = _find_pane_by_name(pane_name)
         if pane_tab.type() != hou.paneTabType.SceneViewer:
             raise ValueError(
-                f"Pane '{pane_name}' is a {pane_tab.type().name()}, not a Scene Viewer."
+                f"pane '{pane_name}' is a {pane_tab.type().name()}, not a Scene Viewer."
             )
         return pane_tab
 
@@ -1198,4 +1198,4 @@ def _find_pane_by_name(pane_name: str) -> Any:
             return pane_tab
 
     available = [pt.name() for pt in hou.ui.paneTabs()]
-    raise ValueError(f"Pane tab not found: '{pane_name}'. Available panes: {available}")
+    raise ValueError(f"pane tab not found: '{pane_name}'. Available panes: {available}")

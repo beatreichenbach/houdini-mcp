@@ -57,7 +57,7 @@ def get_scene_info() -> dict:
     # Memory usage (in MB)
     try:
         mem_bytes = hou.ui.memoryUsageMessage()  # type: ignore[attr-defined]
-    except Exception:
+    except (hou.Error, AttributeError):
         mem_bytes = None
 
     return {
@@ -116,7 +116,7 @@ def load_scene(
 
     config.require_inside_project_root(file_path, 'hip file')
     if not os.path.isfile(hou.text.expandString(file_path)):
-        raise FileNotFoundError(f'File not found: {file_path}')
+        raise FileNotFoundError(f'file not found: {file_path}')
     if not merge and (node_paths is not None or overwrite_on_conflict):
         raise ValueError(
             'node_paths and overwrite_on_conflict apply only with merge=True.'
@@ -130,8 +130,8 @@ def load_scene(
         hou.hipFile.load(
             file_path, suppress_save_prompt=True, ignore_load_warnings=False
         )
-    except hou.LoadWarning as warning:
-        warnings = _warning_lines(warning)
+    except hou.LoadWarning as e:
+        warnings = _warning_lines(e)
     message = f'Loaded {file_path}.'
     if warnings:
         message = f'Loaded {file_path} with {len(warnings)} load warning(s).'
@@ -153,11 +153,11 @@ def import_file(
 
     config.require_inside_project_root(file_path, 'import file')
     if not os.path.isfile(file_path):
-        raise FileNotFoundError(f'File not found: {file_path}')
+        raise FileNotFoundError(f'file not found: {file_path}')
 
     parent = hou.node(parent_path)
     if parent is None:
-        raise ValueError(f'Parent node not found: {parent_path}')
+        raise ValueError(f'parent node not found: {parent_path}')
 
     ext = os.path.splitext(file_path)[1].lower()
 
@@ -232,7 +232,7 @@ def export_file(
 
     node = hou.node(node_path)
     if node is None:
-        raise ValueError(f'Node not found: {node_path}')
+        raise ValueError(f'node not found: {node_path}')
     config.require_inside_project_root(file_path, 'export file')
 
     category = node.type().category().name()
@@ -243,7 +243,7 @@ def export_file(
         geo = node.geometry()
         if geo is None:
             raise ValueError(
-                f'Node {node_path} has no geometry (cook may have failed).'
+                f'node {node_path} has no geometry (cook may have failed).'
             )
         if frame_range is not None:
             start = int(frame_range[0])
@@ -333,7 +333,7 @@ def export_file(
         # some failures rather than raising, so take it at its word either way.
         stage = node.stage()
         if stage is None:
-            raise ValueError(f'Node {node_path} has no USD stage.')
+            raise ValueError(f'node {node_path} has no USD stage.')
         exported = stage.Export(file_path)
         wrote = os.path.exists(file_path)
         return {
@@ -352,7 +352,7 @@ def export_file(
         }
     else:
         raise ValueError(
-            f"Export not supported for node category '{category}'. "
+            f"export not supported for node category '{category}'. "
             'Supported categories: Sop, Driver, Lop.'
         )
 
@@ -363,7 +363,7 @@ def get_context_info(context: str) -> dict:
 
     ctx_node = hou.node(context)
     if ctx_node is None:
-        raise ValueError(f'Context not found: {context}')
+        raise ValueError(f'context not found: {context}')
 
     children = ctx_node.children()
     child_info = []
@@ -380,7 +380,7 @@ def get_context_info(context: str) -> dict:
             warnings = child.warnings()
             info['errors'] = list(errors) if errors else []
             info['warnings'] = list(warnings) if warnings else []
-        except Exception:
+        except hou.Error:
             info['errors'] = []
             info['warnings'] = []
         child_info.append(info)
@@ -388,7 +388,7 @@ def get_context_info(context: str) -> dict:
     # Available node type categories at this level
     try:
         cat_name = ctx_node.type().childTypeCategory().name()
-    except Exception:
+    except hou.Error:
         cat_name = None
 
     return {
@@ -460,7 +460,7 @@ def write_snapshot() -> dict:
     _, error = hou.hscript(f'mwrite -n "{path}"')
     if error.strip() or not os.path.isfile(path):
         raise hou.OperationFailed(
-            f'Could not write a snapshot to {path}: {error.strip() or "no file"}'
+            f'could not write a snapshot to {path}: {error.strip() or "no file"}'
         )
     return {
         'snapshot': path,
@@ -642,8 +642,8 @@ def _merge(
             overwrite_on_conflict=bool(overwrite_on_conflict),
             ignore_load_warnings=False,
         )
-    except hou.LoadWarning as warning:
-        warnings = _warning_lines(warning)
+    except hou.LoadWarning as e:
+        warnings = _warning_lines(e)
     finally:
         # A merge that fails halfway has already run the file's `set -g`.
         globals_restored, globals_added = _restore_globals(globals_before)

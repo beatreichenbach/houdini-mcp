@@ -28,7 +28,7 @@ def create_wrangle(
 
     parent = hou.node(parent_path)
     if parent is None:
-        raise ValueError(f'Parent node not found: {parent_path}')
+        raise ValueError(f'parent node not found: {parent_path}')
 
     # Create the attribwrangle node
     try:
@@ -38,14 +38,14 @@ def create_wrangle(
             node = parent.createNode('attribwrangle')
     except hou.OperationFailed as e:
         raise ValueError(
-            f'Failed to create attribwrangle node: {error_helpers.readable_message(e)}'
+            f'failed to create attribwrangle node: {error_helpers.readable_message(e)}'
         ) from e
 
     # Set the VEX snippet
     snippet_parm = node.parm('snippet')
     if snippet_parm is None:
         raise ValueError(
-            f"Created node {node.path()} does not have a 'snippet' parameter."
+            f"created node {node.path()} does not have a 'snippet' parameter."
         )
     snippet_parm.set(vex_code)
 
@@ -101,7 +101,7 @@ def set_wrangle_code(node_path: str, vex_code: str) -> dict:
     snippet_parm = node.parm('snippet')
     if snippet_parm is None:
         raise ValueError(
-            f"Node {node_path} does not have a 'snippet' parameter. Is it an Attribute "
+            f"node {node_path} does not have a 'snippet' parameter. Is it an Attribute "
             f'Wrangle?'
         )
 
@@ -135,7 +135,7 @@ def get_wrangle_code(node_path: str) -> dict:
     snippet_parm = node.parm('snippet')
     if snippet_parm is None:
         raise ValueError(
-            f"Node {node_path} does not have a 'snippet' parameter. Is it an Attribute "
+            f"node {node_path} does not have a 'snippet' parameter. Is it an Attribute "
             f'Wrangle?'
         )
 
@@ -165,7 +165,7 @@ def create_vex_expression(
 
     parm = node.parm(parm_name)
     if parm is None:
-        raise ValueError(f"Parameter '{parm_name}' not found on node {node_path}.")
+        raise ValueError(f"parameter '{parm_name}' not found on node {node_path}.")
     if re.search(r'(^|[^\w$])[fvisp]?\[?\]?@\w|;\s*$', vex_code):
         raise ValueError(
             "that is VEX (attribute @ syntax or a trailing ';'), which a parameter "
@@ -185,7 +185,7 @@ def create_vex_expression(
     except hou.OperationFailed as e:
         detail = str(e).replace('The attempted operation failed.', '').strip()
         raise ValueError(
-            f'The expression does not evaluate on {node_path}/{parm_name}, so it was '
+            f'the expression does not evaluate on {node_path}/{parm_name}, so it was '
             f'not set: {detail or error_helpers.readable_message(e)}'
         ) from e
     finally:
@@ -233,14 +233,14 @@ def validate_vex(node_path: str) -> dict:
         node_errors = node.errors()
         if node_errors:
             errors = list(node_errors)
-    except Exception:
+    except hou.Error:
         pass
 
     try:
         node_warnings = node.warnings()
         if node_warnings:
             warnings = list(node_warnings)
-    except Exception:
+    except hou.Error:
         pass
 
     is_valid = len(errors) == 0
@@ -268,7 +268,7 @@ def _get_node(node_path: str) -> hou.Node:
 
     node = hou.node(node_path)
     if node is None:
-        raise ValueError(f'Node not found: {node_path}')
+        raise ValueError(f'node not found: {node_path}')
     return node
 
 
@@ -300,7 +300,7 @@ def _resolve_class_value(node: hou.Node, run_over: str) -> int:
     class_parm = node.parm('class')
     if class_parm is None:
         raise ValueError(
-            f"Node {node.path()} has no 'class' parameter — is it an Attribute Wrangle?"
+            f"node {node.path()} has no 'class' parameter — is it an Attribute Wrangle?"
         )
 
     template = class_parm.parmTemplate()
@@ -317,7 +317,7 @@ def _resolve_class_value(node: hou.Node, run_over: str) -> int:
             return int(items[idx]) if items[idx].isdigit() else idx
 
     raise ValueError(
-        f"Invalid run_over value '{run_over}'. Available options: {labels}"
+        f"invalid run_over value '{run_over}'. Available options: {labels}"
     )
 
 

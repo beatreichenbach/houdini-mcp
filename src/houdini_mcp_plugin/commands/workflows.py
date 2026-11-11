@@ -34,7 +34,7 @@ def setup_pyro_sim(
     # reports success. Only "box" is built, so say so.
     if container != 'box':
         raise ValueError(
-            f"Unsupported container '{container}'. Only 'box' is implemented; the "
+            f"unsupported container '{container}'. Only 'box' is implemented; the "
             f'other shapes are not built yet.'
         )
 
@@ -79,7 +79,7 @@ def setup_pyro_sim(
                 try:
                     if child.type().name() not in ('object_merge',):
                         child.destroy()
-                except Exception:
+                except hou.Error:
                     pass
 
         result = _setup_pyro_sim_dop(geo, objmerge, substeps, all_nodes)
@@ -153,7 +153,7 @@ def setup_rbd_sim(
     valid_pieces = ('voronoi', 'none')
     if pieces_type not in valid_pieces:
         raise ValueError(
-            f"Invalid pieces_type '{pieces_type}'. Must be one of: {valid_pieces}. "
+            f"invalid pieces_type '{pieces_type}'. Must be one of: {valid_pieces}. "
             f"Use 'none' to simulate the geometry unfractured."
         )
 
@@ -293,7 +293,7 @@ def setup_flip_sim(
     # reports success. Only "box" is built, so say so.
     if domain != 'box':
         raise ValueError(
-            f"Unsupported domain '{domain}'. Only 'box' is implemented; the "
+            f"unsupported domain '{domain}'. Only 'box' is implemented; the "
             f'other shapes are not built yet.'
         )
 
@@ -397,7 +397,7 @@ def setup_vellum_sim(
     valid_types = ('cloth', 'hair', 'grain', 'softbody')
     if sim_type not in valid_types:
         raise ValueError(
-            f"Invalid sim_type '{sim_type}'. Must be one of: {valid_types}"
+            f"invalid sim_type '{sim_type}'. Must be one of: {valid_types}"
         )
 
     # What the Vellum shelf's Configure tools put down. vellumhair, vellumgrain
@@ -458,7 +458,7 @@ def setup_vellum_sim(
     vellum_solver.setInput(0, vellum_configure, 0)
     try:
         vellum_solver.setInput(1, vellum_configure, 1)
-    except Exception:
+    except hou.Error:
         logger.info(
             '[workflow] Warning: could not connect constraints output to solver input 1'
         )
@@ -542,7 +542,7 @@ def create_material(
             values['base_color'] = color
     else:
         raise ValueError(
-            f"Unknown mat_type '{mat_type}'. Must be 'principled' or 'materialx'."
+            f"unknown mat_type '{mat_type}'. Must be 'principled' or 'materialx'."
         )
     skipped = _set_values(shader, values)
     shader_path = shader.path()
@@ -578,7 +578,7 @@ def assign_material(
     # A typo in material_path used to be written into the Material SOP and
     # answered with success; the object then rendered unshaded.
     if hou.node(material_path) is None:
-        raise ValueError(f'Material not found: {material_path}')
+        raise ValueError(f'material not found: {material_path}')
 
     # Determine the SOP-level parent -- if geo_path points to an Object-level
     # node we work inside it; if it already points to a SOP network, use it.
@@ -597,7 +597,7 @@ def assign_material(
         try:
             if child.isDisplayFlagSet():
                 last_displayed = child
-        except Exception:
+        except hou.Error:
             pass
 
     # If no display flag found, pick the last child
@@ -623,7 +623,7 @@ def assign_material(
     try:
         mat_sop.setDisplayFlag(True)
         mat_sop.setRenderFlag(True)
-    except Exception:
+    except hou.Error:
         pass
 
     config.layout_if_enabled(sop_parent)
@@ -658,7 +658,7 @@ def build_sop_chain(
     specs = []
     for index, step in enumerate(steps):
         if not isinstance(step, dict) or not step.get('type'):
-            raise ValueError(f"Step {index} is missing required 'type' key")
+            raise ValueError(f"step {index} is missing required 'type' key")
         name = (
             step.get('name')
             or f'{step["type"].split("::")[0].split(":")[-1]}_step{index + 1}'
@@ -747,7 +747,7 @@ def setup_render(
         except hou.OperationFailed:
             rop = out.createNode('mantra', name)
     else:
-        raise ValueError(f"Unknown renderer '{renderer}'. Must be 'karma' or 'mantra'.")
+        raise ValueError(f"unknown renderer '{renderer}'. Must be 'karma' or 'mantra'.")
 
     all_nodes.append(rop.path())
 
@@ -825,7 +825,7 @@ def _get_node(node_path: str) -> hou.Node:
 
     node = hou.node(node_path)
     if node is None:
-        raise ValueError(f'Node not found: {node_path}')
+        raise ValueError(f'node not found: {node_path}')
     return node
 
 
@@ -871,7 +871,7 @@ def _set_parm_safe(node: hou.Node, parm_name: str, value: Any) -> bool:
         try:
             parm.set(value)
             return True
-        except Exception as e:
+        except hou.Error as e:
             logger.info(
                 f'[workflow] Warning: could not set {parm_name}={value} on '
                 f'{node.path()}: '
@@ -891,7 +891,7 @@ def _set_values(node: hou.Node, values: dict) -> list[str]:
                 node.parmTuple(name).set(value)
             else:
                 node.parm(name).set(value)
-        except Exception:
+        except hou.Error:
             missed.append(name)
     return missed
 
@@ -907,7 +907,7 @@ def _create_first_available(
         except hou.OperationFailed:
             continue
     raise hou.OperationFailed(
-        f'None of these node types exist in {parent.path()}: {", ".join(type_names)}'
+        f'none of these node types exist in {parent.path()}: {", ".join(type_names)}'
     )
 
 
@@ -1014,7 +1014,7 @@ def _setup_pyro_sim_sop(
     try:
         filecache.setDisplayFlag(True)
         filecache.setRenderFlag(True)
-    except Exception:
+    except hou.Error:
         pass
 
     config.layout_if_enabled(geo)
@@ -1116,7 +1116,7 @@ def _setup_pyro_sim_dop(
             merge_dop.setInput(1, source_vol, 0)
         pyrosolver.setInput(0, merge_dop, 0)
         all_nodes.append(merge_dop.path())
-    except Exception as e:
+    except hou.Error as e:
         logger.info(
             f'[workflow] Warning: merge DOP failed, wiring directly: '
             f'{error_helpers.readable_message(e)}'
@@ -1141,7 +1141,7 @@ def _setup_pyro_sim_dop(
     try:
         filecache.setDisplayFlag(True)
         filecache.setRenderFlag(True)
-    except Exception:
+    except hou.Error:
         pass
 
     config.layout_if_enabled(geo)

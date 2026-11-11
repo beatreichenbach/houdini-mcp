@@ -92,7 +92,7 @@ def get_simulation_info(node_path: str) -> dict:
     ):
         try:
             node.cook()
-        except Exception as e:
+        except hou.Error as e:
             if not _was_interrupted(e):
                 cook_error = str(e)
             interrupted = cook_error is None
@@ -102,7 +102,7 @@ def get_simulation_info(node_path: str) -> dict:
         if not interrupted:
             try:
                 objects = sim.objects()
-            except Exception as e:
+            except hou.Error as e:
                 if not _was_interrupted(e):
                     raise
                 interrupted = True
@@ -208,7 +208,7 @@ def get_dop_object(node_path: str, object_name: str) -> dict:
     dop_obj = sim.findObject(object_name)
     if dop_obj is None:
         raise hou.OperationFailed(
-            f"DOP object '{object_name}' not found in simulation at '{node_path}'."
+            f"dop object '{object_name}' not found in simulation at '{node_path}'."
         )
 
     result = {
@@ -246,7 +246,7 @@ def get_dop_field(
     dop_obj = sim.findObject(object_name)
     if dop_obj is None:
         raise hou.OperationFailed(
-            f"DOP object '{object_name}' not found in simulation at '{node_path}'."
+            f"dop object '{object_name}' not found in simulation at '{node_path}'."
         )
 
     # Navigate to the subdata at data_path
@@ -255,7 +255,7 @@ def get_dop_field(
         data = dop_obj.findSubData(data_path)
         if data is None:
             raise hou.OperationFailed(
-                f"Subdata path '{data_path}' not found on object '{object_name}'."
+                f"subdata path '{data_path}' not found on object '{object_name}'."
             )
 
     # Try to read the field from the first record of each record type
@@ -271,15 +271,15 @@ def get_dop_field(
                     break
             if found:
                 break
-    except Exception as e:
+    except hou.Error as e:
         raise hou.OperationFailed(
-            f"Error reading field '{field_name}' at data path '{data_path}': "
+            f"error reading field '{field_name}' at data path '{data_path}': "
             f'{error_helpers.readable_message(e)}'
         ) from e
 
     if not found:
         raise hou.OperationFailed(
-            f"Field '{field_name}' not found in data at path '{data_path}' "
+            f"field '{field_name}' not found in data at path '{data_path}' "
             f"on object '{object_name}'."
         )
 
@@ -385,7 +385,7 @@ def reset_simulation(node_path: str) -> dict:
     owner = _reset_button_owner(node)
     if owner is None:
         raise ValueError(
-            f'No Reset Simulation button on {node_path} or any of its parents.'
+            f'no Reset Simulation button on {node_path} or any of its parents.'
         )
     owner.parm('resimulate').pressButton()
 
@@ -451,7 +451,7 @@ def _get_dop_node(node_path: str) -> hou.Node:
 
     node = hou.node(node_path)
     if node is None:
-        raise hou.NodeError(f'Node not found: {node_path}')
+        raise hou.NodeError(f'node not found: {node_path}')
     return node
 
 
@@ -478,7 +478,7 @@ def _get_simulation(node_path: str) -> hou.DopSimulation:
     sim = node.simulation()
     if sim is None:
         raise hou.OperationFailed(
-            f"Node '{node_path}' does not have a simulation. Ensure it is a DOP "
+            f"node '{node_path}' does not have a simulation. Ensure it is a DOP "
             f'network '
             f'node.'
         )

@@ -176,7 +176,7 @@ def set_update_mode(mode: str | None = None, **_: Any) -> dict[str, Any]:
         key = error_helpers.as_text(mode, 'mode').strip().lower()
         if key not in _UPDATE_MODES:
             raise ValueError(
-                f"Unknown update mode '{mode}'. Use one of: {', '.join(_UPDATE_MODES)}."
+                f"unknown update mode '{mode}'. Use one of: {', '.join(_UPDATE_MODES)}."
             )
         hou.setUpdateMode(_UPDATE_MODES[key])
     current = hou.updateModeSetting()

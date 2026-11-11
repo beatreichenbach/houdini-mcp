@@ -77,7 +77,7 @@ def create_node(
         node = parent.createNode(node_type, node_name=name)
     except hou.OperationFailed as e:
         raise ValueError(
-            f"Failed to create node of type '{node_type}' inside '{parent_path}': "
+            f"failed to create node of type '{node_type}' inside '{parent_path}': "
             f'{error_helpers.readable_message(e)}'
         ) from e
 
@@ -236,11 +236,11 @@ def get_node_info(node_path: str) -> dict:
     # the node's actual state and nothing is left behind.
     try:
         errors = list(node.errors())
-    except Exception:
+    except hou.Error:
         errors = []
     try:
         warnings = list(node.warnings())
-    except Exception:
+    except hou.Error:
         warnings = []
 
     # Only return parameters that differ from their defaults — this keeps
@@ -296,7 +296,7 @@ def get_node_info(node_path: str) -> dict:
     # Cook time
     try:
         cook_time = node.cookTime()
-    except Exception:
+    except hou.Error:
         cook_time = None
 
     # Type info — icon omitted (string path, useless to LLM)
@@ -464,7 +464,7 @@ def list_node_types(
     if category is None:
         available = sorted(categories.keys())
         raise ValueError(
-            f"Unknown node type category: '{context}'. Available categories: "
+            f"unknown node type category: '{context}'. Available categories: "
             f'{available}'
         )
 
@@ -475,7 +475,7 @@ def list_node_types(
         try:
             if node_type.hidden():
                 continue
-        except Exception:
+        except (hou.Error, AttributeError):
             pass
         type_list.append(
             {
@@ -554,7 +554,7 @@ def change_node_type(
         close = get_close_matches(new_type, list(category.nodeTypes()), n=3, cutoff=0.5)
         hint = f' Did you mean: {close}?' if close else ''
         raise ValueError(
-            f"Type '{new_type}' does not exist in {category.name()}.{hint}"
+            f"type '{new_type}' does not exist in {category.name()}.{hint}"
         )
     old_type = node.type().name()
     same_type = resolved.name() == old_type
@@ -575,11 +575,11 @@ def change_node_type(
             kwargs['force_change_on_node_type_match'] = True
         try:
             changed = node.changeNodeType(resolved.name(), **kwargs)
-        except Exception as exc:
+        except hou.Error as e:
             raise ValueError(
-                f'Could not change {node_path} ({old_type}) to {resolved.name()}: '
-                f'{error_helpers.readable_message(exc)}'
-            ) from exc
+                f'could not change {node_path} ({old_type}) to {resolved.name()}: '
+                f'{error_helpers.readable_message(e)}'
+            ) from e
         ui.focus_network_editor(changed, place_unpositioned=False)
 
     after_parms = {p.name() for p in changed.parms()}
@@ -683,13 +683,13 @@ def press_button(
             # Not parm.pressButton() for a Python callback: one that raises
             # opens Houdini's modal error window and holds the main thread.
             route = callback_helpers.press(parm, dict(arguments) if arguments else None)
-    except callback_helpers.CallbackError as exc:
-        raise ValueError(f'Button callback failed: {exc}') from exc
-    except Exception as exc:
+    except callback_helpers.CallbackError as e:
+        raise ValueError(f'button callback failed: {e}') from e
+    except hou.Error as e:
         raise ValueError(
-            f'Callback of {node.path()}/{parm_name} failed: '
-            f'{error_helpers.readable_message(exc)}'
-        ) from exc
+            f'callback of {node.path()}/{parm_name} failed: '
+            f'{error_helpers.readable_message(e)}'
+        ) from e
     duration_ms = round((time.perf_counter() - started) * 1000, 1)
     result: dict[str, Any] = {
         'success': True,
@@ -715,7 +715,7 @@ def press_button(
     for key, read in (('errors', node.errors), ('warnings', node.warnings)):
         try:
             result[key] = list(read())
-        except Exception:
+        except hou.Error:
             result[key] = []
     with contextlib.suppress(Exception):
         # Built-in buttons (File's Reload, Stash's Stash Input) are handled in
@@ -763,12 +763,12 @@ def connect_nodes_batch(
             if conn.get('indirect_input') is not None:
                 entry['indirect_input'] = int(conn['indirect_input'])
             results.append(entry)
-        except Exception as exc:
+        except Exception as e:
             errors.append(
                 {
                     'source_path': src_path,
                     'dest_path': dst_path,
-                    'error': str(exc),
+                    'error': str(e),
                 }
             )
 
@@ -810,7 +810,7 @@ def disconnect_node(
             disconnected.append(input_index)
         else:
             raise ValueError(
-                f'Input index {input_index} is out of range or already disconnected '
+                f'input index {input_index} is out of range or already disconnected '
                 f'on node {node_path}. Connected inputs: {connected}.'
             )
     else:
@@ -900,9 +900,9 @@ def set_node_flags(
         try:
             getattr(node, setter)(bool(wanted))
             actual = bool(getattr(node, getter)())
-        except (AttributeError, hou.OperationFailed) as exc:
+        except (AttributeError, hou.OperationFailed) as e:
             not_applied[flag] = (
-                f'{node.type().name()} has no {flag} flag ({type(exc).__name__})'
+                f'{node.type().name()} has no {flag} flag ({type(e).__name__})'
             )
             continue
         # Read back: Houdini ignores some requests without raising. A SOP's
@@ -1137,7 +1137,7 @@ def _get_node(node_path: str) -> hou.Node:
 
     node = hou.node(node_path)
     if node is None:
-        raise ValueError(f'Node not found: {node_path}')
+        raise ValueError(f'node not found: {node_path}')
     return node
 
 
@@ -1184,7 +1184,7 @@ def _delete_nodes(node_paths: list) -> dict:
     paths = [str(path) for path in node_paths]
     missing = [path for path in paths if hou.node(path) is None]
     if missing:
-        raise ValueError(f'Node(s) not found, nothing deleted: {missing}')
+        raise ValueError(f'node(s) not found, nothing deleted: {missing}')
     nodes = {hou.node(path).path(): hou.node(path) for path in paths}
     # A node under another one on the list is destroyed with it; destroying
     # it again would raise on a dead node.
@@ -1201,7 +1201,7 @@ def _delete_nodes(node_paths: list) -> dict:
     ]
     if locked:
         raise PermissionError(
-            f'Inside a locked asset, nothing deleted: {locked}. Unlock it '
+            f'inside a locked asset, nothing deleted: {locked}. Unlock it '
             '(allow editing of contents) or delete the asset itself.'
         )
     deleted = []
@@ -1251,7 +1251,7 @@ def _component_default(parm: hou.Parm) -> Any:
     if isinstance(default, (tuple, list)):
         try:
             index = parm.componentIndex()
-        except Exception:
+        except hou.Error:
             index = 0
         if not isinstance(index, int) or index < 0 or index >= len(default):
             return default[0] if len(default) == 1 else None
@@ -1266,7 +1266,7 @@ def _is_at_default(parm: hou.Parm, value: Any, default: Any) -> bool:
         answer = parm.isAtDefault()
         if isinstance(answer, bool):
             return answer
-    except Exception:
+    except hou.Error:
         pass
     # Reached only when isAtDefault() is unavailable or answers non-bool.
     # Ramp and Data parameters have no comparable defaultValue(), so == is
@@ -1283,7 +1283,7 @@ def _cook_local_expression(parm: hou.Parm) -> str | None:
 
     try:
         expression = parm.expression()
-    except Exception:
+    except hou.Error:
         return None
     if isinstance(expression, str) and _COOK_LOCAL.search(expression):
         return expression
@@ -1298,7 +1298,7 @@ def _non_default_parms(node: hou.Node, parms: list[hou.Parm]) -> list[dict[str, 
         try:
             template = parm.parmTemplate()
             type_name = template.type().name()
-        except Exception:
+        except hou.Error:
             continue
         if type_name in _VALUELESS_PARM_TYPES:
             continue
@@ -1326,7 +1326,7 @@ def _non_default_parms(node: hou.Node, parms: list[hou.Parm]) -> list[dict[str, 
             continue
         try:
             val = parm.eval()
-        except Exception:
+        except hou.Error:
             continue
         try:
             default = _component_default(parm)
@@ -1467,8 +1467,8 @@ def _output_index(source: hou.Node, source_output: int | str) -> int:
             entry['label'] = label
     try:
         return _find_output(outputs, source_output)
-    except ValueError as exc:
-        raise ValueError(f'{source.path()} {exc}') from None
+    except ValueError as e:
+        raise ValueError(f'{source.path()} {e}') from None
 
 
 def _resolve_input_index(
@@ -1483,8 +1483,8 @@ def _resolve_input_index(
         max_inputs = int(dest.type().maxNumInputs())
     try:
         return _find_input(_input_table(dest), str(input_name), max_inputs)
-    except ValueError as exc:
-        raise ValueError(f'{dest.path()} {exc}') from None
+    except ValueError as e:
+        raise ValueError(f'{dest.path()} {e}') from None
 
 
 def _indirect_input_item(
@@ -1499,11 +1499,11 @@ def _indirect_input_item(
     if connectors is None:
         try:
             connectors = list(subnet.indirectInputs())
-        except Exception as exc:
+        except hou.Error as e:
             raise ValueError(
                 f'{subnet.path()} has no input connectors to wire from: '
-                f'{error_helpers.readable_message(exc)}'
-            ) from exc
+                f'{error_helpers.readable_message(e)}'
+            ) from e
     if not connectors:
         # Not a subnet (a Box answers an empty tuple on 22.0 rather than the
         # documented InvalidNodeType), or a subnet with no inputs.

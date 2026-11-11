@@ -92,16 +92,16 @@ def run_python_menu(parm: hou.Parm, script: str) -> list[str]:
         # None, so a body that never returns or an indented expression
         # wrapped into one, and anything not iterable, such as an int.
         if result is None:
-            raise TypeError('Python menu scripts must return a sequence of strings')
+            raise TypeError('python menu scripts must return a sequence of strings')
         flat = [str(entry) for entry in result]
-    except Exception as exc:
+    except Exception as e:
         frames = traceback.format_tb(
-            exc.__traceback__.tb_next  # ty: ignore[unresolved-attribute]
+            e.__traceback__.tb_next  # ty: ignore[unresolved-attribute]
         )[-3:]
         tail = ''.join(frames).rstrip()
         raise MenuScriptError(
-            f'Menu script of {name} raised {type(exc).__name__}: {exc}\n{tail}'
-        ) from exc
+            f'menu script of {name} raised {type(e).__name__}: {e}\n{tail}'
+        ) from e
     finally:
         with contextlib.suppress(Exception):
             hou.setPwd(previous)

@@ -189,7 +189,7 @@ def get_cook_chain(node_path: str, **_: Any) -> dict:
         # Cook time
         try:
             cook_time = node.cookTime()
-        except Exception:
+        except (hou.Error, AttributeError):
             cook_time = None
         chain.append(
             {
@@ -260,7 +260,7 @@ def explain_node(node_path: str, **_: Any) -> dict:
     # Current state
     try:
         cook_time = node.cookTime()
-    except Exception:
+    except (hou.Error, AttributeError):
         cook_time = None
 
     flags = _node_flags(node)
@@ -370,7 +370,7 @@ def get_selection(**_: Any) -> dict:
                     'count': total_count,
                     'node_path': sel_node_path,
                 }
-    except Exception:
+    except (hou.Error, AttributeError):
         # Geometry selection may not be available in all contexts
         pass
 
@@ -440,7 +440,7 @@ def get_scene_summary(**_: Any) -> dict:
                     try:
                         if sub.isDisplayFlagSet():
                             displayed_sop = sub.name()
-                    except Exception:
+                    except hou.Error:
                         pass
             info['sop_count'] = sop_count
             info['displayed_sop'] = displayed_sop
@@ -469,7 +469,7 @@ def get_scene_summary(**_: Any) -> dict:
                     try:
                         output_path = parm.eval()
                         break
-                    except Exception:
+                    except hou.Error:
                         pass
             info['output_path'] = output_path
             out_children.append(info)
@@ -501,7 +501,7 @@ def get_scene_summary(**_: Any) -> dict:
     current_frame = hou.frame()
     try:
         frame_range = list(hou.playbar.playbackRange())
-    except Exception:
+    except hou.Error:
         frame_range = [1, 240]
     fps = hou.fps()
 
@@ -560,7 +560,7 @@ def compare_snapshots(
         stored = _snapshots.get(snapshot_name)
         if stored is None:
             raise ValueError(
-                f"No snapshot named '{snapshot_name}' found. "
+                f"no snapshot named '{snapshot_name}' found. "
                 f'Available snapshots: {list(_snapshots.keys())}'
             )
 
@@ -612,7 +612,7 @@ def compare_snapshots(
         }
 
     else:
-        raise ValueError(f"Unknown action '{action}'. Must be 'take' or 'compare'.")
+        raise ValueError(f"unknown action '{action}'. Must be 'take' or 'compare'.")
 
 
 @register_command(PluginCommand.CONTEXT_GET_NODE_ERRORS_DETAILED)
@@ -665,7 +665,7 @@ def get_node_errors_detailed(
                                         'issue': 'file_not_found',
                                     }
                                 )
-            except Exception:
+            except hou.Error:
                 pass
 
         entry = {
@@ -698,7 +698,7 @@ def _get_node(node_path: str) -> hou.Node:
 
     node = hou.node(node_path)
     if node is None:
-        raise ValueError(f'Node not found: {node_path}')
+        raise ValueError(f'node not found: {node_path}')
     return node
 
 
@@ -720,7 +720,7 @@ def _has_errors(node: hou.Node) -> bool:
 
     try:
         return bool(node.errors())
-    except Exception:
+    except hou.Error:
         return False
 
 
@@ -733,7 +733,7 @@ def _non_default_parms(node: hou.Node) -> dict[str, Any]:
     for parm in node.parms():
         try:
             val = parm.eval()
-        except Exception:
+        except hou.Error:
             continue
         try:
             default = _component_default(parm)

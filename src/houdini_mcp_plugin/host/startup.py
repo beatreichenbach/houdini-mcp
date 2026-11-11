@@ -139,7 +139,7 @@ def _wait_until_healthy(port: int, timeout: float = 2.0) -> None:
         if health is not None and health.get('pid') == os.getpid():
             return
         time.sleep(0.05)
-    raise RuntimeError(f'Houdini MCP plugin did not start on port {port}')
+    raise RuntimeError(f'houdini MCP plugin did not start on port {port}')
 
 
 def _query_health(

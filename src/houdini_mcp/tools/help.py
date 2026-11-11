@@ -54,5 +54,5 @@ async def get_workflow_guide(
     workflow = content.workflows.get(topic.strip().lower())
     if workflow is None:
         available = ', '.join(sorted(content.workflows))
-        raise ToolError(f"No workflow guide for '{topic}'. Available: {available}")
+        raise ToolError(f"no workflow guide for '{topic}'. Available: {available}")
     return {'topic': topic, 'guide': workflow.render(description, content.shared)}

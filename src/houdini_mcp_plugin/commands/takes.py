@@ -60,7 +60,7 @@ def get_current_take(**_: Any) -> dict[str, Any]:
         for parm in parm_tuple:
             try:
                 val = parm.eval()
-            except Exception:
+            except hou.Error:
                 val = None
             overridden_parms.append(
                 {
@@ -88,7 +88,7 @@ def set_current_take(*, name: str, **_: Any) -> dict[str, Any]:
 
     if target_take is None:
         available = [t.name() for t in hou.takes.takes()]
-        raise ValueError(f"Take not found: '{name}'. Available takes: {available}")
+        raise ValueError(f"take not found: '{name}'. Available takes: {available}")
 
     hou.takes.setCurrentTake(target_take)
 
@@ -118,7 +118,7 @@ def create_take(
         if parent_take is None:
             available = [t.name() for t in hou.takes.takes()]
             raise ValueError(
-                f"Parent take not found: '{parent_name}'. Available takes: {available}"
+                f"parent take not found: '{parent_name}'. Available takes: {available}"
             )
 
         hou.takes.setCurrentTake(parent_take)

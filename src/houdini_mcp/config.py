@@ -36,8 +36,8 @@ def _read_int(name: str, default: int) -> int:
         return default
     try:
         return int(value)
-    except ValueError as exc:
-        raise ValueError(f'invalid {name}: {value!r}') from exc
+    except ValueError as e:
+        raise ValueError(f'invalid {name}: {value!r}') from e
 
 
 def _read_float(name: str, default: float) -> float:
@@ -46,8 +46,8 @@ def _read_float(name: str, default: float) -> float:
         return default
     try:
         return float(value)
-    except ValueError as exc:
-        raise ValueError(f'invalid {name}: {value!r}') from exc
+    except ValueError as e:
+        raise ValueError(f'invalid {name}: {value!r}') from e
 
 
 def _read_log_level() -> int:

@@ -202,12 +202,12 @@ def run_shelf_tool(
     tool = tools.get(tool_name)
     if tool is None:
         raise ValueError(
-            f"No shelf tool named '{tool_name}'. Try list_shelf_tools(filter=...)."
+            f"no shelf tool named '{tool_name}'. Try list_shelf_tools(filter=...)."
         )
 
     script = tool.script() or ''
     if not script.strip():
-        raise ValueError(f"Shelf tool '{tool_name}' has an empty script.")
+        raise ValueError(f"shelf tool '{tool_name}' has an empty script.")
     blocking = interactive_markers(script)
     if blocking:
         refusal = _refusal(tool_name, ', '.join(blocking[:3]))
@@ -309,7 +309,7 @@ def run_shelf_tool(
                     with _no_prompts(tool_name, chosen, tool):
                         exec(script, namespace)
                     break
-                except InteractivePrompt as exc:
+                except InteractivePrompt as e:
                     # Whatever the tool created before asking is half a setup;
                     # remove it, inside existing networks too. A retry on a
                     # scene that could not be put back would build on it.
@@ -317,29 +317,27 @@ def run_shelf_tool(
                         kept = _KEPT_HALF_SETUP
                     if (
                         kept
-                        or isinstance(exc, UnusableSelection)
+                        or isinstance(e, UnusableSelection)
                         or not retry_as_ctrl_click
                         or ran_as_ctrl_click
                     ):
-                        refused = exc
+                        refused = e
                         break
                     call_kwargs = {**call_kwargs, 'ctrlclick': True}
                     ran_as_ctrl_click = True
-    except Exception as exc:
+    except Exception as e:
         # Whatever it built before failing is half a setup, as on a refusal.
         # An AttributeError inside SideFX's script was re-raised bare, with
         # the half setup left in the scene.
         removed = _remove_new(watched, before)
         _restore_dop_network(dop_target, dop_before)
-        if isinstance(exc, AttributeError) and "'hou' has no attribute 'ui'" in str(
-            exc
-        ):
+        if isinstance(e, AttributeError) and "'hou' has no attribute 'ui'" in str(e):
             raise hou.OperationFailed(
-                f"Shelf tool '{tool_name}' needs a graphical Houdini: it calls "
+                f"shelf tool '{tool_name}' needs a graphical Houdini: it calls "
                 f'hou.ui, which does not exist in a headless session. Read its '
                 f'recipe with get_shelf_tool_script and build the network '
                 f'directly instead.'
-            ) from exc
+            ) from e
         if removed is None:
             left = _KEPT_HALF_SETUP
         elif removed:
@@ -349,15 +347,15 @@ def run_shelf_tool(
             )
         else:
             left = ''
-        message = str(exc)[:200].rstrip('.')
+        message = str(e)[:200].rstrip('.')
         raise hou.OperationFailed(
-            f"Shelf tool '{tool_name}' failed: {type(exc).__name__}: {message}.{left}"
-        ) from exc
+            f"shelf tool '{tool_name}' failed: {type(e).__name__}: {message}.{left}"
+        ) from e
 
     if refused is not None:
         _restore_dop_network(dop_target, dop_before)
     if isinstance(refused, UnusableSelection):
-        raise ValueError(f"Shelf tool '{tool_name}': {refused}.{kept}") from refused
+        raise ValueError(f"shelf tool '{tool_name}': {refused}.{kept}") from refused
     if refused is not None:
         raise ValueError(f'{_refusal(tool_name, f"{refused}()")}{kept}') from refused
 
@@ -573,7 +571,7 @@ def _prompt_free_alternatives(
             continue
         try:
             text = other.script() or ''
-        except Exception:
+        except hou.Error:
             continue
         for module, node_type in _GENERIC_TOOL_RE.findall(text):
             if (

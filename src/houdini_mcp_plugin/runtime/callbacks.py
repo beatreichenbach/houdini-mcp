@@ -65,17 +65,17 @@ def exec_python_callback(parm: hou.Parm, script: str, kwargs: dict[str, Any]) ->
                 compile(script, _script_name(parm), 'exec'),
                 {'hou': hou, 'kwargs': kwargs, '__builtins__': builtins},
             )
-    except Exception as exc:
+    except Exception as e:
         # From the callback's own frame on (tb_next skips this function's exec
         # line), last few frames: what Houdini's dialog would have shown.
         frames = traceback.format_tb(
-            exc.__traceback__.tb_next  # ty: ignore[unresolved-attribute]
+            e.__traceback__.tb_next  # ty: ignore[unresolved-attribute]
         )[-4:]
         tail = ''.join(frames).rstrip()
         raise CallbackError(
-            f'Callback of {node.path()}/{parm.name()} raised {type(exc).__name__}: '
-            f'{exc}\n{tail}'
-        ) from exc
+            f'callback of {node.path()}/{parm.name()} raised {type(e).__name__}: '
+            f'{e}\n{tail}'
+        ) from e
     finally:
         with contextlib.suppress(Exception):
             hou.setPwd(previous)
