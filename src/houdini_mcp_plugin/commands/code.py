@@ -12,8 +12,8 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
-from ...host.dispatcher import register_command
-from ..errors import as_text
+from ..host import register_command
+from ..runtime import errors as error_helpers
 
 _MAX_CAPTURE_BYTES = 100 * 1024  # 100 KB
 
@@ -123,7 +123,7 @@ def _execute_hscript(command: str, **_: Any) -> dict[str, Any]:
 
     # A non-string reached the SWIG binding and came back as "in method
     # 'hscript', argument 1 of type 'char const *'".
-    output, errors = hou.hscript(as_text(command, 'command'))
+    output, errors = hou.hscript(error_helpers.as_text(command, 'command'))
 
     return {
         'output': _truncate_output(output) if output else output,
@@ -154,7 +154,7 @@ def _evaluate_expression(
 def _get_env_variable(var_name: str, **_: Any) -> dict[str, Any]:
     """Get a Houdini environment variable."""
 
-    value = hou.getenv(as_text(var_name, 'var_name'))
+    value = hou.getenv(error_helpers.as_text(var_name, 'var_name'))
 
     return {
         'var_name': var_name,
@@ -200,7 +200,7 @@ def _set_update_mode(mode: str | None = None, **_: Any) -> dict[str, Any]:
     """Set (or, with no mode, read) Houdini's cook update mode."""
 
     if mode is not None:
-        key = as_text(mode, 'mode').strip().lower()
+        key = error_helpers.as_text(mode, 'mode').strip().lower()
         if key not in _UPDATE_MODES:
             raise ValueError(
                 f"Unknown update mode '{mode}'. Use one of: {', '.join(_UPDATE_MODES)}."

@@ -8,7 +8,7 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
-from ...host.dispatcher import register_command
+from ..host import register_command
 
 
 @register_command(PluginCommand.TAKES_LIST_TAKES)

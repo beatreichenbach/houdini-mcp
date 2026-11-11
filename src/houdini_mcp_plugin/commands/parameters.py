@@ -12,17 +12,12 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
-from ...host.dispatcher import register_command
-from ...serialize import geometry_summary, ramp_to_dict
-from ..callbacks import (
-    CallbackError,
-    _is_python,
-    callback_script,
-    press,
-)
-from ..dop_cache import dop_cache_note
-from ..errors import readable_message
-from ..menus import items as menu_items
+from ..host import register_command
+from ..runtime import callbacks as callback_helpers
+from ..runtime import dop_cache
+from ..runtime import errors as error_helpers
+from ..runtime import menus as menu_helpers
+from ..serialize import geometry_summary, ramp_to_dict
 
 
 def _resolve_node(node_path: str) -> hou.Node:
@@ -404,7 +399,7 @@ def locked_controllers(parm: hou.Parm) -> list[dict[str, Any]]:
     for other in node.parms():
         if other.name() == parm.name():
             continue
-        callback = callback_script(other)
+        callback = callback_helpers.callback_script(other)
         if not callback or not _names_word(callback, tuple_name):
             continue
         with contextlib.suppress(Exception):
@@ -418,7 +413,7 @@ def locked_controllers(parm: hou.Parm) -> list[dict[str, Any]]:
             # Normal menu, not a Menu parm (measured on 22.0.429) -- or a toggle.
             menu: list[str] = []
             with contextlib.suppress(Exception):
-                menu = menu_items(other)
+                menu = menu_helpers.items(other)
             if not menu and template.type() != hou.parmTemplateType.Toggle:
                 continue
             entry: dict[str, Any] = {
@@ -465,19 +460,23 @@ def locked_message(parm: hou.Parm) -> str | None:
 def _run_callback(parm: hou.Parm) -> dict[str, Any] | None:
     """Run *parm*'s callback script the way the UI does after an edit."""
 
-    if not callback_script(parm):
+    if not callback_helpers.callback_script(parm):
         return None
     try:
-        route = press(parm)
-    except CallbackError as exc:
+        route = callback_helpers.press(parm)
+    except callback_helpers.CallbackError as exc:
         return {'run': False, 'route': 'python', 'error': str(exc).splitlines()[0]}
     except Exception as exc:
         # The Hscript route goes through pressButton(), which raises
         # hou.OperationFailed ("callback script could not be run") -- after
         # set() already wrote the value, so the write itself stands. Anything
         # else unexpected lands here too, so the route is read, not assumed.
-        route = 'python' if _is_python(parm) else 'hscript'
-        return {'run': False, 'route': route, 'error': readable_message(exc)}
+        route = 'python' if callback_helpers._is_python(parm) else 'hscript'
+        return {
+            'run': False,
+            'route': route,
+            'error': error_helpers.readable_message(exc),
+        }
     return {'run': True, 'route': route}
 
 
@@ -817,7 +816,7 @@ def _set_parameter(
                 'new_value': new_value,
             }
             result.update(report)
-            if cache := dop_cache_note([_resolve_node(node_path)]):
+            if cache := dop_cache.dop_cache_note([_resolve_node(node_path)]):
                 result['simulation_cache'] = cache
             return result
 
@@ -835,7 +834,7 @@ def _set_parameter(
 
     result = {'node_path': node_path, 'parm_name': parm_name}
     result.update(written)
-    if cache := dop_cache_note([parm.node()]):
+    if cache := dop_cache.dop_cache_note([parm.node()]):
         result['simulation_cache'] = cache
     return result
 
@@ -986,7 +985,7 @@ def _set_parameters(
         )
     if warnings:
         reply['warning'] = ' '.join(warnings)
-    if results and (cache := dop_cache_note([node])):
+    if results and (cache := dop_cache.dop_cache_note([node])):
         reply['simulation_cache'] = cache
     return reply
 
@@ -2442,7 +2441,7 @@ def _promote_vop_parameters(promotions: list, **_: Any) -> dict[str, Any]:
             if button is None or owner.path() in compiled:
                 continue
             with contextlib.suppress(Exception):
-                press(button)
+                callback_helpers.press(button)
                 compiled.append(owner.path())
             with contextlib.suppress(Exception):
                 owner.cook(force=True)

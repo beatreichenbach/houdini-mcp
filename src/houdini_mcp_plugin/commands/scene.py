@@ -10,19 +10,10 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
-from ...host.dispatcher import register_command
-from ..callbacks import press
-from ..config import (
-    require_inside_project_root,
-    update_mode_name,
-)
-from ..outputs import (
-    OUTPUT_PARMS,
-    failure_verdict,
-    reported_outputs,
-    write_verdict,
-)
-from ..ui import focus_network_editor as _focus_network_editor
+from ..host import register_command
+from ..runtime import callbacks as callback_helpers
+from ..runtime import config, ui
+from ..runtime import outputs as output_helpers
 
 # Extensions that are really two, so the frame number belongs before both.
 # os.path.splitext("cache.bgeo.sc") yields ("cache.bgeo", ".sc"), which produced
@@ -77,7 +68,7 @@ def get_scene_info() -> dict:
         'current_frame': current_frame,
         'node_counts': node_counts,
         'memory_usage': mem_bytes,
-        'update_mode': update_mode_name(),
+        'update_mode': config.update_mode_name(),
     }
 
 
@@ -102,10 +93,10 @@ def save_scene(file_path: str | None = None) -> dict:
     """Save the current Houdini scene."""
 
     if file_path is not None:
-        require_inside_project_root(file_path, 'hip file')
+        config.require_inside_project_root(file_path, 'hip file')
         hou.hipFile.save(file_name=file_path)
     else:
-        require_inside_project_root(hou.hipFile.path(), 'hip file')
+        config.require_inside_project_root(hou.hipFile.path(), 'hip file')
         hou.hipFile.save()
 
     return {
@@ -348,7 +339,7 @@ def load_scene(
 ) -> dict:
     """Open a hip file, or merge it (or named nodes from it) into this scene."""
 
-    require_inside_project_root(file_path, 'hip file')
+    config.require_inside_project_root(file_path, 'hip file')
     if not os.path.isfile(hou.text.expandString(file_path)):
         raise FileNotFoundError(f'File not found: {file_path}')
     if not merge and (node_paths is not None or overwrite_on_conflict):
@@ -385,7 +376,7 @@ def import_file(
 ) -> dict:
     """Import a geometry, USD, or Alembic file into the scene."""
 
-    require_inside_project_root(file_path, 'import file')
+    config.require_inside_project_root(file_path, 'import file')
     if not os.path.isfile(file_path):
         raise FileNotFoundError(f'File not found: {file_path}')
 
@@ -411,7 +402,9 @@ def import_file(
                 'alembicarchive', node_name or 'alembic_import'
             )
             container.parm('fileName').set(file_path)
-            press(container.parm('buildHierarchy'))  # a Python callback
+            callback_helpers.press(
+                container.parm('buildHierarchy')
+            )  # a Python callback
             created_path = container.path()
     elif ext in ('.usd', '.usda', '.usdc', '.usdz'):
         # USD: use a sublayer inside LOP networks, a LOP network elsewhere
@@ -445,7 +438,7 @@ def import_file(
     # Focus on the created node
     created_node = hou.node(created_path)
     if created_node is not None:
-        _focus_network_editor(created_node)
+        ui.focus_network_editor(created_node)
 
     return {
         'success': True,
@@ -465,7 +458,7 @@ def export_file(
     node = hou.node(node_path)
     if node is None:
         raise ValueError(f'Node not found: {node_path}')
-    require_inside_project_root(file_path, 'export file')
+    config.require_inside_project_root(file_path, 'export file')
 
     category = node.type().category().name()
 
@@ -518,11 +511,14 @@ def export_file(
         # complete." regardless. And it ignored file_path altogether, rendering to
         # whatever the ROP's own output parm already said, while the docstring
         # promised file_path was the destination.
-        target_parm = next((p for name in OUTPUT_PARMS if (p := node.parm(name))), None)
+        target_parm = next(
+            (p for name in output_helpers.OUTPUT_PARMS if (p := node.parm(name))), None
+        )
         if target_parm is None:
             raise ValueError(
                 f'{node_path} has no recognised output parameter '
-                f'({", ".join(OUTPUT_PARMS)}), so there is nowhere to write '
+                f'({", ".join(output_helpers.OUTPUT_PARMS)}), '
+                f'so there is nowhere to write '
                 f"'{file_path}'. Set the ROP's output path and use start_render."
             )
         # Repointing the ROP is a means, not the request, so put it back afterwards
@@ -530,7 +526,7 @@ def export_file(
         original_output = target_parm.unexpandedString()
         target_parm.set(file_path)
         try:
-            before = reported_outputs(node)
+            before = output_helpers.reported_outputs(node)
             try:
                 if frame_range is not None:
                     start = float(frame_range[0])
@@ -546,13 +542,13 @@ def export_file(
                     'node_path': node_path,
                     'requested_path': file_path,
                     'output_parm': target_parm.name(),
-                    **failure_verdict(node, before, e, action='Export'),
+                    **output_helpers.failure_verdict(node, before, e, action='Export'),
                 }
             return {
                 'node_path': node_path,
                 'requested_path': file_path,
                 'output_parm': target_parm.name(),
-                **write_verdict(node, before, action='Export'),
+                **output_helpers.write_verdict(node, before, action='Export'),
             }
         finally:
             with contextlib.suppress(Exception):

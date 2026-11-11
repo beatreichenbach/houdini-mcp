@@ -9,9 +9,9 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
-from ...host.dispatcher import register_command
-from ..errors import readable_message
-from ..ui import focus_network_editor as _focus_network_editor
+from ..host import register_command
+from ..runtime import errors as error_helpers
+from ..runtime import ui
 
 
 def _get_node(node_path: str) -> hou.Node:
@@ -127,7 +127,7 @@ def create_wrangle(
             node = parent.createNode('attribwrangle')
     except hou.OperationFailed as e:
         raise ValueError(
-            f'Failed to create attribwrangle node: {readable_message(e)}'
+            f'Failed to create attribwrangle node: {error_helpers.readable_message(e)}'
         ) from e
 
     # Set the VEX snippet
@@ -142,7 +142,7 @@ def create_wrangle(
     class_value = _resolve_class_value(node, run_over)
     node.parm('class').set(class_value)
 
-    _focus_network_editor(node)
+    ui.focus_network_editor(node)
 
     # Build relative prefix map so the AI knows what each ../ level reaches.
     ancestors = {}
@@ -275,7 +275,7 @@ def create_vex_expression(
         detail = str(e).replace('The attempted operation failed.', '').strip()
         raise ValueError(
             f'The expression does not evaluate on {node_path}/{parm_name}, so it was '
-            f'not set: {detail or readable_message(e)}'
+            f'not set: {detail or error_helpers.readable_message(e)}'
         ) from e
     finally:
         hou.setPwd(previous)

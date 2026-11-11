@@ -8,10 +8,9 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
-from ...host.dispatcher import register_command
-from ..config import place_new_node
-from ..errors import as_text, readable_message
-from ..ui import focus_network_editor as _focus_network_editor
+from ..host import register_command
+from ..runtime import config, ui
+from ..runtime import errors as error_helpers
 from .nodes import (
     _component_default,
     _is_at_default,
@@ -244,7 +243,7 @@ def _apply_shader_params(
         try:
             target.set(value)
         except Exception as exc:
-            skipped[key] = readable_message(exc)
+            skipped[key] = error_helpers.readable_message(exc)
             continue
         applied[key] = name
     return applied, skipped
@@ -278,13 +277,13 @@ def _create_material_network(
     except hou.OperationFailed as e:
         raise ValueError(
             f"Failed to create material of type '{actual_type}' in /mat: "
-            f'{readable_message(e)}'
+            f'{error_helpers.readable_message(e)}'
         ) from e
 
     applied, skipped = _apply_shader_params(node, actual_type, params or {})
 
-    place_new_node(node)
-    _focus_network_editor(node)
+    config.place_new_node(node)
+    ui.focus_network_editor(node)
 
     return {
         'material_path': node.path(),
@@ -336,8 +335,8 @@ def _assign_material(
     # Set display flag on the new material SOP
     mat_sop.setDisplayFlag(True)
     mat_sop.setRenderFlag(True)
-    place_new_node(mat_sop)
-    _focus_network_editor(mat_sop)
+    config.place_new_node(mat_sop)
+    ui.focus_network_editor(mat_sop)
 
     return {
         'material_sop_path': mat_sop.path(),
@@ -374,7 +373,7 @@ def _list_material_types(
             label = node_type.description()
 
             # Apply filter if provided
-            filter_lower = as_text(filter, 'filter').lower()
+            filter_lower = error_helpers.as_text(filter, 'filter').lower()
             if filter_lower and (
                 filter_lower not in type_name.lower()
                 and filter_lower not in label.lower()

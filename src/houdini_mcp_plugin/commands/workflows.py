@@ -9,10 +9,9 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
-from ...host.dispatcher import register_command
-from ..config import layout_if_enabled, place_new_node
-from ..errors import readable_message
-from ..ui import focus_network_editor
+from ..host import register_command
+from ..runtime import config, ui
+from ..runtime import errors as error_helpers
 from .nodes import _refuse_taken_name
 
 logger = logging.getLogger(__name__)
@@ -30,7 +29,7 @@ def _get_node(node_path: str) -> hou.Node:
 def _focus_network_editor(node: hou.Node, place_unpositioned: bool = True) -> None:
     """Best-effort: lay out, pan the editor to *node*, hide the other objects."""
 
-    focus_network_editor(node, place_unpositioned, other_objects='hide')
+    ui.focus_network_editor(node, place_unpositioned, other_objects='hide')
 
 
 def _ensure_obj_context() -> hou.Node:
@@ -73,7 +72,7 @@ def _set_parm_safe(node: hou.Node, parm_name: str, value: Any) -> bool:
             logger.info(
                 f'[workflow] Warning: could not set {parm_name}={value} on '
                 f'{node.path()}: '
-                f'{readable_message(e)}'
+                f'{error_helpers.readable_message(e)}'
             )
             return False
     return False
@@ -117,7 +116,7 @@ def _stream_cache(
     cache = geo.createNode(type_name, node_name)
     for index in range(streams):
         cache.setInput(index, solver, index)
-    place_new_node(cache)
+    config.place_new_node(cache)
     cache.setDisplayFlag(True)
     cache.setRenderFlag(True)
     return cache
@@ -215,7 +214,7 @@ def _setup_pyro_sim_sop(
     except Exception:
         pass
 
-    layout_if_enabled(geo)
+    config.layout_if_enabled(geo)
     _focus_network_editor(filecache)
     logger.info('[workflow] SOP-level Pyro setup complete')
 
@@ -317,7 +316,7 @@ def _setup_pyro_sim_dop(
     except Exception as e:
         logger.info(
             f'[workflow] Warning: merge DOP failed, wiring directly: '
-            f'{readable_message(e)}'
+            f'{error_helpers.readable_message(e)}'
         )
         pyrosolver.setInput(0, smokeobj, 0)
 
@@ -342,8 +341,8 @@ def _setup_pyro_sim_dop(
     except Exception:
         pass
 
-    layout_if_enabled(geo)
-    layout_if_enabled(dopnet)
+    config.layout_if_enabled(geo)
+    config.layout_if_enabled(dopnet)
     _focus_network_editor(filecache)
     logger.info('[workflow] DOP-level Pyro setup complete')
 
@@ -572,7 +571,7 @@ def _setup_rbd_sim(
 
         # The dopnet's own children need their own call: geo.layoutChildren()
         # does not descend, and the origin sweep only walks direct children.
-        layout_if_enabled(dopnet)
+        config.layout_if_enabled(dopnet)
 
         dopimport = geo.createNode('dopimport', 'dop_import1')
         _set_parm_safe(dopimport, 'doppath', dopnet.path())
@@ -602,7 +601,7 @@ def _setup_rbd_sim(
 
     # -- Step 6: Layout
     logger.info('[workflow] Laying out nodes')
-    layout_if_enabled(geo)
+    config.layout_if_enabled(geo)
     _focus_network_editor(filecache)
 
     logger.info(f"[workflow] RBD simulation '{name}' setup complete")
@@ -704,7 +703,7 @@ def _setup_flip_sim(
     filecache.setRenderFlag(True)
     all_nodes.append(filecache.path())
 
-    layout_if_enabled(geo)
+    config.layout_if_enabled(geo)
     _focus_network_editor(filecache)
     logger.info(f"[workflow] FLIP simulation '{name}' setup complete")
 
@@ -817,7 +816,7 @@ def _setup_vellum_sim(
 
     # -- Step 6: Layout
     logger.info('[workflow] Laying out nodes')
-    layout_if_enabled(geo)
+    config.layout_if_enabled(geo)
     _focus_network_editor(filecache)
 
     logger.info(f"[workflow] Vellum simulation '{name}' ({sim_type}) setup complete")
@@ -887,7 +886,7 @@ def _create_material(
     skipped = _set_values(shader, values)
     shader_path = shader.path()
 
-    layout_if_enabled(mat, place_unpositioned=True)
+    config.layout_if_enabled(mat, place_unpositioned=True)
     # The shader was just created (through _create_first_available): place it.
     _focus_network_editor(shader, place_unpositioned=True)
 
@@ -966,7 +965,7 @@ def _assign_material(
     except Exception:
         pass
 
-    layout_if_enabled(sop_parent)
+    config.layout_if_enabled(sop_parent)
     _focus_network_editor(mat_sop)
 
     logger.info(f'[workflow] Material assigned: {mat_sop.path()} -> {material_path}')
@@ -1052,7 +1051,7 @@ def _setup_render(
         cam = obj.createNode('cam', 'render_cam')
         # Only /out is laid out below, so the camera is on its own -- without
         # this, back-to-back setup_render calls pile cameras at /obj's origin.
-        place_new_node(cam)
+        config.place_new_node(cam)
         camera = cam.path()
         all_nodes.append(camera)
 
@@ -1141,7 +1140,7 @@ def _setup_render(
         warnings.append('no camera parameter found on the ROP; camera not set')
 
     # Layout
-    layout_if_enabled(out)
+    config.layout_if_enabled(out)
     _focus_network_editor(rop)
 
     logger.info(f"[workflow] Render setup '{name}' complete ({renderer})")

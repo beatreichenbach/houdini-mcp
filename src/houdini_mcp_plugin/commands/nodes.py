@@ -12,24 +12,12 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
-from ... import constants
-from ...host.dispatcher import register_command
-from ...serialize import to_jsonable
-from ..callbacks import (
-    CallbackError,
-    action_script,
-    callback_script,
-    press,
-    run_action,
-)
-from ..config import (
-    auto_layout_enabled,
-    mark_placed,
-    place_new_node,
-)
-from ..dop_cache import dop_cache_note
-from ..errors import readable_message
-from ..ui import focus_network_editor as _focus_network_editor
+from .. import constants
+from ..host import register_command
+from ..runtime import callbacks as callback_helpers
+from ..runtime import config, dop_cache, ui
+from ..runtime import errors as error_helpers
+from ..serialize import to_jsonable
 
 
 def _get_node(node_path: str) -> hou.Node:
@@ -94,20 +82,20 @@ def create_node(
     except hou.OperationFailed as e:
         raise ValueError(
             f"Failed to create node of type '{node_type}' inside '{parent_path}': "
-            f'{readable_message(e)}'
+            f'{error_helpers.readable_message(e)}'
         ) from e
 
     if position is not None and len(position) >= 2:
         node.setPosition(hou.Vector2(position[0], position[1]))
         # The caller's position is final, including [0, 0] -- without the tag
         # the floor would read that as "never positioned" and move it.
-        mark_placed(node)
+        config.mark_placed(node)
     else:
         # No position asked for: place it beside its inputs rather than leaving
         # it at (0, 0) on top of whatever is already there.
-        place_new_node(node)
+        config.place_new_node(node)
 
-    _focus_network_editor(node)
+    ui.focus_network_editor(node)
 
     result = {
         'success': True,
@@ -116,7 +104,7 @@ def create_node(
         'name': node.name(),
         'position': list(node.position()),
     }
-    if cache := dop_cache_note([node]):
+    if cache := dop_cache.dop_cache_note([node]):
         result['simulation_cache'] = cache
     return result
 
@@ -251,7 +239,7 @@ def copy_node(
     # The copy's position is decided here, including a copy that keeps the
     # original's (0, 0) in another network -- without the tag the floor would
     # read that as "never positioned" and move it on a later call.
-    mark_placed(copied)
+    config.mark_placed(copied)
 
     result = {
         'success': True,
@@ -867,7 +855,7 @@ def _indirect_input_item(
         except Exception as exc:
             raise ValueError(
                 f'{subnet.path()} has no input connectors to wire from: '
-                f'{readable_message(exc)}'
+                f'{error_helpers.readable_message(exc)}'
             ) from exc
     if not connectors:
         # Not a subnet (a Box answers an empty tuple on 22.0 rather than the
@@ -923,7 +911,7 @@ def connect_nodes(
     input_index = _resolve_input_index(dest, input_index, input_name)
     dest.setInput(input_index, source, output_index)
 
-    _focus_network_editor(dest, place_unpositioned=False)
+    ui.focus_network_editor(dest, place_unpositioned=False)
 
     result = {
         'success': True,
@@ -935,7 +923,7 @@ def connect_nodes(
     if indirect_input is not None:
         # source_path stays a path a caller can reuse; the connector is here.
         result['indirect_input'] = int(indirect_input)
-    if cache := dop_cache_note([dest], rewired=True):
+    if cache := dop_cache.dop_cache_note([dest], rewired=True):
         result['simulation_cache'] = cache
     return result
 
@@ -992,9 +980,9 @@ def change_node_type(
         except Exception as exc:
             raise ValueError(
                 f'Could not change {node_path} ({old_type}) to {resolved.name()}: '
-                f'{readable_message(exc)}'
+                f'{error_helpers.readable_message(exc)}'
             ) from exc
-        _focus_network_editor(changed, place_unpositioned=False)
+        ui.focus_network_editor(changed, place_unpositioned=False)
 
     after_parms = {p.name() for p in changed.parms()}
     lost = before_non_default - _non_default_parm_names(changed)
@@ -1063,7 +1051,7 @@ def press_button(
             )
     template = parm.parmTemplate()
     parm_type = template.type().name()
-    action_code = action_script(parm)
+    action_code = callback_helpers.action_script(parm)
     action_help = ''
     with contextlib.suppress(Exception):
         help_tag = template.tags().get('script_action_help')
@@ -1074,7 +1062,11 @@ def press_button(
             f'{node.path()}/{parm_name} has no action button (no script_action tag). '
             f'Nothing was run.'
         )
-    if not action and parm_type != 'Button' and not callback_script(parm):
+    if (
+        not action
+        and parm_type != 'Button'
+        and not callback_helpers.callback_script(parm)
+    ):
         # pressButton() on it returns without doing anything, which used to
         # come back as success.
         message = (
@@ -1091,17 +1083,18 @@ def press_button(
     started = time.perf_counter()
     try:
         if action:
-            run_action(parm, dict(arguments) if arguments else None)
+            callback_helpers.run_action(parm, dict(arguments) if arguments else None)
             route = 'action'
         else:
             # Not parm.pressButton() for a Python callback: one that raises
             # opens Houdini's modal error window and holds the main thread.
-            route = press(parm, dict(arguments) if arguments else None)
-    except CallbackError as exc:
+            route = callback_helpers.press(parm, dict(arguments) if arguments else None)
+    except callback_helpers.CallbackError as exc:
         raise ValueError(f'Button callback failed: {exc}') from exc
     except Exception as exc:
         raise ValueError(
-            f'Callback of {node.path()}/{parm_name} failed: {readable_message(exc)}'
+            f'Callback of {node.path()}/{parm_name} failed: '
+            f'{error_helpers.readable_message(exc)}'
         ) from exc
     duration_ms = round((time.perf_counter() - started) * 1000, 1)
     result: dict[str, Any] = {
@@ -1186,14 +1179,14 @@ def connect_nodes_batch(
             )
 
     if last_dest is not None:
-        _focus_network_editor(last_dest, place_unpositioned=False)
+        ui.focus_network_editor(last_dest, place_unpositioned=False)
 
     reply = {
         'success': len(errors) == 0,
         'connected': results,
         'errors': errors,
     }
-    if cache := dop_cache_note(wired, rewired=True):
+    if cache := dop_cache.dop_cache_note(wired, rewired=True):
         reply['simulation_cache'] = cache
     return reply
 
@@ -1234,7 +1227,7 @@ def disconnect_node(
         'node_path': node_path,
         'disconnected_inputs': disconnected,
     }
-    if cache := dop_cache_note([node], rewired=True):
+    if cache := dop_cache.dop_cache_note([node], rewired=True):
         reply['simulation_cache'] = cache
     return reply
 
@@ -1280,7 +1273,7 @@ def reorder_inputs(node_path: str, new_order: list) -> dict:
         'node_path': node_path,
         'new_order': order,
     }
-    if cache := dop_cache_note([node], rewired=True):
+    if cache := dop_cache.dop_cache_note([node], rewired=True):
         reply['simulation_cache'] = cache
     return reply
 
@@ -1330,7 +1323,7 @@ def set_node_flags(
         raise ValueError('no flags were specified.')
 
     if changed.get('display'):
-        _focus_network_editor(node, place_unpositioned=False)
+        ui.focus_network_editor(node, place_unpositioned=False)
 
     result = {
         'success': not not_applied,
@@ -1359,7 +1352,7 @@ def layout_children(parent_path: str, spacing: float | None = None) -> dict:
     # Resolve first, so a bad path is named even when layout is disabled.
     parent = _get_node(parent_path)
 
-    if not auto_layout_enabled():
+    if not config.auto_layout_enabled():
         return {
             'success': False,
             'skipped': True,

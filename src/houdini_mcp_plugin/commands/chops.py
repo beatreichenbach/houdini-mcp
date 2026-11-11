@@ -8,10 +8,9 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
-from ...host.dispatcher import register_command
-from ..config import place_new_node
-from ..errors import readable_message
-from ..ui import focus_network_editor as _focus_network_editor
+from ..host import register_command
+from ..runtime import config, ui
+from ..runtime import errors as error_helpers
 from .nodes import _refuse_taken_name
 
 
@@ -120,11 +119,11 @@ def _create_chop_node(
     except hou.OperationFailed as e:
         raise ValueError(
             f"Failed to create CHOP node of type '{chop_type}' inside '{parent_path}': "
-            f'{readable_message(e)}'
+            f'{error_helpers.readable_message(e)}'
         ) from e
 
-    place_new_node(node)
-    _focus_network_editor(node)
+    config.place_new_node(node)
+    ui.focus_network_editor(node)
 
     return {
         'node_path': node.path(),

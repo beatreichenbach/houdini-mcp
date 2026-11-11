@@ -11,8 +11,8 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
-from ...host.dispatcher import register_command
-from ..config import place_new_node, update_mode_warning
+from ..host import register_command
+from ..runtime import config
 
 
 def _get_sop_geo(node_path: str, output_index: int = 0) -> hou.Geometry:
@@ -209,7 +209,7 @@ def _get_geometry_info(
         'cook_state': cook_state,
     }
     warnings = list(cook_warnings)
-    warning = update_mode_warning()
+    warning = config.update_mode_warning()
     if warning:
         warnings.append(warning)
     if warnings:
@@ -422,7 +422,7 @@ def _set_detail_attrib(
 
     attrib_node = node.parent().createNode('attribcreate', f'set_{attrib_name}')
     attrib_node.setInput(0, node)
-    place_new_node(attrib_node)
+    config.place_new_node(attrib_node)
     attrib_node.parm('numattr').set(1)
     attrib_node.parm('class1').set('detail')
     attrib_node.parm('name1').set(attrib_name)

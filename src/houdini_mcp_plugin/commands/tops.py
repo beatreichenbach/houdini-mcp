@@ -9,8 +9,8 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
-from ...host.dispatcher import register_command
-from ..errors import readable_message
+from ..host import register_command
+from ..runtime import errors as error_helpers
 
 logger = logging.getLogger(__name__)
 
@@ -323,7 +323,8 @@ def cook_top_node(
             node.executeGraph(False, False)
         except Exception as e:
             raise ValueError(
-                f'Failed to start non-blocking cook: {readable_message(e)}'
+                f'Failed to start non-blocking cook: '
+                f'{error_helpers.readable_message(e)}'
             ) from e
 
     # Gather result info
@@ -392,7 +393,9 @@ def cancel_top_cook(node_path: str) -> dict:
         ctx = _get_graph_context(node)
         ctx.cancelCook()
     except Exception as e:
-        raise ValueError(f'Failed to cancel cook: {readable_message(e)}') from e
+        raise ValueError(
+            f'Failed to cancel cook: {error_helpers.readable_message(e)}'
+        ) from e
 
     return {
         'success': True,
@@ -411,7 +414,9 @@ def pause_top_cook(node_path: str) -> dict:
         ctx = _get_graph_context(node)
         ctx.pauseCook()
     except Exception as e:
-        raise ValueError(f'Failed to pause cook: {readable_message(e)}') from e
+        raise ValueError(
+            f'Failed to pause cook: {error_helpers.readable_message(e)}'
+        ) from e
 
     return {
         'success': True,
@@ -464,7 +469,9 @@ def get_work_item_states(node_path: str) -> dict:
             state_counts[state_name] = state_counts.get(state_name, 0) + 1
             total += 1
     except Exception as e:
-        raise ValueError(f'Failed to read work items: {readable_message(e)}') from e
+        raise ValueError(
+            f'Failed to read work items: {error_helpers.readable_message(e)}'
+        ) from e
 
     return {
         'node_path': node.path(),
@@ -483,7 +490,9 @@ def get_work_item_info(node_path: str, work_item_index: int) -> dict:
     try:
         work_items = list(pdg_node.workItems)
     except Exception as e:
-        raise ValueError(f'Failed to read work items: {readable_message(e)}') from e
+        raise ValueError(
+            f'Failed to read work items: {error_helpers.readable_message(e)}'
+        ) from e
 
     if work_item_index < 0 or work_item_index >= len(work_items):
         raise ValueError(
@@ -573,7 +582,7 @@ def generate_static_items(node_path: str) -> dict:
             pdg_node.generateStaticItems()
         except Exception as e:
             raise ValueError(
-                f'Failed to generate static items: {readable_message(e)}'
+                f'Failed to generate static items: {error_helpers.readable_message(e)}'
             ) from e
 
     # Gather generated item info

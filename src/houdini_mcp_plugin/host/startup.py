@@ -46,7 +46,7 @@ def start(port: int | None = None) -> None:
 
     _bind_loopback()
 
-    from ..runtime import commands  # noqa: F401
+    from .. import commands  # noqa: F401
     from . import http  # noqa: F401
 
     in_background = hou.isUIAvailable()

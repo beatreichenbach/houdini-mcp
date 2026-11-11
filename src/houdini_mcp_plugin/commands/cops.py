@@ -10,9 +10,9 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
-from ...host.dispatcher import register_command
-from ..errors import readable_message
-from ..ui import focus_network_editor as _focus_network_editor
+from ..host import register_command
+from ..runtime import errors as error_helpers
+from ..runtime import ui
 from .nodes import _refuse_taken_name
 
 logger = logging.getLogger(__name__)
@@ -116,7 +116,7 @@ def get_cop_geometry(node_path: str, output_index: int = 0) -> dict:
         raise ValueError(
             f'Failed to get geometry from COP node {node_path} at output '
             f'{output_index}: '
-            f'{readable_message(e)}'
+            f'{error_helpers.readable_message(e)}'
         ) from e
 
     if geo is None:
@@ -295,10 +295,10 @@ def create_cop_node(
     except hou.OperationFailed as e:
         raise ValueError(
             f"Failed to create COP node of type '{cop_type}' under {parent_path}: "
-            f'{readable_message(e)}'
+            f'{error_helpers.readable_message(e)}'
         ) from e
 
-    _focus_network_editor(node)
+    ui.focus_network_editor(node)
 
     return {
         'success': True,
@@ -407,7 +407,7 @@ def get_cop_vdb(node_path: str, output_index: int = 0) -> dict:
         raise ValueError(
             f'Failed to get geometry from COP node {node_path} at output '
             f'{output_index}: '
-            f'{readable_message(e)}'
+            f'{error_helpers.readable_message(e)}'
         ) from e
 
     if geo is None:

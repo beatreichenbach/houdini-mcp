@@ -20,6 +20,6 @@ def test_all_commands_registered() -> None:
     )
     sys.modules['hou'] = hou
 
-    import houdini_mcp_plugin.runtime.commands  # noqa: F401
+    import houdini_mcp_plugin.commands  # noqa: F401
 
     assert set(dispatcher.list_commands()) == set(PLUGIN_COMMANDS)

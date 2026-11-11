@@ -12,16 +12,9 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
-from ...host.dispatcher import register_command
-from ..callbacks import press
-from ..outputs import (
-    at_frame as _at_frame,
-)
-from ..outputs import (
-    failure_verdict,
-    reported_outputs,
-    write_verdict,
-)
+from ..host import register_command
+from ..runtime import callbacks as callback_helpers
+from ..runtime import outputs as output_helpers
 
 
 def _menu_index_by_label(parm: hou.Parm, label_substring: str) -> int | None:
@@ -80,9 +73,9 @@ def _frame_glob(node: hou.Node) -> str | None:
         # whose chs() calls read the current frame, so evalAtFrame(2) returned
         # the frame-1 path. Move the playbar for real, and put it back.
         try:
-            with _at_frame(1):
+            with output_helpers.at_frame(1):
                 at_1 = parm.eval()
-            with _at_frame(2):
+            with output_helpers.at_frame(2):
                 at_2 = parm.eval()
         except Exception:
             continue
@@ -424,8 +417,8 @@ def _write_cache(
     # button. That is the report an artist trusts before closing Houdini for the
     # night, and it was never evidence that a cache exists.
     first_frame = frame_range[0] if frame_range else None
-    with _at_frame(first_frame):
-        before = reported_outputs(node)
+    with output_helpers.at_frame(first_frame):
+        before = output_helpers.reported_outputs(node)
 
     failure: Exception | None = None
     method = 'execute button'
@@ -433,7 +426,7 @@ def _write_cache(
         if background:
             hou.hipFile.save()
             method = 'cookoutputnode button (PDG, background process)'
-            press(bg_button)
+            callback_helpers.press(bg_button)
             return {
                 'node_path': node_path,
                 'frame_range': frame_range,
@@ -453,7 +446,7 @@ def _write_cache(
         if execute_parm is not None:
             # Its callback is Python (hou.phm().saveToDisk): run it without
             # the modal error window a raising pressButton() opens.
-            press(execute_parm)
+            callback_helpers.press(execute_parm)
         else:
             # Fall back to render() for ROP-style nodes
             method = 'render()'
@@ -478,11 +471,11 @@ def _write_cache(
             with contextlib.suppress(Exception):
                 actual_range = [f1_parm.eval(), f2_parm.eval()]
 
-    with _at_frame(first_frame):
+    with output_helpers.at_frame(first_frame):
         verdict = (
-            failure_verdict(node, before, failure, action='Cache write')
+            output_helpers.failure_verdict(node, before, failure, action='Cache write')
             if failure is not None
-            else write_verdict(node, before, action='Cache write')
+            else output_helpers.write_verdict(node, before, action='Cache write')
         )
 
     # A verified write is what Load from Disk is for; leaving it off keeps the

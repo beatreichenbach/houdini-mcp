@@ -14,24 +14,11 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
-from ...host.dispatcher import register_command
-from ..callbacks import CallbackError, press
-from ..config import place_new_node
-from ..errors import readable_message
-from ..outputs import (
-    at_frame,
-    failure_verdict,
-    license_error,
-    reported_outputs,
-    write_verdict,
-)
-from ..ui import (
-    keep_viewer_state,
-    require_ui,
-    selection_hidden,
-    viewer_context,
-    viewer_stays_out_of_dops,
-)
+from ..host import register_command
+from ..runtime import callbacks as callback_helpers
+from ..runtime import config, ui
+from ..runtime import errors as error_helpers
+from ..runtime import outputs as output_helpers
 from .viewport import _no_mplay
 
 logger = logging.getLogger(__name__)
@@ -83,7 +70,7 @@ def render_viewport(
 ) -> dict:
     """Capture the current viewport to an image file."""
 
-    require_ui(
+    ui.require_ui(
         'capture a viewport screenshot',
         alternative=(
             'For a rendered image without a UI, build a ROP and use start_render.'
@@ -129,7 +116,7 @@ def render_viewport(
 
     # Use the flipbook approach for a single-frame capture
     # A selected object would be drawn with its selection outline.
-    with selection_hidden():
+    with ui.selection_hidden():
         scene_viewer.flipbook(viewport, settings)
 
     # Handle frame number that flipbook may insert into the filename
@@ -143,7 +130,7 @@ def render_viewport(
         'camera': camera,
         'frame': cur_frame,
         # Which network the image shows, and a note when it is a DOP view.
-        **viewer_context(scene_viewer),
+        **ui.viewer_context(scene_viewer),
     }
 
 
@@ -154,7 +141,7 @@ def render_quad_view(
 ) -> dict:
     """Capture all four viewport panes (quad view) to an image file."""
 
-    require_ui(
+    ui.require_ui(
         'capture a quad view',
         alternative=(
             'For a rendered image without a UI, build a ROP and use start_render.'
@@ -201,7 +188,7 @@ def render_quad_view(
 
             _size_flipbook(settings, resolution)
 
-            with selection_hidden():
+            with ui.selection_hidden():
                 scene_viewer.flipbook(vp, settings)
             vp_output = _find_flipbook_output(vp_output, hou.frame())
             saved_files.append(
@@ -218,7 +205,7 @@ def render_quad_view(
         'success': all(entry['file_exists'] for entry in saved_files),
         'viewports': saved_files,
         'frame': hou.frame(),
-        **viewer_context(scene_viewer),
+        **ui.viewer_context(scene_viewer),
     }
 
 
@@ -434,7 +421,8 @@ def create_render_node(
         node = out_context.createNode(node_type, name)
     except hou.OperationFailed as e:
         raise ValueError(
-            f"Failed to create render node of type '{node_type}': {readable_message(e)}"
+            f"Failed to create render node of type '{node_type}': "
+            f'{error_helpers.readable_message(e)}'
         ) from e
 
     # Set camera if provided
@@ -452,7 +440,7 @@ def create_render_node(
                 parm.set(output_path)
                 break
 
-    place_new_node(node)
+    config.place_new_node(node)
 
     return {
         'success': True,
@@ -688,7 +676,7 @@ def _restore_overrides(
                 parm.set(state['value'])
             restored.append(name)
         except Exception as e:  # keep restoring the rest
-            failed.append({'parm': name, 'error': readable_message(e)})
+            failed.append({'parm': name, 'error': error_helpers.readable_message(e)})
     return restored, failed
 
 
@@ -717,7 +705,7 @@ def _apply_overrides(
             )
             raise ValueError(
                 f"Override '{name}' on {parm.node().path()} could not be set: "
-                f'{readable_message(e)}. Nothing was rendered.{after}'
+                f'{error_helpers.readable_message(e)}. Nothing was rendered.{after}'
             ) from e
         applied.append((name, parm, state))
 
@@ -744,7 +732,7 @@ def start_render(
         )
 
     if background:
-        before = reported_outputs(node)
+        before = output_helpers.reported_outputs(node)
         record = _launch_background_render(node, frame_range)
         return {
             'node_path': node_path,
@@ -811,8 +799,8 @@ def _render_in_foreground(
     # frame of the range: at the playbar's frame a render of 41-43 read as
     # "nothing was written".
     first_frame = float(frame_range[0]) if frame_range else None
-    with at_frame(first_frame):
-        before = reported_outputs(node)
+    with output_helpers.at_frame(first_frame):
+        before = output_helpers.reported_outputs(node)
 
     method = None
     try:
@@ -835,10 +823,10 @@ def _render_in_foreground(
                 _apply_frame_range_parms(node, frame_range)
             # Save to Disk is a Python callback: pressButton() would answer
             # its exception with a modal window instead of raising.
-            press(execute_parm)
-    except (hou.OperationFailed, CallbackError) as e:
-        with at_frame(first_frame):
-            verdict = failure_verdict(node, before, e)
+            callback_helpers.press(execute_parm)
+    except (hou.OperationFailed, callback_helpers.CallbackError) as e:
+        with output_helpers.at_frame(first_frame):
+            verdict = output_helpers.failure_verdict(node, before, e)
         return {
             'node_path': node_path,
             'category': category,
@@ -852,8 +840,8 @@ def _render_in_foreground(
     # still returns normally. Reporting that as success is how a caller ends up
     # verifying a screenshot of an image that was never written, so read the
     # node's own errors and whether the files moved.
-    with at_frame(first_frame):
-        verdict = write_verdict(node, before, action='Render')
+    with output_helpers.at_frame(first_frame):
+        verdict = output_helpers.write_verdict(node, before, action='Render')
     return {
         'node_path': node_path,
         'category': category,
@@ -871,7 +859,7 @@ def render_node_network(
 ) -> dict:
     """Take a screenshot of the network editor showing a specific node's network."""
 
-    require_ui(
+    ui.require_ui(
         'screenshot the network editor',
         alternative=(
             'get_network_overview and list_children describe a network without a UI.'
@@ -902,8 +890,8 @@ def render_node_network(
     # it, keeping the viewer's cameras and the selection. Showing a node in a
     # DOP network takes the Scene Viewer there too; the editor goes back after
     # the shot.
-    with viewer_stays_out_of_dops():
-        with keep_viewer_state():
+    with ui.viewer_stays_out_of_dops():
+        with ui.keep_viewer_state():
             parent = node.parent()
             if parent is not None:
                 network_editor.cd(parent.path())
@@ -967,7 +955,7 @@ def get_render_progress(node_path: str) -> dict:
             logger.debug('Could not check output file existence: %s', e)
 
     background = _background_status(node_path)
-    outputs = reported_outputs(node)
+    outputs = output_helpers.reported_outputs(node)
     if output_file is None:
         for entry in outputs:
             if entry.get('path'):
@@ -981,7 +969,7 @@ def get_render_progress(node_path: str) -> dict:
         'cook_count': cook_count,
         'errors': errors,
         'warnings': warnings,
-        'license_error': license_error(errors),
+        'license_error': output_helpers.license_error(errors),
         'output_file': output_file,
         'output_exists': output_exists,
         'outputs': outputs,

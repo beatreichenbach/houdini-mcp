@@ -17,18 +17,11 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
-from ...host.dispatcher import register_command
-from ..config import (
-    layout_if_enabled,
-    place_new_node,
-    place_new_nodes,
-    update_mode_warning,
-)
-from ..dop_cache import dop_cache_note
-from ..errors import readable_message
-from ..menus import MenuScriptError, items_and_labels
-from ..menus import items as menu_items
-from ..outputs import license_error
+from ..host import register_command
+from ..runtime import config, dop_cache
+from ..runtime import errors as error_helpers
+from ..runtime import menus as menu_helpers
+from ..runtime import outputs as output_helpers
 from .nodes import (
     _find_input,
     _find_output,
@@ -183,7 +176,7 @@ def _instance_menu_errors(
                 if parm is None or not _is_strict_menu(parm.parmTemplate()):
                     continue
                 with contextlib.suppress(Exception):
-                    items, item_labels = items_and_labels(parm)
+                    items, item_labels = menu_helpers.items_and_labels(parm)
                     if problem := _menu_error(name, value, items):
                         # These tokens are often bare numbers ('0'..'5'); the
                         # labels are what says which one means "Integer".
@@ -313,8 +306,8 @@ def _generated_menus_of(node: hou.Node) -> dict[str, dict[str, Any]]:
                     continue
                 entry: dict[str, Any] = {'generator': script}
                 try:
-                    items, labels = items_and_labels(parm)
-                except MenuScriptError as exc:
+                    items, labels = menu_helpers.items_and_labels(parm)
+                except menu_helpers.MenuScriptError as exc:
                     # Read on the card's unwired probe: a script that needs
                     # an input fails here and lists its items on a wired node.
                     items, labels = [], []
@@ -403,7 +396,8 @@ def _connectors_for_type(
     else:
         return (
             None,
-            f'probing {node_type.name()} failed: {readable_message(first_error)}',
+            f'probing {node_type.name()} failed: '
+            f'{error_helpers.readable_message(first_error)}',
         )
     _CONNECTOR_CACHE[key] = (connectors, menus)
     if generated_menus is not None:
@@ -584,7 +578,7 @@ def _parm_names_for_type(
             # modal error window and held every next command.
             if not _is_strict_menu(template):
                 continue
-            items = menu_items(parm)
+            items = menu_helpers.items(parm)
             if items:
                 menus[parm.name()] = items
                 scene_menus = scene_menus or bool(template.itemGeneratorScript())
@@ -1071,7 +1065,7 @@ def _geometry_summary(node: hou.Node) -> dict[str, Any] | None:
             ]
             if len(volumes) > 12:
                 summary['volumes_total'] = len(volumes)
-    warning = update_mode_warning()
+    warning = config.update_mode_warning()
     if warning:
         summary['warning'] = warning
     return summary
@@ -1145,7 +1139,7 @@ def _build_in_new_container(
     if dry_run:
         return _dry_run_in_scratch(above, container, name, nodes, parent_path)
     parent = above.createNode(container, name)
-    place_new_node(parent)
+    config.place_new_node(parent)
     try:
         result = build_network(parent.path(), nodes, dry_run=False, layout=layout)
     except Exception:
@@ -1616,11 +1610,11 @@ def build_network(
                 except Exception as exc:
                     items = []
                     with contextlib.suppress(Exception):
-                        items = menu_items(node.parm(parm_name))
+                        items = menu_helpers.items(node.parm(parm_name))
                     shown = f' Menu items: {items[:20]}' if items else ''
                     raise RuntimeError(
                         f"{node.path()} parm '{parm_name}': "
-                        f'{readable_message(exc)}.{shown}'
+                        f'{error_helpers.readable_message(exc)}.{shown}'
                     ) from exc
                 for kind, found in written.items():
                     parm_reports.setdefault(node.path(), {}).setdefault(
@@ -1698,7 +1692,10 @@ def build_network(
         return {
             'success': False,
             'valid': False,
-            'errors': [f'build failed and was rolled back: {readable_message(exc)}'],
+            'errors': [
+                f'build failed and was rolled back: '
+                f'{error_helpers.readable_message(exc)}'
+            ],
             'created': [],
         }
 
@@ -1723,12 +1720,12 @@ def build_network(
     # left stacked at the origin. Each lands relative to its inputs, in
     # creation order; nodes that already existed are never moved, so building
     # into a hand-arranged network stays safe.
-    place_new_nodes(created.values())
+    config.place_new_nodes(created.values())
 
     if layout:
         # The caller also asked for a layout of the parent, which stays gated
         # by the auto-layout flag as before.
-        layout_if_enabled(parent)
+        config.layout_if_enabled(parent)
 
     display = parent.displayNode() if hasattr(parent, 'displayNode') else None
     if display is None:
@@ -1802,7 +1799,7 @@ def build_network(
         )
     if warnings:
         result['warning'] = ' '.join(warnings)
-    if cache := dop_cache_note(created.values()):
+    if cache := dop_cache.dop_cache_note(created.values()):
         result['simulation_cache'] = cache
     return result
 
@@ -1869,7 +1866,9 @@ def verify_network(parent_path: str, force_cook: bool = False, **_: Any) -> dict
         reports.append(report)
 
     error_nodes = [r['path'] for r in reports if r.get('errors')]
-    licensing = license_error([e for r in reports for e in r.get('errors', ())])
+    licensing = output_helpers.license_error(
+        [e for r in reports for e in r.get('errors', ())]
+    )
     result = {
         'parent_path': parent_path,
         'node_count': len(reports),

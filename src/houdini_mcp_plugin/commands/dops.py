@@ -10,8 +10,8 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
-from ...host.dispatcher import register_command
-from ..errors import readable_message
+from ..host import register_command
+from ..runtime import errors as error_helpers
 
 logger = logging.getLogger(__name__)
 
@@ -515,7 +515,7 @@ def _get_dop_field(
     except Exception as e:
         raise hou.OperationFailed(
             f"Error reading field '{field_name}' at data path '{data_path}': "
-            f'{readable_message(e)}'
+            f'{error_helpers.readable_message(e)}'
         ) from e
 
     if not found:

@@ -11,16 +11,8 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
-from ...host.dispatcher import register_command
-from ..ui import (
-    keep_viewer_state,
-    require_ui,
-    selection_hidden,
-    set_other_objects,
-    show_viewed_object,
-    viewer_context,
-    viewer_stays_out_of_dops,
-)
+from ..host import register_command
+from ..runtime import ui
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +131,7 @@ def _is_scene_graph_view(scene_viewer: Any) -> bool:
 def list_panes() -> dict:
     """List all visible pane tabs, their types, and associated information."""
 
-    require_ui("list Houdini's panes")
+    ui.require_ui("list Houdini's panes")
     pane_tabs = hou.ui.paneTabs()
     panes = []
     for pt in pane_tabs:
@@ -854,7 +846,7 @@ def capture_screenshot(
     viewer: dict = {}
     if pane_tab.type() == hou.paneTabType.SceneViewer:
         # Which network the image shows, and a note when it is a DOP view.
-        viewer = viewer_context(pane_tab)
+        viewer = ui.viewer_context(pane_tab)
         viewport = pane_tab.curViewport()
         from ._helpers import (
             _find_flipbook_output,
@@ -868,7 +860,7 @@ def capture_screenshot(
         # The viewport as it is, not the stash's 1280x720.
         _size_flipbook(settings, None)
         # A selected object would be drawn with its selection outline.
-        with selection_hidden():
+        with ui.selection_hidden():
             pane_tab.flipbook(viewport, settings)
 
         # Handle frame number that flipbook may insert
@@ -951,9 +943,9 @@ def capture_network_editor(
             raise ValueError(f'Node not found: {node_path}')
     # Showing a node in a DOP network takes the Scene Viewer there too; the
     # editor goes back after the shot.
-    with viewer_stays_out_of_dops():
+    with ui.viewer_stays_out_of_dops():
         if node is not None:
-            with keep_viewer_state():
+            with ui.keep_viewer_state():
                 parent = node.parent()
                 if parent is not None:
                     network_editor.cd(parent.path())
@@ -998,7 +990,7 @@ def set_current_network(network_path: str, other_objects: str | None = 'hide') -
     if node is None:
         raise ValueError(f'Network path not found: {network_path}')
 
-    require_ui(
+    ui.require_ui(
         'navigate the network editor',
         alternative='Without a UI the network can still be read with list_children.',
     )
@@ -1020,7 +1012,7 @@ def set_current_network(network_path: str, other_objects: str | None = 'hide') -
         if not node.isNetwork() and node.parent() is not None:
             network = node.parent()
     # The viewer follows the editor; its cameras and the selection stay.
-    with keep_viewer_state():
+    with ui.keep_viewer_state():
         network_editor.cd(network.path())
         if network is not node:
             with contextlib.suppress(Exception):
@@ -1036,13 +1028,13 @@ def set_current_network(network_path: str, other_objects: str | None = 'hide') -
         'success': True,
         'network_path': network_path,
         'pane_name': network_editor.name(),
-        'other_objects': set_other_objects(other_objects),
+        'other_objects': ui.set_other_objects(other_objects),
     }
     if network is not node:
         reply['entered'] = network.path()
         reply['current_node'] = node.path()
     if other_objects is not None:
-        reset = show_viewed_object(network)
+        reset = ui.show_viewed_object(network)
         if reset:
             reply['visible_objects_reset'] = reset
     is_dop = False
@@ -1118,7 +1110,7 @@ def find_error_nodes(root_path: str = '/') -> dict:
 def _find_scene_viewer(pane_name: str | None = None) -> Any:
     """Find a Scene Viewer pane tab by name, or the first one available."""
 
-    require_ui(
+    ui.require_ui(
         'find a Scene Viewer',
         alternative=(
             'Geometry can still be inspected with get_geometry_info and '
@@ -1143,7 +1135,7 @@ def _find_scene_viewer(pane_name: str | None = None) -> Any:
 def _find_pane_by_name(pane_name: str) -> Any:
     """Find a pane tab by its name."""
 
-    require_ui(f'find the pane {pane_name!r}')
+    ui.require_ui(f'find the pane {pane_name!r}')
     for pane_tab in hou.ui.paneTabs():
         if pane_tab.name() == pane_name:
             return pane_tab

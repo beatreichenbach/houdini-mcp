@@ -12,9 +12,9 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
-from ...host.dispatcher import register_command
-from ..errors import as_int, as_text
-from ..ui import keep_viewer_state
+from ..host import register_command
+from ..runtime import errors as error_helpers
+from ..runtime import ui
 
 _LIST_CAP = 60
 _SCRIPT_CAP = 20_000
@@ -62,8 +62,8 @@ def list_shelf_tools(
     """Find shelf tools by name, label or keyword."""
 
     tools = hou.shelves.tools()
-    needle = as_text(filter, 'filter').strip().lower()
-    limit = as_int(limit, 'limit')
+    needle = error_helpers.as_text(filter, 'filter').strip().lower()
+    limit = error_helpers.as_int(limit, 'limit')
 
     matched = []
     for name, tool in tools.items():
@@ -271,12 +271,12 @@ def _editor_in(network: hou.Node) -> Iterator[hou.Node | None]:
         yield None
         return
     previous = editor.pwd().path()
-    with keep_viewer_state():
+    with ui.keep_viewer_state():
         editor.cd(network.path())
     try:
         yield editor
     finally:
-        with contextlib.suppress(Exception), keep_viewer_state():
+        with contextlib.suppress(Exception), ui.keep_viewer_state():
             editor.cd(previous)
 
 

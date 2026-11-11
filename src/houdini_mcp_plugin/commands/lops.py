@@ -15,10 +15,9 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
-from ...host.dispatcher import register_command
-from ..config import place_new_node
-from ..outputs import at_frame
-from ..ui import focus_network_editor as _focus_network_editor
+from ..host import register_command
+from ..runtime import config, ui
+from ..runtime import outputs as output_helpers
 from .nodes import _refuse_taken_name
 
 # USD modules -- may not be available in all Houdini configurations
@@ -244,7 +243,7 @@ def _cooked_at_time(handler: Any) -> Any:
         time = kwargs.get('time')
         if time is None or time == _stage_frame():
             return handler(**kwargs)
-        with at_frame(float(time)):
+        with output_helpers.at_frame(float(time)):
             return handler(**kwargs)
 
     return run
@@ -871,7 +870,7 @@ def _get_usd_world_transform(
 
     results: dict[str, list[dict[str, Any]]] = {path: [] for path in prim_paths}
     for frame in wanted:
-        with at_frame(frame if frame != _stage_frame() else None):
+        with output_helpers.at_frame(frame if frame != _stage_frame() else None):
             stage = _get_lop_stage(node_path)
             time_code = (
                 Usd.TimeCode(frame) if frame is not None else Usd.TimeCode.Default()
@@ -1046,8 +1045,8 @@ def _create_lop_node(
         if parm is not None:
             parm.set(prim_path)
 
-    place_new_node(node)
-    _focus_network_editor(node)
+    config.place_new_node(node)
+    ui.focus_network_editor(node)
 
     return {
         'node_path': node.path(),
@@ -1112,7 +1111,7 @@ def _edit_attributes_after(
             if getattr(node, flag)():
                 getattr(python_node, setter)(True)
                 moved_flags.append(setter)
-    place_new_node(python_node)
+    config.place_new_node(python_node)
     with contextlib.suppress(hou.OperationFailed):
         python_node.cook(force=True)
     errors = [e.strip() for e in python_node.errors()]
@@ -1126,7 +1125,7 @@ def _edit_attributes_after(
                 getattr(node, setter)(True)
         python_node.destroy()
         return {'python_node': None, 'errors': errors, 'read_back': {}}
-    _focus_network_editor(python_node)
+    ui.focus_network_editor(python_node)
     read_back: dict = {}
     with contextlib.suppress(Exception):
         prim = python_node.stage().GetPrimAtPath(prim_path)
@@ -1783,8 +1782,8 @@ def _create_light(
             if parm is not None:
                 parm.set(position[i])
 
-    place_new_node(node)
-    _focus_network_editor(node)
+    config.place_new_node(node)
+    ui.focus_network_editor(node)
 
     # Determine the prim path
     prim_path_parm = node.parm('primpath')
@@ -2060,14 +2059,14 @@ def _create_light_rig(
                     if parm is not None:
                         parm.set(light_def[key])
 
-        place_new_node(node)
+        config.place_new_node(node)
         created_nodes.append(node.path())
 
     # Focus on the last created light to keep the editor alive
     if created_nodes:
         last_node = hou.node(created_nodes[-1])
         if last_node is not None:
-            _focus_network_editor(last_node)
+            ui.focus_network_editor(last_node)
 
     return {
         'nodes': created_nodes,

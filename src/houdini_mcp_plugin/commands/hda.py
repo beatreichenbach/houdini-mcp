@@ -11,9 +11,9 @@ import hou
 
 from houdini_mcp_protocol import PluginCommand
 
-from ...host.dispatcher import register_command
-from ..config import require_inside_project_root
-from ..errors import as_text, readable_message
+from ..host import register_command
+from ..runtime import config
+from ..runtime import errors as error_helpers
 from .parameters import _expression_error, _template_to_dict
 
 
@@ -146,7 +146,7 @@ def _parm_template_to_dict(pt: Any) -> dict:
 def list_installed_hdas(filter: str | None = None, limit: int = 100) -> dict:
     """List installed HDA definitions, grouped by library file."""
 
-    needle = as_text(filter, 'filter').lower()
+    needle = error_helpers.as_text(filter, 'filter').lower()
     libraries: dict[str, list[dict]] = {}
     total = 0
     shown = 0
@@ -294,7 +294,7 @@ def install_hda(file_path: str, force: bool = False) -> dict:
     """Install an HDA file into the current Houdini session."""
 
     # This guard sat inside the docstring above, where it never ran.
-    require_inside_project_root(file_path, 'HDA file')
+    config.require_inside_project_root(file_path, 'HDA file')
     if not os.path.isfile(file_path):
         raise FileNotFoundError(f'HDA file not found: {file_path}')
 
@@ -315,7 +315,9 @@ def install_hda(file_path: str, force: bool = False) -> dict:
     try:
         hou.hda.installFile(file_path)
     except Exception as e:
-        raise ValueError(f'Failed to install HDA: {readable_message(e)}') from e
+        raise ValueError(
+            f'Failed to install HDA: {error_helpers.readable_message(e)}'
+        ) from e
 
     # List definitions that were installed
     definitions = hou.hda.definitionsInFile(file_path)
@@ -337,7 +339,7 @@ def uninstall_hda(file_path: str) -> dict:
     # anything wrong, which tells a caller nothing about what to do next. The
     # overwhelmingly likely cause is that this file was never installed, so say so
     # and name what IS installed.
-    require_inside_project_root(file_path, 'HDA file')
+    config.require_inside_project_root(file_path, 'HDA file')
     installed: list[str] = []
     with contextlib.suppress(Exception):  # only used to improve the message
         installed = list(hou.hda.loadedFiles())
@@ -351,7 +353,8 @@ def uninstall_hda(file_path: str) -> dict:
         hou.hda.uninstallFile(file_path)
     except Exception as e:
         raise ValueError(
-            f'Failed to uninstall HDA {file_path}: {readable_message(e)}. '
+            f'Failed to uninstall HDA {file_path}: '
+            f'{error_helpers.readable_message(e)}. '
             f'Installed files: {installed[:6] if installed else "none"}'
         ) from e
 
@@ -366,14 +369,16 @@ def uninstall_hda(file_path: str) -> dict:
 def reload_hda(file_path: str) -> dict:
     """Reload an HDA file from disk."""
 
-    require_inside_project_root(file_path, 'HDA file')
+    config.require_inside_project_root(file_path, 'HDA file')
     if not os.path.isfile(file_path):
         raise FileNotFoundError(f'HDA file not found: {file_path}')
 
     try:
         hou.hda.reloadFile(file_path)
     except Exception as e:
-        raise ValueError(f'Failed to reload HDA: {readable_message(e)}') from e
+        raise ValueError(
+            f'Failed to reload HDA: {error_helpers.readable_message(e)}'
+        ) from e
 
     definitions = hou.hda.definitionsInFile(file_path)
     type_names = [d.nodeTypeName() for d in definitions]
@@ -396,7 +401,7 @@ def create_hda(
 ) -> dict:
     """Create a new HDA from an existing subnet node."""
 
-    require_inside_project_root(hda_file, 'HDA file')
+    config.require_inside_project_root(hda_file, 'HDA file')
     node = _get_node(node_path)
 
     # Verify the node is a subnet
@@ -423,7 +428,9 @@ def create_hda(
             max_num_inputs=inputs_used,
         )
     except Exception as e:
-        raise ValueError(f'Failed to create HDA: {readable_message(e)}') from e
+        raise ValueError(
+            f'Failed to create HDA: {error_helpers.readable_message(e)}'
+        ) from e
 
     promoted = _promote_spares_to_definition(hda_node)
     return {
@@ -1287,7 +1294,7 @@ def _edit_interface(
         except Exception as exc:
             raise ValueError(
                 f'op #{index} ({op.get("op") if isinstance(op, dict) else op!r}): '
-                f'{readable_message(exc)}'
+                f'{error_helpers.readable_message(exc)}'
             ) from exc
 
     collisions = _component_collisions(group)
@@ -1325,12 +1332,13 @@ def _edit_interface(
     # every other HDA file this server writes. An embedded definition lives
     # in the hip file and answers the literal "Embedded" for a path.
     if not _is_embedded(definition):
-        require_inside_project_root(definition.libraryFilePath(), 'HDA library')
+        config.require_inside_project_root(definition.libraryFilePath(), 'HDA library')
     try:
         definition.setParmTemplateGroup(group)
     except Exception as exc:
         raise ValueError(
-            f'Houdini refused the edited interface: {readable_message(exc)}. Nothing '
+            f'Houdini refused the edited interface: '
+            f'{error_helpers.readable_message(exc)}. Nothing '
             f'was '
             f'written.'
         ) from exc
@@ -1510,7 +1518,7 @@ def update_hda(node_path: str) -> dict:
         node.type().definition().updateFromNode(node)
     except Exception as e:
         raise ValueError(
-            f'Failed to update HDA definition: {readable_message(e)}'
+            f'Failed to update HDA definition: {error_helpers.readable_message(e)}'
         ) from e
     after = _mtime()
 
@@ -1595,7 +1603,8 @@ def get_hda_section_content(node_path: str, section_name: str) -> dict:
         content = sections[section_name].contents()
     except Exception as e:
         raise ValueError(
-            f"Failed to read section '{section_name}': {readable_message(e)}"
+            f"Failed to read section '{section_name}': "
+            f'{error_helpers.readable_message(e)}'
         ) from e
 
     return {
@@ -1622,7 +1631,8 @@ def set_hda_section_content(
         definition.addSection(section_name, content)
     except Exception as e:
         raise ValueError(
-            f"Failed to write section '{section_name}': {readable_message(e)}"
+            f"Failed to write section '{section_name}': "
+            f'{error_helpers.readable_message(e)}'
         ) from e
 
     return {
