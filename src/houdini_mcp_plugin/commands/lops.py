@@ -7,6 +7,7 @@ import contextlib
 import fnmatch
 import functools
 import itertools
+import os
 import re
 from typing import Any
 
@@ -1263,6 +1264,119 @@ def _get_usd_materials(*, node_path: str) -> dict[str, Any]:
         'node_path': node_path,
         'count': len(materials),
         'materials': materials,
+    }
+
+
+def _asset_entries(value: Any) -> list[tuple[str, str]]:
+    """Return (authored, resolved) pairs for an asset or asset-array value."""
+
+    if isinstance(value, Sdf.AssetPath):
+        values = [value]
+    elif (
+        value is not None and hasattr(value, '__iter__') and not isinstance(value, str)
+    ):
+        values = list(value)
+    else:
+        values = [value]
+    entries: list[tuple[str, str]] = []
+    for item in values:
+        if isinstance(item, Sdf.AssetPath):
+            entries.append((item.path or '', item.resolvedPath or ''))
+        elif item:
+            entries.append((str(item), ''))
+    return entries
+
+
+@register_command(PluginCommand.LOPS_GET_USD_MATERIAL_TEXTURES)
+def _get_usd_material_textures(
+    *,
+    node_path: str,
+    root_path: str = '/',
+    traverse_instance_proxies: bool = True,
+    include_prototypes: bool = False,
+) -> dict[str, Any]:
+    """List every asset-valued input of every material."""
+
+    stage = _get_lop_stage(node_path)
+    root = stage.GetPseudoRoot() if root_path == '/' else stage.GetPrimAtPath(root_path)
+    if not root:
+        raise ValueError(f'Prim not found: {root_path}')
+
+    def walk(prim: Any) -> Any:
+        if traverse_instance_proxies:
+            return Usd.PrimRange(prim, Usd.TraverseInstanceProxies())
+        return Usd.PrimRange(prim)
+
+    material_prims: list[Any] = []
+    seen: set[str] = set()
+    ranges = [root]
+    if include_prototypes:
+        ranges.extend(stage.GetPrototypes())
+    for start in ranges:
+        for prim in walk(start):
+            if not prim.IsA(UsdShade.Material):
+                continue
+            path = str(prim.GetPath())
+            if path in seen:
+                continue
+            seen.add(path)
+            material_prims.append(prim)
+
+    materials: list[dict[str, Any]] = []
+    all_files: set[str] = set()
+    missing: list[dict[str, Any]] = []
+
+    for material in sorted(material_prims, key=lambda prim: str(prim.GetPath())):
+        material_path = str(material.GetPath())
+        textures: list[dict[str, Any]] = []
+        files: set[str] = set()
+        for prim in walk(material):
+            shader_id = ''
+            with contextlib.suppress(Exception):
+                if prim.IsA(UsdShade.Shader):
+                    shader_id = UsdShade.Shader(prim).GetShaderId() or ''
+            for attr in prim.GetAttributes():
+                if attr.GetTypeName() not in (
+                    Sdf.ValueTypeNames.Asset,
+                    Sdf.ValueTypeNames.AssetArray,
+                ):
+                    continue
+                with contextlib.suppress(Exception):
+                    for authored, resolved in _asset_entries(attr.Get()):
+                        if not (authored or resolved):
+                            continue
+                        path = resolved or authored
+                        exists = bool(path) and os.path.exists(path)
+                        texture = {
+                            'shader_path': str(prim.GetPath()),
+                            'shader_id': shader_id,
+                            'input': attr.GetName(),
+                            'asset': authored,
+                            'resolved': resolved,
+                            'exists': exists,
+                        }
+                        textures.append(texture)
+                        if path:
+                            files.add(path)
+                        if not exists:
+                            missing.append({**texture, 'material': material_path})
+        materials.append(
+            {
+                'path': material_path,
+                'name': material.GetName(),
+                'textures': textures,
+                'files': sorted(files),
+            }
+        )
+        all_files.update(files)
+
+    return {
+        'node_path': node_path,
+        'root_path': root_path,
+        'count': len(materials),
+        'materials': materials,
+        'files': sorted(all_files),
+        'missing': missing,
     }
 
 

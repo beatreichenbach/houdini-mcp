@@ -14,7 +14,8 @@ from houdini_mcp.errors import (
 )
 from houdini_mcp.server import create_server
 from houdini_mcp.tools.context import BridgeContext, run_command
-from houdini_mcp.tools.nodes import create_node
+from houdini_mcp.tools.lops import get_usd_material_textures
+from houdini_mcp.tools.nodes import create_node, list_children, list_network_boxes
 from houdini_mcp.tools.parameters import set_parameter
 
 
@@ -101,6 +102,50 @@ async def _create_node(ctx: BridgeContext) -> object:
 
 async def _set_parameter(ctx: BridgeContext) -> object:
     return await set_parameter(ctx, '/obj/geo1', 'tx', 2.5)
+
+
+def test_list_network_boxes_sends_expected_params() -> None:
+    bridge = RecordingBridge()
+
+    asyncio.run(list_network_boxes(_context(bridge), '/stage'))
+
+    assert bridge.calls == [('nodes.list_network_boxes', {'parent_path': '/stage'})]
+
+
+def test_list_children_sends_dive_target_flag() -> None:
+    bridge = RecordingBridge()
+
+    asyncio.run(
+        list_children(_context(bridge), '/stage/componentgeometry6', dive_target=True)
+    )
+
+    assert bridge.calls == [
+        (
+            'nodes.list_children',
+            {
+                'parent_path': '/stage/componentgeometry6',
+                'recursive': False,
+                'dive_target': True,
+            },
+        )
+    ]
+
+
+def test_get_usd_material_textures_sends_expected_params() -> None:
+    bridge = RecordingBridge()
+
+    asyncio.run(
+        get_usd_material_textures(
+            _context(bridge), '/stage/Curb01', include_prototypes=True
+        )
+    )
+
+    command, params = bridge.calls[0]
+    assert command == 'lops.get_usd_material_textures'
+    assert params is not None
+    assert params['node_path'] == '/stage/Curb01'
+    assert params['include_prototypes'] is True
+    assert params['traverse_instance_proxies'] is True
 
 
 @pytest.mark.parametrize(

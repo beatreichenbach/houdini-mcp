@@ -623,12 +623,15 @@ def list_children(
         if len(results) >= _MAX_CHILDREN:
             break
 
-    return {
+    result = {
         'parent_path': parent_path,
         'count': len(results),
         'truncated': len(results) >= _MAX_CHILDREN,
         'children': results,
     }
+    if parent is not requested:
+        result['listed_path'] = parent.path()
+    return result
 
 
 @register_command(PluginCommand.NODES_FIND_NODES)
@@ -1435,6 +1438,33 @@ def create_network_box(
         'name': box.name(),
         'parent_path': parent.path(),
         'contains': [n.path() for n in box.nodes()],
+    }
+
+
+@register_command(PluginCommand.NODES_LIST_NETWORK_BOXES)
+def list_network_boxes(parent_path: str = '/stage') -> dict:
+    """List network boxes (backdrops) in a network and what they hold."""
+
+    parent = _get_node(parent_path)
+    boxes: list[dict[str, Any]] = []
+    for box in parent.networkBoxes():
+        position = box.position()
+        size = box.size()
+        red, green, blue = box.color().rgb()
+        boxes.append(
+            {
+                'name': box.name(),
+                'comment': box.comment(),
+                'position': [position.x(), position.y()],
+                'size': [size.x(), size.y()],
+                'color': [red, green, blue],
+                'nodes': sorted(node.path() for node in box.nodes()),
+            }
+        )
+    return {
+        'parent_path': parent.path(),
+        'count': len(boxes),
+        'boxes': boxes,
     }
 
 

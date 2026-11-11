@@ -272,6 +272,25 @@ async def get_usd_materials(ctx: BridgeContext, node_path: str) -> dict:
 
 
 @tool
+async def get_usd_material_textures(
+    ctx: BridgeContext,
+    node_path: str,
+    root_path: str = '/',
+    traverse_instance_proxies: bool = True,
+    include_prototypes: bool = False,
+) -> dict:
+    """List every asset-valued input of each USD material."""
+
+    params: dict[str, Any] = {
+        'node_path': node_path,
+        'root_path': root_path,
+        'traverse_instance_proxies': traverse_instance_proxies,
+        'include_prototypes': include_prototypes,
+    }
+    return await run_command(ctx, 'lops.get_usd_material_textures', params)
+
+
+@tool
 async def find_usd_prims(
     ctx: BridgeContext,
     node_path: str,

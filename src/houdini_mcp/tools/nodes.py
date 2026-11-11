@@ -141,6 +141,8 @@ async def list_children(
         params['filter_type'] = filter_type
     if include_locked_assets:
         params['include_locked_assets'] = True
+    if dive_target:
+        params['dive_target'] = True
     return await run_command(ctx, 'nodes.list_children', params)
 
 
@@ -403,6 +405,15 @@ async def create_network_box(
     if color is not None:
         params['color'] = color
     return await run_command(ctx, 'nodes.create_network_box', params)
+
+
+@tool
+async def list_network_boxes(ctx: BridgeContext, parent_path: str = '/stage') -> dict:
+    """List network boxes (backdrops) in a network and the nodes in each."""
+
+    return await run_command(
+        ctx, 'nodes.list_network_boxes', {'parent_path': parent_path}
+    )
 
 
 @tool
