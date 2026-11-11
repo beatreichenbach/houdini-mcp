@@ -127,8 +127,11 @@ async def list_children(
     recursive: bool = False,
     filter_type: str | None = None,
     include_locked_assets: bool = False,
+    dive_target: bool = False,
 ) -> dict:
-    """List children of a network node."""
+    """List children of a network node. Locked assets are opaque unless
+    `include_locked_assets` (raw contents) or `dive_target` (editable content)
+    asks for them."""
 
     params: dict = {
         'parent_path': parent_path,

@@ -52,6 +52,30 @@ def _node_summary(node: hou.Node) -> dict:
     }
 
 
+def _is_locked_hda(node: hou.Node) -> bool:
+    """True when the node is a locked HDA instance."""
+
+    with contextlib.suppress(Exception):
+        return bool(node.isLockedHDA())
+    return False
+
+
+def _dive_target_path(node: hou.Node) -> str | None:
+    """Return the node's editable dive target as an absolute path."""
+
+    if not _is_locked_hda(node):
+        return None
+    definition = node.type().definition()
+    if definition is None:
+        return None
+    with contextlib.suppress(Exception):
+        section = definition.sections().get('DiveTarget')
+        target = section.contents().strip() if section is not None else ''
+        if target:
+            return node.node(target).path()
+    return None
+
+
 @register_command(PluginCommand.NODES_CREATE_NODE)
 def create_node(
     parent_path: str,
@@ -547,15 +571,30 @@ def list_children(
     recursive: bool = False,
     filter_type: str | None = None,
     include_locked_assets: bool = False,
+    dive_target: bool = False,
 ) -> dict:
-    """List children of a network node."""
+    """List children of a network node.
 
-    parent = _get_node(parent_path)
-    # Listing a locked asset's insides is asking for them: there, every
-    # subnet is uneditable and the walk would stop at the first level.
-    with contextlib.suppress(Exception):
-        if parent.isLockedHDA() or parent.isInsideLockedHDA():
-            include_locked_assets = True
+    A locked asset is opaque: its children are the definition's internals, not
+    a network. Ask for `include_locked_assets` to read the raw contents, or for
+    `dive_target` to read the editable dive target only.
+    """
+
+    requested = _get_node(parent_path)
+    parent = requested
+
+    if _is_locked_hda(requested) and not include_locked_assets:
+        dive_path = _dive_target_path(requested)
+        if not (dive_target and dive_path):
+            return {
+                'parent_path': parent_path,
+                'count': 0,
+                'truncated': False,
+                'locked_asset': True,
+                'dive_target_path': dive_path,
+                'children': [],
+            }
+        parent = _get_node(dive_path)
 
     # A locked asset's contents load on demand: a fresh popsolver answers 0
     # children until synced.

@@ -44,6 +44,27 @@ def _is_embedded(definition: hou.HDADefinition) -> bool:
     return definition.libraryFilePath() == 'Embedded'
 
 
+def _section_text(sections: dict[str, hou.HDASection], name: str) -> str:
+    """Return the stripped text of an HDA section, or an empty string."""
+
+    section = sections.get(name)
+    if section is None:
+        return ''
+    with contextlib.suppress(Exception):
+        return section.contents().strip()
+    return ''
+
+
+def _section_lines(sections: dict[str, hou.HDASection], name: str) -> list[str]:
+    """Return the non-empty lines of an HDA section."""
+
+    return [
+        line.strip()
+        for line in _section_text(sections, name).splitlines()
+        if line.strip()
+    ]
+
+
 def _definition_to_dict(definition: hou.HDADefinition) -> dict:
     """Convert an HDA definition to a plain dict."""
 
@@ -71,21 +92,23 @@ def _definition_to_dict(definition: hou.HDADefinition) -> dict:
     except Exception:
         info['max_num_outputs'] = None
 
-    try:
-        info['is_editable'] = not definition.isBlackBoxed()
-    except Exception:
-        info['is_editable'] = None
+    sections: dict[str, hou.HDASection] = {}
+    with contextlib.suppress(Exception):
+        sections = definition.sections()
+
+    # Section names
+    info['sections'] = sorted(sections.keys())
+
+    # Compiled and black-boxed definitions ship without their contents.
+    info['is_editable'] = bool({'Contents', 'Contents.gz'} & set(info['sections']))
 
     try:
         info['embedded'] = _is_embedded(definition)
     except Exception:
         info['embedded'] = None
 
-    # Section names
-    try:
-        info['sections'] = sorted(definition.sections().keys())
-    except Exception:
-        info['sections'] = []
+    info['dive_target'] = _section_text(sections, 'DiveTarget') or None
+    info['editable_nodes'] = _section_lines(sections, 'EditableNodes')
 
     return info
 
@@ -172,10 +195,11 @@ def get_hda_info(
     """Return detailed information about an HDA definition."""
 
     definition = None
+    instance: hou.Node | None = None
 
     if node_path is not None:
-        node = _get_node(node_path)
-        definition = _get_definition(node)
+        instance = _get_node(node_path)
+        definition = _get_definition(instance)
     elif hda_file is not None:
         if not os.path.isfile(hda_file):
             raise FileNotFoundError(f'HDA file not found: {hda_file}')
@@ -257,6 +281,10 @@ def get_hda_info(
         info['output_labels'] = output_labels
     except Exception:
         info['output_labels'] = []
+
+    if instance is not None and info['dive_target']:
+        with contextlib.suppress(Exception):
+            info['dive_target_path'] = instance.node(info['dive_target']).path()
 
     return info
 
