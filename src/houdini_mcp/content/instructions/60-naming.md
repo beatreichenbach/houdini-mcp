@@ -3,8 +3,12 @@
 ## Houdini nodes
 
 - Leave existing node names alone unless the user asks.
-- Only rename Attribute Wrangles, and name them after what they do: `set_height`, `mask_water`.
-- Houdini node names you create use lowercase words separated by underscores.
+- Only rename the Component Output. Never rename Component Geometry, Mesh,
+  Configure Layer, Reference, Specialize, or any other copied template node.
+  Rename a different node only when the user explicitly asks.
+- When instantiating a template, call `copy_node` with no `new_name`. Keep the
+  names Houdini generates for the copies; a numeric suffix is expected.
+- Name new nodes you create with lowercase words separated by underscores.
 - Do not use generic suffixes such as `_1`, `_final`, `_new`, or `_temp`.
 - Prefix intermediary input or output nulls referenced by other nodes with `IN_` or `OUT_`.
 
