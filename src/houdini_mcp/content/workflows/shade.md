@@ -11,7 +11,7 @@ Material Library LOP, never in `/mat` or at the object level.
 ## Assign first, then author
 
 - Get a material bound and visible before making it good. An unassigned perfect shader looks identical to no shader.
-- Use the shader builder that matches the renderer. For Arnold, see the `arnold` workflow.
+- Use the shader builder that matches the renderer.
 - Do not mix shader builders from different renderers in one material library.
 - Neutral gray is a linear value: use `0.2`, not `0.5`.
 

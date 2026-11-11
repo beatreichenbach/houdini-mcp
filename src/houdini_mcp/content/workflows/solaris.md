@@ -57,10 +57,8 @@ Build checklist:
 2. Set the display flag on Component Output. Rename it to the PascalCase asset name; its name becomes the root prim.
 3. Delete every sticky note inside Component Geometry.
 4. Build the geometry inside Component Geometry's SOP network, above the `default` output. Layout the internal network.
-5. If the user renders with Arnold, insert a Mesh LOP after Component Geometry with the pattern `%type:Mesh` and *
-   *Double Sided** enabled.
-6. Name materials in the Material Library after the material.
-7. Wire the nodes, set the display flag on Component Output, and layout `/stage`.
+5. Name materials in the Material Library after the material.
+6. Wire the nodes, set the display flag on Component Output, and layout `/stage`.
 
 Use the proxy and simproxy outputs inside Component Geometry when the asset
 needs display or collision proxies. Write the component to its own USD file and
@@ -70,9 +68,6 @@ To reference the component within the same network, create a Reference LOP,
 connect the Component Output to its multi-input, and leave all parameters at
 their defaults. It lands at `/<AssetName>`. Set a different hierarchy only when
 the user asks for one.
-
-If the user renders with Arnold, see the `arnold` workflow for the required
-Mesh LOP and double-sided rule.
 
 ## Lookdev and verification
 
@@ -125,7 +120,6 @@ hand-typed paths to be what breaks after a rename.
   Library output.
 - Bind with Component Material for component assets, or `assignmaterial` downstream for scene-level binds. Target a
   pattern or collection rather than one prim at a time.
-- If the user renders with Arnold, follow the `arnold` workflow for the shader builder and component rules.
 - Do not mix shader builders from different renderers in one material library.
 
 ## Lighting

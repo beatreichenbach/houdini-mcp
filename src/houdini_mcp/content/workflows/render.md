@@ -19,7 +19,6 @@ following any renderer-specific page or node. `get_render_settings` and
 ## Renderer-specific work
 
 - For USD/Solaris scenes, the authority is the `solaris` workflow and its LOP render settings.
-- For Arnold, use the `arnold` workflow.
 - Do not mix settings or shader builders from different renderers in one scene.
 
 ## Order of work
